@@ -235,6 +235,18 @@ because it flexes for snap-fits without cracking.
 - **Runtime options** (NVS, settings form): idle timeout, target baud (0 = leave the printer alone), and UART pin mode
   (auto, or forced either way). The antenna choice stays build-time only, because selecting U.FL with no antenna
   fitted would cut WiFi and lock the user out of the page.
+- **Network settings** (`/settings` page):
+  - Hostname (default `zebserial`), used for both the DHCP hostname and mDNS.
+  - Optional static IPv4: address, mask, gateway, DNS. Validated in `netcfg.c`, which has host tests.
+  - IPv6: link-local plus SLAAC, with the port 9100 and HTTP listeners on dual-stack sockets.
+  - Network and pin-mode changes reboot. The baud and idle-timeout changes apply live.
+  - The BOOT-button reset clears both WiFi and network settings, so a bad static address can't lock the user out.
+- **Logo:** a DB9 shell with zebra-stripe slots and WiFi arcs (`assets/logo/`). It's inline in the web pages, served
+  as the favicon, and debossed into the lid top.
+- **Deferred:**
+  - **Power saving** (power management with automatic light sleep). Waits for a measured baseline, because it adds
+    connection latency and the UART can drop the first bytes on wake.
+  - **Spooling.** Streaming keeps the job status on the Mac honest.
 
 ## Out of scope
 
