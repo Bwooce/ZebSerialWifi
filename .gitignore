@@ -5,3 +5,4 @@ firmware/test_host/build/
 .DS_Store
 firmware/sdkconfig
 .claude/
+enclosure/reference/
