@@ -26,34 +26,37 @@ section_t = 3;           // slab thickness, so walls behind the cut do not hide 
 explode = 25;
 // Positive-control offset for the interference check (moves the XIAO ghost).
 ghost_offset = [0, 0, 0];
+ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes in Y
 
-/* [Given by the user] */
+/* [Measured by the user (calipers)] */
 board_w = 31.5;          // RS232 board width
-board_d = 28.0;          // RS232 PCB depth, its front edge to its rear edge (the DB9 not included)
-pcb_front_y = -1;        // DB9 flange FRONT face to the RS232 PCB front edge; -1 = at the flange back (fl_t). Measure it.
+board_d = 26.0;          // RS232 PCB depth, its front edge to its rear edge
+pcb_front_y = 0;         // DB9 flange FRONT face to the RS232 PCB front edge: flush, so the PCB runs under the flange
 below_clear = 3.0;       // clear space under the RS232 PCB for through-hole pins
 max_above = 25.0;        // maximum height envelope above the RS232 board
-pcb_t = 1.0;             // RS232 PCB thickness (unknown, user estimate)
-hw_face_to_end = 5.1;    // DB9 flange front face to the back of the screw-hole hardware
-xiao_overhang = 2.0;     // XIAO PCB rear (USB) edge past the RS232 PCB rear edge
-xiao_front_from_flange = -1;   // if >= 0: DB9 flange FRONT face to XIAO front (antenna) edge; overrides xiao_overhang
+pcb_t = 1.6;             // RS232 PCB thickness
+hw_face_to_end = 5.1;    // old note: flange front face to the back of the screw-hole hardware (used only as a cross-check)
+// XIAO fore-aft position, chosen (the user can place it +-1.5 mm): flange FRONT face to the XIAO front (antenna)
+// PCB edge. 9.1 keeps the D4/D5 underside solder-joint zone behind the DB9 body and still leaves 3.3 mm of the
+// XIAO resting on the body; 7.5 would make the case 1.6 mm shorter but only if D5 is soldered on top.
+xiao_front_y = 9.1;
 
 /* [XIAO ESP32-C6, Seeed data] */
 // Seeed XIAO ESP32-C6 v1.0 KiCad PCB (enclosure/reference/xiao_esp32c6) and its STEP model.
 // d = distance from the USB end of the PCB, X as in the case frame (+X = 5V/GND column).
 xiao_l = 20.955;
 xiao_w = 17.78;
-xiao_pcb_t = 1.25;       // STEP 1.25, Seeed text 1.0, KiCad stackup 1.6 (default value): measure it
+xiao_pcb_t = 1.2;        // measured
 xiao_pitch = 2.54;
 xiao_pad1 = 2.921;       // pad 1 (5V / D0) centre from the USB end; the pads are not centred on the length
 usb_w = 8.94;            // GCT USB4105 receptacle (drawing in reference/)
-usb_h = 3.31;            // receptacle height above the PCB top; shell bottom sits on the PCB top
+usb_h = 3.3;             // measured (4.5 overall at the USB-C); shell bottom sits on the PCB top
 usb_l = 7.35;
 usb_over = 1.5;          // receptacle mouth past the XIAO PCB end
 shield_w = 12.6;         // RF shield / label can
 shield_d0 = 6.71;        // shield spans d 6.71 .. 17.31
 shield_d1 = 17.31;
-shield_h = 2.0;
+shield_h = 2.2;          // measured (3.4 overall over the shield)
 ant_x = [0.52, 5.72];    // ceramic antenna ANT1, X range and d range
 ant_d = [18.8, 20.8];
 ufl_x = [-5.6, -3.0];    // U.FL socket ANT2
@@ -76,16 +79,26 @@ fl_bot = 0;              // flange bottom relative to the RS232 PCB top: flush w
 ds_w = 16.9;             // D-shell outer width (top)
 ds_h = 8.4;              // D-shell outer height
 ds_proj = 6.0;           // D-shell projection forward of the flange
-body_w = 20.0;           // rear body width: NOT on the drawings (Norcomp's body runs full width), measure it
-body_h = 11.1;           // rear body height above the PCB top = XIAO underside (+-0.3 from the drawings)
-body_end = 12.42;        // flange FRONT face to the back of the rear body
+body_w = 17.2;           // measured: main rear body width
+body_h = 10.4;           // measured: rear body height above the PCB top = XIAO underside
+body_end = 12.42;        // flange FRONT face to the back of the rear body (drawing value, NOT measured)
 body_d = body_end - fl_t;
-step_on = true;          // taller step right behind the flange (Norcomp)
+step_on = false;         // taller step right behind the flange (Norcomp); no information for this part
 step_h = 12.2;
 step_d = 2.9;
 step_w = -1;             // -1 = body_w
-hw_d = 5.0;              // diameter of the hardware behind each flange hole (jackscrew + spring)
-hw_hex_nut = false;      // true: a hex nut, 5.5 across corners, instead of hw_d
+// Lugs: plastic each side of the body, 3.4 high, out to the full PCB width, with a vertical screw hole
+lug_h = 3.4;             // measured
+lug_end = 6.5;           // flange FRONT face to the lug rear faces (NOT measured)
+lug_hole_y = 4.6;        // measured: hole centre behind the flange front face
+lug_hole_x = -1;         // hole centre |X|; -1 = fl_hole_pitch / 2 (NOT measured)
+lug_hole_d = 2.5;        // NOT measured, print-blocking for the pins
+lug_hole_depth = 3.4;    // ghost only
+lug_pin_on = true;       // lid pins drop into the lug holes and stop the case sliding rearwards
+pin_d = 2.2;
+pin_flat = 1.6;          // pin width across X (flats), so an X error in the hole position cannot jam the lid
+pin_engage = 1.5;        // pin length inside the hole
+pin_boss_d = 4.0;        // boss around the pin root, down to 0.2 above the lug top
 
 /* [RS232 header, guesses from photos] */
 hdr_pins = 4;
@@ -100,8 +113,6 @@ floor_t = 1.6;
 ceil_t = 1.6;            // top skin, also the only material over the XIAO antenna
 pcb_clr = 0.2;           // per side on PCB pockets
 clip_clr = 0.3;          // on clips
-socket_clr = 0.5;        // radial, DB9 hardware sockets (jackscrew must still turn)
-socket_back = 1.2;       // material behind the blind sockets
 split_z = 4.0;           // tray / lid split plane (side and rear walls)
 xiao_top_clear = 4.5;    // XIAO PCB top to lid ceiling (USB-C + wire blobs)
 usb_clr = 0.2;
@@ -156,8 +167,8 @@ bc_hook = 0.5;
 ledge_w = 1.2;           // board support ledge, from the wall inner face
 ledge_front_skip = 7.0;  // keep the ledge clear of DB9 board-lock pegs (and of the first board clip slot)
 // Lid pressers that hold the RS232 board down at the edges (Y centres)
-press_y_left = [16.0];
-press_y_right = [16.0, 27.0];
+press_y_left = [12.5];   // in front of the header (header starts at Y 15.6)
+press_y_right = [16.0, 24.0];
 press_w = 2.0;
 press_reach = 1.2;       // over the board edge (from the wall inner face)
 // XIAO side clamps hanging from the lid: [side (-1 / +1), d0, d1] along the unused-pad stretches.
@@ -185,13 +196,16 @@ eps = 0.01;
 y_fb = fl_t;                         // flange back face = case front face
 y_pcb0 = pcb_front_y < 0 ? fl_t : pcb_front_y;   // RS232 PCB front edge
 y_pcb1 = y_pcb0 + board_d;           // RS232 PCB rear edge
-yx1 = xiao_front_from_flange >= 0 ? xiao_front_from_flange + xiao_l : y_pcb1 + xiao_overhang;   // XIAO USB edge
-yx0 = yx1 - xiao_l;                  // XIAO PCB front (antenna) edge
+yx0 = xiao_front_y;                  // XIAO PCB front (antenna) edge
+yx1 = yx0 + xiao_l;                  // XIAO PCB rear (USB) edge
+xiao_overhang = yx1 - y_pcb1;        // derived: past the RS232 PCB rear edge
 y_body1 = y_fb + body_d;             // back of the DB9 rear body
 body_overlap = y_body1 - yx0;        // how far the XIAO front end lies on the body top
-front_on_body = body_overlap >= front_rest_min && xiao_w / 2 <= body_w / 2;
+front_on_body = body_overlap >= front_rest_min && body_w >= xiao_w - 2;   // the body carries nearly the full XIAO width
 step_wx = step_w < 0 ? body_w : step_w;
-hw_dia = hw_hex_nut ? 5.5 : hw_d;
+lug_hx = lug_hole_x < 0 ? fl_hole_pitch / 2 : lug_hole_x;
+// D4/D5 underside solder-joint zone (half a pitch plus a blob either side of the pads)
+joint_half = xiao_pitch / 2 + 0.5;
 zx0 = body_h;                        // XIAO underside
 zx1 = zx0 + xiao_pcb_t;              // XIAO top
 y_mouth = yx1 + usb_over;
@@ -210,9 +224,7 @@ z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
             usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2));
 z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
-socket_d = hw_dia + 2 * socket_clr;
-socket_end = hw_face_to_end + clip_clr;
-y_fw1 = socket_end + socket_back;    // lid front wall rear face
+y_fw1 = lug_hole_y + max(lug_hole_d, pin_boss_d) / 2 + min_wall;   // lid front wall rear face (holds the pins)
 body_cut_x = body_w / 2 + pcb_clr;
 usb_slot_w = usb_w + 2 * usb_clr;
 hdr_x0 = -board_w / 2 + hdr_edge;
@@ -265,9 +277,19 @@ assert(z_top <= max_above, "case taller than the 25 mm envelope above the board"
 echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
 assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
-if (body_cut_x > fl_hole_pitch / 2 - socket_d / 2)
-    echo(str("ZEBCASE NOTE: the DB9 body (", body_w, " wide) covers the screw hardware: the sockets merge into the body notch",
-             x_in - body_cut_x < min_wall ? " and the stop plates behind them are left off" : ""));
+echo(str("ZEBCASE XIAO front Y ", yx0, ", rear Y ", yx1, ", overhang ", xiao_overhang, " past the RS232 PCB; on the body ",
+         body_overlap, " mm; strut depth ", yx0 - pcb_clr - y_fw1, " mm"));
+d5_front = pad_y(max(used_pads_left)) - joint_half;     // front of the D4/D5 underside joint zone
+if (d5_front < y_body1 + pcb_clr)
+    echo(str("ZEBCASE WARNING: the D4/D5 underside solder-joint zone starts at Y ", d5_front,
+             ", over the DB9 body (ends ", y_body1, "): only OK if those joints are on the top side"));
+else echo(str("ZEBCASE wire zone: D4/D5 underside joints start ", d5_front - y_body1, " mm behind the DB9 body"));
+echo(lug_pin_on ? str("ZEBCASE ANTI-SLIDE: lid pins (", pin_d, " x ", pin_flat, " flatted) in the lug holes at Y ", lug_hole_y,
+                      ", X +-", lug_hx, " (hole ", lug_hole_d, ")")
+     : "ZEBCASE ANTI-SLIDE: pins off - only friction stops the case sliding rearwards off the connector");
+if (lug_pin_on && pin_d > lug_hole_d - 0.2) echo("ZEBCASE WARNING: pin_d is too big for lug_hole_d");
+if (abs(lug_hole_y + lug_hole_d / 2 - hw_face_to_end) > 0.2)
+    echo(str("ZEBCASE NOTE: lug hole back edge at Y ", lug_hole_y + lug_hole_d / 2, " disagrees with the old 5.1 note: measure lug_hole_d"));
 echo(str("ZEBCASE SUPPORT front: ", front_on_body ? str("rests on the DB9 body top, overlap ", body_overlap, " mm")
          : str(body_overlap > 0 ? str("only ", body_overlap, " mm on the DB9 body, so ") : "not on the DB9 body, so ",
                "the lid adds a front rest (-X clamp on D6) beside the front of the +X clamp"),
@@ -429,8 +451,7 @@ module lid() intersection() {
             }
             // front wall above the split
             box(-x_in - eps, x_in + eps, y_fb, y_fw1, split_z, z_top - eps);
-            // stop plates behind the screw hardware, reaching down towards the PCB
-            if (x_in - body_cut_x >= min_wall) mirror_x_both() box(body_cut_x, x_in, socket_end, y_fw1, 0.3, split_z + eps);
+            if (lug_pin_on) mirror_x_both() lug_pin();
             // board pressers
             for (y = press_y_left)  mirror([1, 0, 0]) presser(y);
             for (y = press_y_right) presser(y);
@@ -443,14 +464,6 @@ module lid() intersection() {
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
-        // flat ceiling between the body notch and each socket, so no knife-edge cusp is left where they meet
-        if (body_cut_x < fl_hole_pitch / 2)
-            mirror_x_both() box(body_cut_x - eps, fl_hole_pitch / 2, y_fb - 1, socket_end, -1, hole_z + socket_d / 2);
-        // U-shaped blind sockets for the flange hardware (open downwards)
-        for (s = [-1, 1]) translate([s * fl_hole_pitch / 2, 0, 0]) hull() {
-            translate([0, y_fb - 1, hole_z]) rotate([-90, 0, 0]) cylinder(d = socket_d, h = socket_end - y_fb + 1);
-            translate([0, y_fb - 1, -1]) rotate([-90, 0, 0]) cylinder(d = socket_d, h = socket_end - y_fb + 1);
-        }
         // header relief (only when the header overhangs the PCB edge)
         if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, hdr_h + 1);
         // USB-C slot, open to the rim so the receptacle drops in; the tray tongue fills below it
@@ -465,6 +478,22 @@ module lid() intersection() {
 module logo_cut() {
     translate([0, (y_fb + y_rear_face) / 2, z_top - logo_depth])
         linear_extrude(logo_depth + 1) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
+}
+
+// Pin hanging from the lid front wall into a lug screw hole, flatted on the X sides; a short boss
+// down to 0.2 above the lug top shortens its lever
+module lug_pin() {
+    zb = lug_h - pin_engage;
+    translate([lug_hx, lug_hole_y, 0]) {
+        translate([0, 0, lug_h + 0.2]) cylinder(d = pin_boss_d, h = split_z - lug_h - 0.2 + eps);
+        intersection() {
+            union() {
+                translate([0, 0, zb + 0.4]) cylinder(d = pin_d, h = split_z - zb);
+                translate([0, 0, zb]) cylinder(d1 = pin_d - 0.8, d2 = pin_d, h = 0.4);   // lead-in
+            }
+            box(-pin_flat / 2, pin_flat / 2, -pin_d, pin_d, zb - 1, split_z + 1);
+        }
+    }
 }
 
 module presser(y) {
@@ -525,8 +554,11 @@ module ghost_db9() {
             offset(r = 1) offset(delta = -1)
                 polygon([[-ds_w / 2, ds_h / 2], [ds_w / 2, ds_h / 2],
                          [ds_w / 2 - 1.5, -ds_h / 2], [-ds_w / 2 + 1.5, -ds_h / 2]]);
-        for (s = [-1, 1]) translate([s * fl_hole_pitch / 2, fl_t - eps, hole_z])
-            rotate([-90, 0, 0]) cylinder(d = hw_dia, h = hw_face_to_end - fl_t, $fn = hw_hex_nut ? 6 : 48);
+    }
+    // lugs either side of the body with their vertical screw holes
+    gcol("dimgray") mirror_x_both() difference() {
+        box(body_w / 2, board_w / 2, y_fb, lug_end, 0, lug_h);
+        translate([lug_hx, lug_hole_y + ghost_lug_dy, lug_h - lug_hole_depth - eps]) cylinder(d = lug_hole_d, h = lug_hole_depth + 1);
     }
     gcol("dimgray") {
         box(-body_w / 2, body_w / 2, y_fb, y_body1, 0, body_h);
@@ -581,11 +613,24 @@ module ghost_wires() {
     }
 }
 
+// Keep-out volumes for the four wires and their joints (the user's requirement): no case feature may enter them
+module wire_zones() {
+    yl0 = pad_y(max(used_pads_left)) - joint_half;  yl1 = pad_y(min(used_pads_left)) + joint_half;
+    yr0 = pad_y(max(used_pads_right)) - joint_half; yr1 = pad_y(min(used_pads_right)) + joint_half;
+    gcol("magenta", 0.25) {
+        box(-11.5, -6.0, yl0, yl1, 0.3, zx0 + eps);                    // under the -X D4/D5 pads
+        box(6.0, 11.5, yr0, yr1, 0.3, zx0 + eps);                      // under the +X 5V/GND pads
+        box(-15.6, -11.0, yl0, hdr_y1, hdr_h, zx1 + 2);                // header top to the D4/D5 pads
+        box(-11.5, 11.5, max(yr0, hdr_y0), min(yr1, hdr_y1), 3, 8);    // header across under the XIAO to 5V/GND
+    }
+}
+
 module ghosts() {
     ghost_db9();
     ghost_rs232();
     ghost_xiao();
     ghost_wires();
+    wire_zones();
 }
 
 // ---------------------------------------------------------------- output

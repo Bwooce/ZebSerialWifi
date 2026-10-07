@@ -17,7 +17,7 @@ printer. The two parts snap together, with no screws.
 ## Coordinates
 
 - **Y:** 0 is the DB9 flange front face, and +Y runs towards the rear (the USB-C end). The case front face is the
-  flange back (Y 0.38). The RS232 PCB runs from `pcb_front_y` (default: the flange back) for `board_d` (28).
+  flange back (Y 0.38). The RS232 PCB runs from Y 0 (flush with the flange front, under the flange) to Y 26.
 - **Z:** 0 is the RS232 PCB top surface.
 - **X:** looking down with the DB9 nearest you:
   - −X is the side with the RS232 header and the XIAO D0..D6 pads.
@@ -39,11 +39,12 @@ printer. The two parts snap together, with no screws.
   fine in PETG. Everything else is either vertical, at 45°, a short bridge, or opens upwards in print orientation:
   - The perimeter chamfers on the bed side of each part are 45°.
   - The top of each snap catch window in the tray is a 6.6 mm bridge.
-  - The DB9 sockets and the USB slot open to the lid rim.
+  - The lug pins point up off the lid's inside face, with a 0.4 mm lead-in chamfer at the tip. The USB slot opens to
+    the lid rim.
   - The ledges and lips on the XIAO clamps have 45° faces where they would otherwise overhang.
-- **Size:** 39.9 × 33.9 × 26.3 mm assembled, with the default `xiao_overhang = 2`. The top is 20.7 mm above the RS232
+- **Size:** 39.9 × 33.6 × 26.1 mm assembled (the case shell, from the flange back). The top is 19.9 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.5 cm³ for the tray and 8.7 cm³ for the lid. That is roughly 17 g of PETG at 100 %, less with
+- **Material:** about 4.6 cm³ for the tray and 9.2 cm³ for the lid. That is roughly 17.5 g of PETG at 100 %, less with
   infill.
 
 ## Exterior style: faceted pincushion
@@ -102,71 +103,103 @@ What the style changed underneath:
 
 ### DB9 location
 
-- **Dimensions:** the DB9 numbers come from the Norcomp 182-YYY-113RYY1 and Connfly DS1037-09M drawings and PDI's
-  catalogue p.177.
-  - Flange: 30.8 × 12.5 mm, 0.38 mm steel. Its bottom is flush with the body bottom, which is the seating plane on the
-    PCB top (`fl_bot = 0`), so the screw holes and the shell centre are 6.25 mm above the PCB top.
-  - Rear body: ends 12.42 mm behind the flange front face and is 11.1 mm tall (±0.3).
-  - Step: a taller step 12.2 mm high and 2.9 mm deep sits right behind the flange (`step_on`).
-  - Body width: not on any drawing. Norcomp's body runs the full flange width; the user's photo suggests a narrower
-    body with the screw hardware beside it. `body_w = 20` is a guess.
-- **Case front face:** the plane of the flange back.
-- **Sockets:** the lid's front wall has two blind U-shaped sockets that drop over the hardware behind the flange screw
-  holes.
-  - Socket diameter: hardware diameter + 2 × 0.5 mm, so a jackscrew can still turn. `hw_hex_nut = true` sizes them for
-    a hex nut, 5.5 mm across corners.
-  - Socket depth: they end 0.3 mm behind the measured 5.1 mm.
-- **Stop plates:** behind each socket, a stop plate reaches down to 0.3 mm above the PCB.
-- **What this locates:** the case cannot slide forward relative to the connector. The blind socket ends sit behind the
-  hardware tails, and the case front face sits against the flange back. Both of these resist only forward motion.
-- **Known gap:** nothing positive stops the case sliding back off the connector. Pulling a USB plug out (6–20 N) pushes
-  it that way. It is held only by friction and the snaps until internal parts meet, after about 1 mm. The only
-  forward-facing surfaces inside are the RS232 PCB front edge and the header, so a proper stop waits for the measured
-  `pcb_front_y`.
+- **Measured:**
+  - Flange bottom level with the PCB top (`fl_bot = 0`), so the flange and D-shell centre are 6.25 mm up.
+  - Rear body 17.2 wide × 10.4 high.
+  - Each side of the body, a plastic lug 3.4 high runs out to the full PCB width. Each lug has a vertical screw hole
+    4.6 behind the flange front face.
+  - The PCB front edge is flush with the flange front face, so the PCB runs under the 0.38 mm flange. It sticks out
+    0.38 mm ahead of the case front face, below the flange.
+- **From the drawings, not measured:** the rear body ends 12.42 mm behind the flange front (`body_end`).
+- **Not measured:**
+  - The lug rear faces, assumed at Y 6.5 (`lug_end`).
+  - The lug hole diameter, assumed 2.5 (`lug_hole_d`).
+  - The lug hole X position, assumed ±12.5 = the flange screw pitch (`lug_hole_x`).
+  - No step behind the flange (`step_on = false`).
+- **Case front face:** the plane of the flange back. It stops the case moving forwards.
+- **Anti-slide: lug pins** (`lug_pin_on`). Two pins hang from the lid's front wall and drop into the lug screw holes as
+  the lid closes. They are the only thing that stops the case sliding rearwards off the connector, for example when a
+  USB plug is pulled out (6–20 N).
+  - The pins are 2.2 mm in Y, flatted to 1.6 mm in X. Holding Y is what matters, and the flats leave 0.45 mm each side
+    in X, so an error in the unmeasured hole X position cannot jam the lid. The tray walls already locate X.
+  - A 4 mm boss around each pin root comes down to 0.2 mm above the lug top. That shortens the lever: 20 N on one pin
+    bending it over 0.4–1.9 mm gives about 6–29 MPa, and about half that when both pins share the load. The pins print
+    pointing up, so this is across the layer lines; PETG manages about 20–30 MPa there.
+  - The pins go 1.5 mm into the holes and have a lead-in chamfer.
+  - **The hole size is not consistent.** If the old "hardware ends 5.1 behind the face" note describes the same hole
+    whose centre is at 4.6, the hole is only about 1.0 mm across. That is too small for these pins. The model `ECHO`s
+    this disagreement. Measure `lug_hole_d` before printing.
+- **Without the pins** (`lug_pin_on = false`), only friction holds the case rearwards, and the model says so. A
+  feature hooking the lug rear faces would not help: those faces point rearwards, so it would only stop the case
+  moving forwards, which the flange already does. The only forward-facing surface inside the case is the RS232 header.
 
 ### RS232 board
 
-- **Ledges:** the board sits on 1.2 mm side ledges, with a 1.2 mm front skin under its front edge. The skin follows
-  `pcb_front_y`.
-  - The ledges start 7 mm behind the PCB front edge (DB9 board-lock pegs).
+- **Board:** 31.5 × 26.0 × 1.6 mm, measured.
+- **Ledges:** the board sits on 1.2 mm side ledges, with a 1.2 mm front skin under its front edge.
+  - The ledges start 7 mm behind the PCB front edge, behind the lugs.
   - On the −X side, the ledges are relieved under the header pins.
   - A 0.4 mm gusset fills the corner between the floor and the front skin. It keeps 1.2 mm of material square to the
     bottom front chamfer, and it stays outside the pin zone.
 - **Clips:** cantilever clips in the tray side walls catch the PCB top edge.
   - Default positions: −X at Y 9.5; +X at Y 9.5 and 23.25. The clips are 3.5 mm wide with 0.5 mm side slots, so
     at least 1.2 mm of wall remains between each slot and the nearest snap pocket.
-  - A clip that would collide with a lid-snap pocket is dropped, with an `ECHO` note. At the default
-    `xiao_overhang = 2`, the rear lid snap sits at Y 26.4, so the +X clip at 23.25 is dropped. No Y between the two
-    snaps has room for it.
-- **Pressers:** ribs on the lid (1.2 × 2 mm) come down to 0.1 mm above the board edge, to hold it down.
+  - A clip that would collide with a lid-snap pocket is dropped, with an `ECHO` note. The rear lid snap's position
+    follows the XIAO's rear end (Y 26.1), not the board's depth. So the +X clip at 23.25 is still dropped, and no Y
+    between the two snaps has room for it. Clips in front of Y 7 would land on the lugs.
+- **Pressers:** ribs on the lid (1.2 × 2 mm) come down to 0.1 mm above the board edge, to hold it down: −X at Y 12.5
+  (in front of the header), +X at Y 16 and 24.
 - **Clear space:** there is 3 mm clear below the board. The red ghost volume shows the through-hole pin zone, kept
   1.25 mm in from the board edges.
 
 ### XIAO
 
-The XIAO dimensions come from Seeed's own XIAO ESP32-C6 v1.0 KiCad PCB and STEP model:
+The XIAO dimensions come from Seeed's own XIAO ESP32-C6 v1.0 KiCad PCB, plus the user's measurements:
 
-- outline 20.955 × 17.78 mm
+- outline 20.955 × 17.78 mm (measured 21.0), 22.5 mm including the USB-C (`usb_over` 1.5)
+- PCB 1.2 mm thick (measured)
+- USB-C 3.3 mm above the PCB top (4.5 overall); shield 2.2 mm above it (3.4 overall)
 - pad 1 at 2.921 mm from the USB end, 2.54 mm pitch
-- shield 12.6 × 10.6 × 2.0 mm at d 6.71–17.31
+- shield 12.6 × 10.6 mm at d 6.71–17.31
 - ceramic antenna at X +0.5..+5.7 and U.FL at X −5.6..−3.0, both at the antenna end
 - buttons at X ±5.3..7.9, d 0.3–1.9
-- GCT USB4105 receptacle, 3.31 mm tall, its shell bottom on the PCB top
 
-(d = distance from the USB end.) The PCB thickness is not settled: the STEP says 1.25, Seeed's text says 1.0, and the
-KiCad stackup says 1.6, which is KiCad's default. `xiao_pcb_t` = 1.25 until measured.
+(d = distance from the USB end.)
+
+**Fore-aft position: `xiao_front_y = 9.1`** (the flange front face to the XIAO's antenna edge). That puts the USB edge at
+Y 30.06, 4.06 mm past the RS232 PCB, with 3.3 mm of the XIAO resting on the DB9 body.
+
+- **Why 9.1 and not 7.5:** the D4/D5 pads (−X, d 13.1 and 15.6) carry wires and may have solder on the underside. Their
+  joint zone (half a pitch plus 0.5 mm either side of the pads) must not sit on the DB9 body, or the XIAO would not lie
+  flat. 9.1 puts the zone's front 0.24 mm behind the body end.
+- **What 7.5 would cost:** at 7.5 the case would be 1.6 mm shorter, but the joint zone would sit 1.4 mm over the body.
+  The XIAO edge would also run into the lid front wall that holds the pins. Use 7.5 only if D5 is soldered on top and
+  the lid wall is notched.
+- **The model `ECHO`s:** the overlap on the body, the joint-zone margin and the strut depth.
+
+**Wire zones.** The user needs the space under the XIAO kept clear for the four wires and their joints. The model
+carries magenta keep-out volumes, and the interference check fails if any case feature enters them:
+
+- under the −X D4/D5 pads
+- under the +X 5V/GND pads
+- from the header top forward to D4/D5
+- across under the XIAO from the header to 5V/GND
+
+As a positive control, a clamp pushed into the D4/D5 zone gives about 18 mm³ of overlap.
 
 It is supported on all sides:
 
 - **Underneath at the front:** it rests on the top of the DB9 rear body, the way the user mounted it.
-  - At the default `xiao_overhang = 2`, its front end lies 3.0 mm onto the body.
+  - At the default `xiao_front_y = 9.1`, its front end lies 3.3 mm onto the body.
   - If the overlap is under 2 mm (`front_rest_min`), the lid adds a front rest: a short −X clamp on the free D6 pad. It
     sits beside the front end of the +X clamp. The model `ECHO`s which front support is active.
-  - Sweep results: overhang 1 → 4.0 mm on the body; overhang 2 → 3.0 mm on the body; overhang 3 → 1.995 mm on the body
-    plus the D6 rest; overhang 4 → 1.0 mm on the body plus the rest.
+  - Sweep results:
+    - `xiao_front_y` 7.5 → 4.9 mm on the body, plus the D5 joint-zone warning.
+    - 9.1 → 3.3 mm on the body.
+    - 10.6 → 1.8 mm on the body, plus the D6 rest.
 - **Underneath at the rear:** the tray tongue fills the rear-wall slot under the overhanging USB-C shell. Its top sits
   0.05 mm (`tongue_gap`) below the shell.
-  - The tongue height follows `body_h + xiao_pcb_t`, so both need to be right.
+  - The tongue height follows `body_h + xiao_pcb_t`. Both are now measured (10.4 and 1.2).
   - The interference check proves the gap: moving the XIAO down 0.04 mm gives no overlap, and 0.06 mm hits the tongue.
 - **Sides: two clamps hang from the lid.** Each is a 1.2 mm finger with a ledge under the PCB edge and a lip over it,
   overlapping the PCB by 0.8 mm each, with 0.1 mm clearance so the body and tongue stay the datums. They run along the
@@ -183,9 +216,10 @@ It is supported on all sides:
   - It sits at X −1.25, 3 mm wide, in the only straight-edge gap between the U.FL socket (to X −3.0) and the ceramic
     antenna (from X +0.5). It ends 0.25 mm from the antenna in X.
   - It runs from the lid front wall back to the XIAO edge, so USB insertion force puts it in compression.
-  - Load path: plug → XIAO → strut → lid front wall → DB9 hardware sockets, with the snaps tying the lid to the tray.
+  - Load path: plug → XIAO → strut → lid front wall → case front face on the flange back, with the snaps tying the lid
+    to the tray. Pulling a plug out goes the other way: XIAO → clamps and rear wall → lid → lug pins.
   - Because the XIAO front end lies on the body top, the strut cannot reach below the PCB. It stops 0.1 mm
-    (`stop_z_clr`) above the body and bears on 1.15 of the 1.25 mm edge.
+    (`stop_z_clr`) above the body and bears on 1.1 of the 1.2 mm edge.
   - If the XIAO is set so far back that its front edge is clear of the body by 0.8 mm or more, a lip on the strut
     reaches below the PCB and it bears on the full edge.
 - **Rear stop and USB:** the rear wall wraps the USB-C receptacle in a slot (receptacle + 0.2 mm per side). The slot is
@@ -193,7 +227,9 @@ It is supported on all sides:
   - Outside, a 12 × 7 mm plug-overmould relief is 1.6 mm deep, and its floor is flush with the receptacle mouth. A
     fully seated plug therefore bears on the case rather than on the XIAO. A plug overmould larger than 12 × 7 mm will
     not seat fully; increase `usb_recess_w`/`usb_recess_h` if needed.
-- **Antenna:** the only material over the antenna end is the 1.6 mm top skin.
+- **Antenna:** the only material over the antenna end is the 1.6 mm top skin. The lid front wall (it holds the pins)
+  ends at Y 7.8, so it is now about 1.3 mm in front of the antenna edge, not 6 mm as before. The front strut fills
+  part of that gap at X −1.25.
 
 ### Wires
 
@@ -236,12 +272,12 @@ The green ghost wires show one feasible route, and the interference check confir
    2. Seat the USB-C receptacle into the rear slot.
    3. Put the front (antenna) edge against the stop strut.
    4. Press the XIAO straight in until both side clamps snap over its edges. The lips stop it.
-   5. At `xiao_overhang` above about 3, also snap the small D6 front rest.
+   5. If `xiao_front_y` is moved back past about 10.4, also snap the small D6 front rest.
 3. **Close:**
    1. Flip the lid over the tray, folding the wires into the interior. D4/D5 go along the −X side, and 5V/GND go
       under the XIAO to +X.
-   2. Lower the lid straight down. The front sockets drop over the flange hardware, the XIAO's front end comes down
-      onto the DB9 body, the tray tongue slides up under the USB shell, and the four snaps click.
+   2. Lower the lid straight down. The two pins drop into the lug screw holes, the XIAO's front end comes down onto the
+      DB9 body, the tray tongue slides up under the USB shell, and the four snaps click.
 4. **Check:** plug a USB-C cable in and out. Nothing should move.
 
 ## Interference checks
@@ -270,7 +306,7 @@ What remains is all deliberate, flexing or bearing-edge detail, not walls:
 The probe found and fixed these (most already existed before the restyle):
 
 - 0.6–0.9 mm webs between board-clip slots and snap pockets
-- a knife-edge cusp where the DB9 socket meets the body notch
+- a knife-edge cusp where the old DB9 socket met the body notch
 - 0.5 mm over the USB relief
 - a 0.1 mm strut tip at `xiao_overhang = 3`
 - 0.4 mm webs at the ends of the seam groove
@@ -297,44 +333,38 @@ from thin material. These show up in sweeps at other `xiao_overhang` values.
 | [0, 0, +0.09] | `check_lid` | none |
 | [0, 0, +0.11] | `check_lid` | hits both clamp lips |
 
-So the rear support and the clamps really sit at their 0.05 mm and 0.1 mm gaps.
+| `ghost_lug_dy` ±0.1 (moves only the ghost lug holes) | `check_lid` | none |
+| `ghost_lug_dy` ±0.2 | `check_lid` | hits both pins |
+| `lug_hole_d=2.0` | `check_lid` | hits both pins, plus a warning |
+| `lug_pin_on=false` | `check_lid` | no pins; `ECHO` says only friction holds the case |
+| an −X clamp at d 13–17 | `check_lid` | about 18 mm³ in the D4/D5 wire zone, plus a used-pad warning |
 
-## Fit-check list: measure these with calipers before printing
+So the rear support and the clamps really sit at their 0.05 mm and 0.1 mm gaps, the pins have 0.15 mm in Y, and the
+wire zones are enforced.
 
-Most dimensions now come from manufacturer drawings or Seeed's own PCB files. These are the ones that still need
-calipers. Change the parameter, then rerun `./build.sh`; it reports the active XIAO supports and reruns all the checks.
+## Fit-check list: what is still open
+
+The user has measured the board, the DB9 body and the XIAO. These are still open:
 
 | # | Measure | Parameter | Default | Why it matters |
 |---|---------|-----------|---------|----------------|
-| 1 | XIAO rear (USB) PCB edge past the RS232 PCB rear edge | `xiao_overhang` | 2.0 | Case length, how far the XIAO lies on the DB9 body |
-| 2 | Or instead: DB9 flange **front** face (the face that meets the printer, not the back of the 0.38 mm flange) to the XIAO front (antenna) PCB edge. Overrides item 1 | `xiao_front_from_flange` | −1 (off) | Same, measured from the connector |
-| 3 | **Print-blocking.** DB9 rear body height above the RS232 PCB top, and the taller step right behind the flange (height and depth), if there is one | `body_h`, `step_on`, `step_h`, `step_d` | 11.1; on, 12.2, 2.9 | `body_h` sets the XIAO height, and with it the tray tongue height (0.05 mm gap) |
-| 4 | DB9 rear body width, and whether the screw hardware sits beside it or inside it | `body_w` | 20 | Not on the drawings. If it is wider than 25, the sockets merge into the body notch |
-| 5 | DB9 flange front face to the RS232 PCB front edge | `pcb_front_y` | −1 (= the flange back, 0.38) | Where the PCB, the ledges and the front skin sit |
-| 6 | Flange bottom relative to the RS232 PCB top (0 if it sits on the board) | `fl_bot` | 0 | Socket height: hole centre = `fl_bot` + 6.25 |
-| 7 | **Print-blocking.** XIAO PCB thickness | `xiao_pcb_t` | 1.25 | Clamp lips, strut engagement, tongue height |
-| 8 | Hardware behind each flange hole: the widest part, and whether it is a hex nut | `hw_d`, `hw_hex_nut` | 5.0, off (5.5 if on) | Socket fit |
+| 1 | **Print-blocking.** Lug screw-hole diameter, and confirm the holes are vertical and empty (no screw or rivet in them) | `lug_hole_d`, `lug_pin_on` | 2.5, on | The pins are 2.2 × 1.6. If the hole is about 1 mm (as the old 5.1 note implies) or filled, set `lug_pin_on = false`; then only friction stops the case sliding rearwards |
+| 2 | Lug screw-hole centre X | `lug_hole_x` | −1 (= 12.5, the flange pitch) | The flatted pins tolerate ±0.45 mm in X |
+| 3 | Flange front face to the lug rear faces | `lug_end` | 6.5 | Ghost only, but it shows the lugs clear the board clips |
+| 4 | Flange front face to the back of the DB9 rear body | `body_end` | 12.42 (drawing) | How far the XIAO rests on the body (3.3 mm), and where the D4/D5 joint zone starts |
+| 5 | A taller step on the body right behind the flange, if any | `step_on`, `step_h`, `step_d` | off | The lid front notch must clear it |
 
 ## Concerns to check before printing
 
-- **XIAO height chain (fit-check items 3 and 7):** the XIAO's support gaps are tight. The tongue is 0.05 mm below the
-  USB shell, and the clamp ledges, lips and front strut are 0.1 mm from the PCB. The inputs are looser than that:
-  `body_h` is ±0.3 from the drawings, and `xiao_pcb_t` could be 1.0 or 1.25.
-  - If the board is really 1.0 mm and the model still says 1.25, the tongue pushes the USB shell up by about 0.2 mm and
-    the clamp lips sit 0.25 mm above the board, so it is loose.
-  - If `body_h` is off by more than about 0.1 mm, either the lid will not close over the XIAO or the XIAO rattles.
-  - Measure both and rerun `build.sh` before printing.
-
-- **DB9 on the board:** `fl_bot`, `body_h` and `hw_d` decide whether the lid drops over the connector and whether the
-  XIAO sits at the right height for the tongue. Measure them first.
-- **Stop plates:** the lid's stop plates sit directly behind the flange hardware, down to 0.3 mm above the PCB. If the
-  DB9 has board-lock brackets or solder lugs there, reduce their reach (the `0.3` in `lid()`) or remove them. The
-  sockets alone still locate the case.
+- **Lug hole size (item 1):** the anti-slide pins depend on it.
+- **Antenna proximity:** the XIAO now sits further forward. The lid front wall and the strut are about 1.3 mm from
+  the antenna end of the board, and the DB9's metal flange and shell are not far away. If WiFi range is poor, use the
+  U.FL socket.
 - **Board clip strain:** the board clips are 1.0 mm thick and bend from the floor top (about 5 mm free length). They
   work at roughly 3 % strain. The RS232 board is mainly held by the lid pressers. The clips only hold it during assembly.
 - **Light gap at the snaps:** the catch windows open into the space under the board. A sliver of light shows below
   each snap finger tip, where the pry gap meets the window.
 - **+X board clip:** at the default overhang, the second +X board clip is dropped to make room for the rear lid snap.
-  The board is held by three clips plus the lid pressers.
-- **Strut engagement:** the front strut bears on 1.15 of the 1.25 mm XIAO edge, not the full edge, because the PCB rests
+  The board is held by two clips (both at Y 9.5) plus three lid pressers.
+- **Strut engagement:** the front strut bears on 1.1 of the 1.2 mm XIAO edge, not the full edge, because the PCB rests
   on the DB9 body.

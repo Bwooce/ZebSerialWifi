@@ -23,11 +23,13 @@ run $IMG --camera=0,18,14,60,0,25,180 -D 'part="exploded"' -o renders/exploded.p
 run $IMG --camera=0,18,14,60,0,205,180 -D 'part="exploded"' -D show_ghosts=false -o renders/exploded_case_only.png
 # sections: x=0 plane through the XIAO length and DB9 body, seen from +X
 run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_xiao_length.png
-# y planes across the XIAO through each side clamp (defaults: +X clamp Y 12.6..18.6, -X clamp Y 19.9..28.2), from the front
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=15 -D section_t=2 -o renders/section_xiao_clamp_plusx.png
+# y planes across the XIAO through each side clamp (defaults: +X clamp Y 12.6..18.3, -X clamp Y 19.6..27.9), from the front
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=14.5 -D section_t=2 -o renders/section_xiao_clamp_plusx.png
 run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=23.5 -D section_t=2 -o renders/section_xiao_clamp_minusx.png
-# y plane through the DB9 hardware sockets, seen from the front
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=2.5 -D section_t=2 -o renders/section_db9_sockets.png
+# y plane through the lug pins (Y 4.6), seen from the front
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=3.6 -D section_t=2 -o renders/section_lug_pins.png
+# x plane through the +X lug pin (lug_hole_x 12.5), seen from +X
+run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=13.5 -D section_t=2 -o renders/section_lug_pin_length.png
 # lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
 run $IMG --camera=0,15,8,35,0,0,125 -D 'part="assembly"' -o renders/lid_top_logo.png
 # sections through each lid snap finger (front pair at Y 16.5, rear pair at Y 26.4 by default), seen from the front
