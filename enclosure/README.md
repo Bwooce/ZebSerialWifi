@@ -38,7 +38,7 @@ printer. The two parts snap together, with no screws.
   - The lips on the XIAO clips have a 45° underside.
 - **Size:** 38.3 × 36.1 × 23.8 mm assembled, with the default `xiao_overhang = 5`. The top is 18.2 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.5 cm³ for the tray and 8.2 cm³ for the lid. That is roughly 16 g of PETG at 100 %, less with
+- **Material:** about 4.6 cm³ for the tray and 8.4 cm³ for the lid. That is roughly 16 g of PETG at 100 %, less with
   infill. Not sliced, so print time is not estimated.
 
 ## How it works
@@ -77,10 +77,14 @@ printer. The two parts snap together, with no screws.
   - The in-use pads are clear, with their wire exits open to the side: D4/D5 (−X, pads 5–6) and 5V/GND (+X, pads 1–2).
   - Pad positions are from the Seeed land pattern: 7 pads at 2.54 mm pitch, centred on the 21 mm length, so pad 1 is
     2.88 mm from the USB end.
-- **Front stop:** two front stop tabs bear on the XIAO's front (antenna-end) PCB edge.
-  - They sit at X −3 and +2, clear of the ceramic antenna (+X corner) and the U.FL socket (−X corner).
-  - The USB plug pushes the XIAO towards the DB9. The load path is: XIAO → stop tabs → lid → lid front wall sockets →
-    DB9 hardware, and through the snaps to the tray.
+- **Front stop:** two front stop struts bear on the XIAO's front (antenna-end) PCB edge.
+  - They sit at X −3 and +2, each 3 mm wide, clear of the ceramic antenna (+X corner) and the U.FL socket (−X corner).
+  - Each strut is a solid rib running from the lid front wall back to the XIAO edge, so the USB insertion force puts it
+    in compression rather than bending a thin tab across its layer lines.
+  - Load path: plug → XIAO → struts → lid front wall → DB9 hardware sockets, with the snaps tying the lid to the tray.
+  - Behind the DB9 body, the strut tip reaches 0.6 mm below the XIAO PCB.
+  - At `xiao_overhang` ≤ ~1.5, the XIAO front edge sits over the DB9 body. The strut can then only come down to the body
+    top + 0.2 mm, so it bears on just the top 0.8 mm of the 1.0 mm PCB edge.
 - **Rear wall:** the rear wall wraps the USB-C receptacle in a slot (receptacle + 0.2 mm per side). The slot is open
   downwards so the XIAO can be pushed into the lid.
   - A tongue on the tray rear wall fills the slot under the receptacle once the case is closed.
@@ -115,7 +119,7 @@ The green ghost wires show one feasible route, and the interference check confir
 2. **XIAO into the lid:**
    1. Hold the lid upside down just above the tray. The wires are short and soldered, so keep the XIAO tethered.
    2. Seat the USB-C receptacle into the rear slot.
-   3. Press the XIAO into the lid until both C-clips snap. The front edge should sit against the stop tabs.
+   3. Press the XIAO into the lid until both C-clips snap. The front edge should sit against the stop struts.
 3. **Close:**
    1. Flip the lid over the tray, folding the wires into the interior. D4/D5 go along the −X side, and 5V/GND go
       under the XIAO to +X.
@@ -138,7 +142,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the lid rim on the tray rim
 
 **Positive control:** with `-D 'ghost_offset=[1,-1,0]'` (the XIAO ghost moved 1 mm into the clips and stops), `check_lid`
-reports about 9 mm³ of overlap. It is spread over the stop tabs, a C-clip and the USB slot. This confirms that the
+reports about 9 mm³ of overlap. It is spread over the stop struts, a C-clip and the USB slot. This confirms that the
 check can see a collision.
 
 ## Fit-check list: measure these with calipers before printing
@@ -149,7 +153,7 @@ reruns the interference checks.
 | # | Measure | Parameter | Default | Why it matters |
 |---|---------|-----------|---------|----------------|
 | 1 | RS232 PCB thickness | `pcb_t` | 1.0 | Board clip catch height, ledge height |
-| 2 | XIAO rear edge past the RS232 rear edge (the user expects less than 5) | `xiao_overhang` | 5.0 | Case length, rear wall, stop tab position |
+| 2 | XIAO rear edge past the RS232 rear edge (the user expects less than 5) | `xiao_overhang` | 5.0 | Case length, rear wall, stop strut position |
 | 3 | Flange width × height × thickness | `fl_w`, `fl_h`, `fl_t` | 30.8 × 12.5 × 1.0 | Flange must cover the front opening (case opening 31.9 wide) |
 | 4 | Flange bottom edge relative to the PCB **top** (negative = below) | `fl_bot` | −2.0 | Sets the socket height: hole centre = `fl_bot + fl_h/2` = 4.25 |
 | 5 | Screw-hole spacing | `fl_hole_pitch` | 25.0 | Socket positions |
@@ -163,7 +167,7 @@ reruns the interference checks.
 | 13 | USB-C receptacle width × height, overhang past the XIAO PCB end | `usb_w`, `usb_h`, `usb_over` | 8.94 × 3.26, 1.5 | Rear-wall wrap and flush mouth |
 | 14 | Your USB-C cable's overmould size | `usb_recess_w`, `usb_recess_h` | 12 × 7 | Plug must seat fully |
 | 15 | Height of the tallest thing on top of the XIAO, plus the wire and solder blob height on the used pads | `xiao_top_clear` | 4.5 | Lid ceiling clearance (shield assumed 2.5, receptacle 3.26) |
-| 16 | Positions of the ceramic antenna and the U.FL socket at the XIAO front end | `stop_x` | −3, +2 | Stop tabs must miss both |
+| 16 | Positions of the ceramic antenna and the U.FL socket at the XIAO front end | `stop_x` | −3, +2 | Stop struts must miss both |
 
 ## Concerns to check before printing
 

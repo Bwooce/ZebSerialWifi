@@ -123,11 +123,11 @@ xc_list = [[-1, 2], [1, 6]];
 xc_w = 4.0;
 xc_t = 1.2;
 xc_hook = 0.6;
-// Front stop tabs (X centres), bearing on the XIAO front PCB edge; kept clear of the
+// Front stop struts (X centres), bearing on the XIAO front PCB edge; kept clear of the
 // ceramic antenna (+X corner) and the U.FL socket (-X corner) so a pigtail can still be fitted
 stop_x = [-3.0, 2.0];
 stop_w = 3.0;
-stop_t = 1.6;
+stop_t = 1.6;            // depth of the part of the strut that reaches below the XIAO PCB
 
 $fn = 48;
 eps = 0.01;
@@ -169,7 +169,7 @@ echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_fb, " Z ", z_top - z_b
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
-if (yx0 - pcb_clr - stop_t < y_fw1) echo("ZEBCASE WARNING: XIAO front stop overlaps the lid front wall");
+if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
 for (y = bc_y_left)  if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
 for (y = bc_y_right) if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
 for (c = xc_list) {
@@ -319,12 +319,15 @@ module xiao_clip(s, yc) {
     }
 }
 
+// Front stop: a compression strut from the lid front wall back to the XIAO front edge, so the
+// USB insertion force goes straight into the front wall and the DB9 hardware sockets rather
+// than bending a thin tab across its layer lines.
 module front_stop(x) {
-    y1 = yx0 - pcb_clr;
-    y0 = y1 - stop_t;
-    over_body = y0 < y_fb + body_d + pcb_clr && abs(x) - stop_w / 2 < body_cut_x;
-    zb = over_body ? body_h + pcb_clr : zx0 - 0.6;
-    box(x - stop_w / 2, x + stop_w / 2, y0, y1, zb, z_ceil + eps);
+    y1 = yx0 - pcb_clr;                         // bearing face on the XIAO PCB edge
+    body_end = y_fb + body_d + pcb_clr;
+    tip0 = max(y1 - stop_t, body_end);          // tip behind the DB9 body can reach below the PCB
+    box(x - stop_w / 2, x + stop_w / 2, y_fw1 - eps, y1, body_h + pcb_clr, z_ceil + eps);
+    if (y1 > tip0) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);
 }
 
 // ---------------------------------------------------------------- ghosts
