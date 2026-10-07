@@ -41,20 +41,23 @@ printer. The two parts snap together, with no screws.
   - The lips on the XIAO clips have a 45° underside.
 - **Size:** 39.9 × 36.9 × 25.4 mm assembled, with the default `xiao_overhang = 5`. The top is 19.8 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.7 cm³ for the tray and 8.9 cm³ for the lid. That is roughly 17 g of PETG at 100 %, less with
+- **Material:** about 4.7 cm³ for the tray and 9.0 cm³ for the lid. That is roughly 17 g of PETG at 100 %, less with
   infill. Not sliced, so print time is not estimated.
 
 ## Exterior style: faceted pincushion
 
 The outside copies the look of the user's factory Radar360 case. The look is defined in
 `~/personal_scripts/ai-config/instructions/enclosure_styles.md`. `renders/style_plan.png`, `style_iso.png` and
-`style_side.png` show it from the same viewpoints as the reference renders.
+`style_side.png` show it. I compared them with the reference STLs, rendered from the same cameras. On the
+reference, the "triangular corner facets" are corner truncations rather than tall vertical chamfers, so the model
+follows that.
 
 | Feature | Parameter | Value |
 |---------|-----------|-------|
 | Side and rear faces bow inwards at mid-span (2 % of each face's length) | `sag_frac` | 0.02: 0.74 mm on the sides, 0.80 mm on the rear |
 | Each face is three flat facets: a flat middle third, sloping to the corners | `facet_flat` | 0.3 (0 gives a two-facet V) |
-| Vertical corner edges cut by 45° flat chamfers | `corner_chamfer` | 2.8 mm (7 % of the width) |
+| Each of the 8 corners cut off by a flat plane square to the body diagonal, leaving a triangular facet in plan, side and front views | `corner_facet` | 5.0 mm along each edge (12.5 % of the width) |
+| Small 45° bevel on the vertical corner edges between the facets | `corner_chamfer` | 1.5 mm |
 | Top and bottom perimeter edges chamfered at 45°, so the side profile is an elongated octagon | `edge_chamfer` | 1.5 mm |
 | Shadow-line groove on the lid just above the seam, interrupted at the snap fingers | `seam_reveal`, `reveal_d`, `reveal_h` | on, 0.45 deep × 0.5 tall |
 
@@ -70,9 +73,9 @@ Deliberate departures from the reference:
   - It is the datum the DB9 flange sits against, and it is what stops the case sliding back along the connector. A
     concave front would leave the case free to move about 0.8 mm.
   - The flange covers most of that face anyway.
-- **Corner chamfer of 2.8 mm** rather than the reference's ~10 % of the width. At the front corners, the tray side wall
-  beside the open DB9 face keeps exactly 1.2 mm with a 4.0 mm wall and a 2.8 mm chamfer. A larger chamfer needs a
-  thicker wall.
+- **Corner facets of 5 mm**, slightly smaller than the reference's ~15 %. The limit is the front bottom corners. There,
+  the floor, the front skin and the side wall meet beside the open DB9 face, and a 5 mm facet leaves 1.27 mm square to
+  the facet.
 
 What the style changed underneath:
 
@@ -84,6 +87,9 @@ What the style changed underneath:
 - **Height:** the lid is 1.6 mm taller (top 19.8 mm above the board). The 45° top chamfer would otherwise leave only
   0.5 mm of material over the USB overmould relief. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the
   antenna still has only a thin skin over it.
+  - The XIAO C-clips now hang from a rigid root block that reaches down to the old ceiling height
+    (`zx1 + xiao_top_clear`). Their flexing length, and so their snap force, is unchanged.
+  - The front stop struts are simply taller.
 - **Snap fingers:** every snap dimension is measured from `lc_face()`, the lowest point of the bowed side face over that
   clip.
   - Fingers are never thinner than 1.4 mm, and the wall behind each pocket is never thinner than 1.7 mm.
@@ -136,9 +142,12 @@ What the style changed underneath:
   - Each strut is a solid rib running from the lid front wall back to the XIAO edge, so the USB insertion force puts it
     in compression rather than bending a thin tab across its layer lines.
   - Load path: plug → XIAO → struts → lid front wall → DB9 hardware sockets, with the snaps tying the lid to the tray.
-  - Behind the DB9 body, the strut tip reaches 0.6 mm below the XIAO PCB.
-  - At `xiao_overhang` ≤ ~1.5, the XIAO front edge sits over the DB9 body. The strut can then only come down to the body
-    top + 0.2 mm, so it bears on just the top 0.8 mm of the 1.0 mm PCB edge.
+  - Behind the DB9 body, a lip on the back of each strut reaches 0.6 mm below the XIAO PCB, so the strut bears on the
+    full PCB edge.
+  - The lip has to fit between the XIAO edge and the DB9 body, and is left off if that gap is under 0.8 mm
+    (`stop_tip_min`). That happens at `xiao_overhang` below about 3.7, which is in the range you are likely to build.
+    The strut then comes down only to the body top + 0.2 mm, so it bears on the top 0.8 mm of the 1.0 mm PCB edge. The
+    model prints an `ECHO` note when this happens.
 - **Rear wall:** the rear wall wraps the USB-C receptacle in a slot (receptacle + 0.2 mm per side). The slot is open
   downwards so the XIAO can be pushed into the lid.
   - A tongue on the tray rear wall fills the slot under the receptacle once the case is closed.
@@ -225,6 +234,16 @@ The probe found and fixed these (most already existed before the restyle):
 - a 0.1 mm strut tip at `xiao_overhang = 3`
 - 0.4 mm webs at the ends of the seam groove
 
+The probe casts rays along face normals, so it does not measure distance square to a 45° face. I checked those cases by
+hand:
+
+- the front bottom corner facets (1.27 mm)
+- the bottom front chamfer against the front skin and gusset (1.2 mm)
+- the top chamfer over the USB relief (1.2 mm, by construction of `z_top`)
+
+A few probe readings come from rays grazing out of an edge, such as at a facet crease beside a snap finger, rather than
+from thin material. These show up in sweeps at other `xiao_overhang` values.
+
 **Positive control:** with `-D 'ghost_offset=[1,-1,0]'` (the XIAO ghost moved 1 mm into the clips and stops), `check_lid`
 reports about 9 mm³ of overlap. It is spread over the stop struts, a C-clip and the USB slot. This confirms that the
 check can see a collision.
@@ -250,7 +269,7 @@ reruns the interference checks.
 | 12 | XIAO outline and thickness | `xiao_l`, `xiao_w`, `xiao_pcb_t` | 21 × 17.8 × 1.0 | Pocket, clips. The outline is from the Seeed drawing (XIAO ESP32C3 page; the C6 uses the same outline per the Seeed wiki), not measured |
 | 13 | USB-C receptacle width × height, overhang past the XIAO PCB end | `usb_w`, `usb_h`, `usb_over` | 8.94 × 3.26, 1.5 | Rear-wall wrap and flush mouth |
 | 14 | Your USB-C cable's overmould size | `usb_recess_w`, `usb_recess_h` | 12 × 7 | Plug must seat fully |
-| 15 | Height of the tallest thing on top of the XIAO, plus the wire and solder blob height on the used pads | `xiao_top_clear` | 4.5 | Lid ceiling clearance (shield assumed 2.5, receptacle 3.26) |
+| 15 | Height of the tallest thing on top of the XIAO, plus the wire and solder blob height on the used pads | `xiao_top_clear` | 4.5 | Minimum lid ceiling clearance (shield assumed 2.5, receptacle 3.26). The ceiling is actually 6.7 mm above the XIAO because the USB relief sets the lid height. The XIAO clip roots come down to this value |
 | 16 | Positions of the ceramic antenna and the U.FL socket at the XIAO front end | `stop_x` | −3, +2 | Stop struts must miss both |
 
 ## Concerns to check before printing

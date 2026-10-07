@@ -98,7 +98,9 @@ usb_mouth_inset = 0.0;   // receptacle mouth to relief floor (0 = flush, plug pu
 sag_frac = 0.02;         // inward bow of each face at mid-span, as a fraction of that face's length
 front_sag = 0;           // the front face stays flat: it is the datum the DB9 flange sits against
 facet_flat = 0.3;        // flat middle facet as a fraction of each face (0 = two facets meeting in a V)
-corner_chamfer = 2.8;    // vertical corner chamfers, 45 degrees in plan (about 7 % of the width)
+corner_chamfer = 1.5;    // small vertical corner bevels, 45 degrees in plan
+corner_facet = 5.0;      // each of the 8 corners cut off by a plane square to the body diagonal: triangular
+                         // facets, leg length along each edge (about 12 % of the width, as on the reference)
 edge_chamfer = 1.5;      // top and bottom perimeter chamfers, 45 degrees (prints without support)
 seam_reveal = true;      // shadow-line groove on the lid just above the seam
 reveal_d = 0.45;
@@ -151,6 +153,7 @@ xc_hook = 0.6;
 stop_x = [-3.0, 2.0];
 stop_w = 3.0;
 stop_t = 1.6;            // depth of the part of the strut that reaches below the XIAO PCB
+stop_tip_min = 0.8;      // below this the tip is left off and the strut bears on the top 0.8 mm of the PCB edge
 
 $fn = 48;
 eps = 0.01;
@@ -225,13 +228,17 @@ bc_half = bc_w / 2 + bc_side_gap;
 echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_fb, " Z ", z_top - z_bot,
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
 echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front sag ", front_sag,
-         ", corner chamfer ", corner_chamfer, ", edge chamfer ", edge_chamfer,
+         ", corner chamfer ", corner_chamfer, ", corner facet ", corner_facet, ", edge chamfer ", edge_chamfer,
          ", snap faces at X ", [for (c = lc_ys) lc_face(c)]));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
 echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
 assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
+stop_tip = (yx0 - pcb_clr) - max(yx0 - pcb_clr - stop_t, y_fb + body_d + pcb_clr);
+if (stop_tip < stop_tip_min)
+    echo(str("ZEBCASE NOTE: XIAO front edge is ", stop_tip, " mm behind the DB9 body; stop struts bear on the top ",
+             zx1 - (body_h + pcb_clr), " mm of the PCB edge only"));
 for (y = bc_y_left)  if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
 for (y = bc_y_right) if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
 for (c = xc_list) {
@@ -263,7 +270,17 @@ module outer_solid() {
     faces = concat([[for (i = [0 : n - 1]) i]], [[for (i = [n - 1 : -1 : 0]) 3 * n + i]],
                    [for (k = [0 : 2]) for (i = [0 : n - 1])
                        [k * n + i, (k + 1) * n + i, (k + 1) * n + (i + 1) % n, k * n + (i + 1) % n]]);
-    polyhedron(pts, faces, convexity = 4);
+    difference() {
+        polyhedron(pts, faces, convexity = 4);
+        if (corner_facet > 0)
+            for (sx = [-1, 1], cy = [0, 1], cz = [0, 1]) {
+                B = [sx * x_out, cy ? y_out1 : y_fb, cz ? z_top : z_bot];
+                d = [-sx, cy ? -1 : 1, cz ? -1 : 1];            // inward along each axis
+                // tetrahedron: the facet triangle plus an apex well outside the corner
+                hull() polyhedron([B - d * 5, B + [d[0] * corner_facet, 0, 0], B + [0, d[1] * corner_facet, 0],
+                                   B + [0, 0, d[2] * corner_facet]], [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]]);
+            }
+    }
 }
 
 // shadow-line groove on the lid just above the seam, interrupted at the snap fingers
@@ -413,13 +430,17 @@ module presser(y) {
     box(x_in - press_reach, x_in, y - press_w / 2, y + press_w / 2, 0.1, split_z + eps);
 }
 
+xc_root = zx1 + xiao_top_clear;     // top of the XIAO clip flex length
 module xiao_clip(s, yc) {
     xe = xiao_w / 2 + pcb_clr;          // finger inner face
     z_hook_top = zx0 - 0.1;
     z_tip = z_hook_top - xc_hook - 0.5;
     z_lip = zx1 + 0.1;
     mirror([s < 0 ? 1 : 0, 0, 0]) {
-        box(xe, xe + xc_t, yc - xc_w / 2, yc + xc_w / 2, z_tip, z_ceil + eps);
+        box(xe, xe + xc_t, yc - xc_w / 2, yc + xc_w / 2, z_tip, xc_root + eps);
+        // rigid root from the ceiling down to xc_root, so the flexing length (and snap force) does not
+        // depend on how tall the lid is
+        if (z_ceil > xc_root) box(xe, xe + xc_t + 1.6, yc - xc_w / 2, yc + xc_w / 2, xc_root, z_ceil + eps);
         // hook under the PCB, lead-in facing down (towards the incoming board)
         xz_prism([[xe + eps, z_tip], [xe, z_tip], [xe - xc_hook, z_tip + xc_hook],
                   [xe - xc_hook, z_hook_top], [xe + eps, z_hook_top]], yc - xc_w / 2, yc + xc_w / 2);
@@ -437,7 +458,8 @@ module front_stop(x) {
     body_end = y_fb + body_d + pcb_clr;
     tip0 = max(y1 - stop_t, body_end);          // tip behind the DB9 body can reach below the PCB
     box(x - stop_w / 2, x + stop_w / 2, y_fw1 - eps, y1, body_h + pcb_clr, z_ceil + eps);
-    if (y1 - tip0 >= min_wall) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);   // no slivers
+    // the tip is a lip on the back of a solid strut, so two perimeters (stop_tip_min) is enough
+    if (y1 - tip0 >= stop_tip_min) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);
 }
 
 // ---------------------------------------------------------------- ghosts
