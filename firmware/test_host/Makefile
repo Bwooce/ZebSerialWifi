@@ -1,12 +1,12 @@
 # Host unit tests for the pure parsers in main/. No ESP-IDF needed.
 CC ?= cc
 CFLAGS = -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I../main
-SRCS = test_main.c ../main/zpl_status.c ../main/urlcodec.c
+SRCS = test_main.c ../main/zpl_status.c ../main/urlcodec.c ../main/netcfg.c
 
 all: build/test_main
 	./build/test_main
 
-build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h
+build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h ../main/netcfg.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(SRCS)
 

@@ -43,6 +43,27 @@ esp_err_t settings_set_options(const settings_options_t *opt);
 /* True for 0 (leave as is) and the standard rates 9600..115200. */
 bool settings_target_baud_valid(uint32_t baud);
 
+/* Network identity and addressing. Addresses are IPv4 in host byte order. */
+typedef struct {
+    char hostname[33];          /* DHCP hostname and mDNS <hostname>.local */
+    bool static_ip;
+    uint32_t ip;
+    uint32_t mask;
+    uint32_t gw;                /* 0 = none */
+    uint32_t dns;               /* 0 = use gw */
+} settings_net_t;
+
+#define SETTINGS_DEFAULT_HOSTNAME "zebserial"
+
+/* Saved network settings, or DHCP with the default hostname. */
+void settings_get_net(settings_net_t *out);
+
+/* Validates (hostname rules, subnet sanity) and saves. ESP_ERR_INVALID_ARG if invalid. */
+esp_err_t settings_set_net(const settings_net_t *net);
+
+/* Back to DHCP and the default hostname (used by the BOOT-button reset). */
+esp_err_t settings_clear_net(void);
+
 /* Small persistent flags (0/1), false when unset. */
 bool settings_get_flag(const char *key);
 esp_err_t settings_set_flag(const char *key, bool value);

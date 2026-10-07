@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include "zpl_status.h"
 #include "urlcodec.h"
+#include "netcfg.h"
 
 static int s_failures;
 static int s_checks;
@@ -222,6 +223,55 @@ static void test_hh_handshake(void)
     CHECK(!zpl_handshake_is_xon(""));
 }
 
+
+static void test_hostname(void)
+{
+    CHECK(netcfg_hostname_valid("zebserial"));
+    CHECK(netcfg_hostname_valid("zeb-2"));
+    CHECK(netcfg_hostname_valid("a"));
+    CHECK(!netcfg_hostname_valid(""));
+    CHECK(!netcfg_hostname_valid("-zeb"));
+    CHECK(!netcfg_hostname_valid("zeb-"));
+    CHECK(!netcfg_hostname_valid("Zeb"));
+    CHECK(!netcfg_hostname_valid("zeb serial"));
+    CHECK(!netcfg_hostname_valid("zeb.local"));
+    CHECK(netcfg_hostname_valid("abcdefghijklmnopqrstuvwxyz012345"));   /* 32 */
+    CHECK(!netcfg_hostname_valid("abcdefghijklmnopqrstuvwxyz0123456")); /* 33 */
+}
+
+static void test_ipv4_parse(void)
+{
+    uint32_t v;
+    CHECK(netcfg_ipv4_parse("192.168.1.20", &v) && v == 0xC0A80114u);
+    CHECK(netcfg_ipv4_parse("0.0.0.0", &v) && v == 0);
+    CHECK(netcfg_ipv4_parse("255.255.255.0", &v) && v == 0xFFFFFF00u);
+    CHECK(!netcfg_ipv4_parse("256.1.1.1", &v));
+    CHECK(!netcfg_ipv4_parse("1.2.3", &v));
+    CHECK(!netcfg_ipv4_parse("1.2.3.4.5", &v));
+    CHECK(!netcfg_ipv4_parse("1..3.4", &v));
+    CHECK(!netcfg_ipv4_parse(" 1.2.3.4", &v));
+    CHECK(!netcfg_ipv4_parse("1.2.3.4 ", &v));
+    CHECK(!netcfg_ipv4_parse("01.2.3.4", &v));   /* leading zeros are ambiguous (octal) */
+    CHECK(!netcfg_ipv4_parse("", &v));
+}
+
+static void test_static_valid(void)
+{
+    uint32_t ip, mask, gw;
+    netcfg_ipv4_parse("192.168.1.20", &ip);
+    netcfg_ipv4_parse("255.255.255.0", &mask);
+    netcfg_ipv4_parse("192.168.1.1", &gw);
+    CHECK(netcfg_static_valid(ip, mask, gw));
+    CHECK(netcfg_static_valid(ip, mask, 0));                  /* no gateway */
+    CHECK(!netcfg_static_valid(ip, mask, ip));                /* gw == ip */
+    CHECK(!netcfg_static_valid(ip, mask, 0xC0A80201u));       /* gw off-subnet */
+    CHECK(!netcfg_static_valid(0xC0A80100u, mask, gw));       /* network address */
+    CHECK(!netcfg_static_valid(0xC0A801FFu, mask, gw));       /* broadcast */
+    CHECK(!netcfg_static_valid(ip, 0xFF00FF00u, gw));         /* non-contiguous mask */
+    CHECK(!netcfg_static_valid(ip, 0, gw));
+    CHECK(!netcfg_static_valid(ip, 0xFFFFFFFFu, gw));
+}
+
 int main(void)
 {
     test_hs_ok();
@@ -234,6 +284,9 @@ int main(void)
     test_baud_candidates();
     test_sc_command();
     test_hh_handshake();
+    test_hostname();
+    test_ipv4_parse();
+    test_static_valid();
     printf("%d checks, %d failures\n", s_checks, s_failures);
     return s_failures ? 1 : 0;
 }

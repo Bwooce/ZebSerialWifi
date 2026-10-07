@@ -2,6 +2,7 @@
  * ZebSerialWifi: WiFi to RS232 bridge for a Zebra GK430t on a XIAO ESP32-C6.
  * Raw TCP 9100 <-> UART1 (MAX3232), advertised over mDNS as zebserial.local.
  */
+#include <stdio.h>
 #include "board.h"
 #include "bridge.h"
 #include "esp_app_desc.h"
@@ -25,9 +26,13 @@ static const char *TAG = "main";
 
 static void mdns_setup(void)
 {
+    settings_net_t net;
+    settings_get_net(&net);
+    char instance[64];
+    snprintf(instance, sizeof(instance), "ZebSerial GK430t (%s)", net.hostname);
     ESP_ERROR_CHECK(mdns_init());
-    mdns_hostname_set("zebserial");
-    mdns_instance_name_set("ZebSerial GK430t");
+    mdns_hostname_set(net.hostname);
+    mdns_instance_name_set(instance);
     mdns_txt_item_t txt[] = {
         {"txtvers", "1"},
         {"qtotal", "1"},
@@ -37,9 +42,10 @@ static void mdns_setup(void)
         {"usb_MDL", "GK430t"},
         {"note", "ZebSerialWifi"},
     };
-    mdns_service_add("ZebSerial GK430t", "_pdl-datastream", "_tcp", CONFIG_ZEB_TCP_PORT, txt,
+    mdns_service_add(instance, "_pdl-datastream", "_tcp", CONFIG_ZEB_TCP_PORT, txt,
                      sizeof(txt) / sizeof(txt[0]));
-    mdns_service_add("ZebSerial status", "_http", "_tcp", 80, NULL, 0);
+    mdns_service_add(instance, "_http", "_tcp", 80, NULL, 0);
+    ESP_LOGI(TAG, "mDNS: %s.local", net.hostname);
 }
 
 static void status_task(void *arg)
@@ -66,9 +72,10 @@ static void status_task(void *arg)
         if (board_button_pressed()) {
             held_ms += STATUS_TICK_MS;
             if (held_ms >= FACTORY_RESET_HOLD_MS) {
-                ESP_LOGW(TAG, "BOOT held for %d s: clearing WiFi credentials and rebooting",
+                ESP_LOGW(TAG, "BOOT held for %d s: clearing WiFi and network settings and rebooting",
                          FACTORY_RESET_HOLD_MS / 1000);
                 settings_clear_wifi();
+                settings_clear_net();
                 vTaskDelay(pdMS_TO_TICKS(200));
                 esp_restart();
             }

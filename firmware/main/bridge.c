@@ -165,13 +165,14 @@ static void serve(int sock)
 static void listen_task(void *arg)
 {
     (void)arg;
-    int ls = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    /* an IPv6 socket bound to the any-address also accepts IPv4 in lwIP (dual-stack) */
+    int ls = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     int one = 1;
     setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(CONFIG_ZEB_TCP_PORT),
-        .sin_addr.s_addr = htonl(INADDR_ANY),
+    struct sockaddr_in6 addr = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(CONFIG_ZEB_TCP_PORT),
+        .sin6_addr = IN6ADDR_ANY_INIT,
     };
     if (bind(ls, (struct sockaddr *)&addr, sizeof(addr)) != 0 || listen(ls, BACKLOG) != 0) {
         ESP_LOGE(TAG, "cannot listen on port %d: errno %d", CONFIG_ZEB_TCP_PORT, errno);
@@ -181,14 +182,20 @@ static void listen_task(void *arg)
     ESP_LOGI(TAG, "listening on port %d", CONFIG_ZEB_TCP_PORT);
 
     for (;;) {
-        struct sockaddr_in peer;
+        struct sockaddr_storage peer;
         socklen_t plen = sizeof(peer);
         int sock = accept(ls, (struct sockaddr *)&peer, &plen);
         if (sock < 0) {
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
-        inet_ntoa_r(peer.sin_addr, s_stats.client_ip, sizeof(s_stats.client_ip));
+        if (peer.ss_family == AF_INET) {
+            inet_ntop(AF_INET, &((struct sockaddr_in *)&peer)->sin_addr, s_stats.client_ip,
+                      sizeof(s_stats.client_ip));
+        } else {
+            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&peer)->sin6_addr, s_stats.client_ip,
+                      sizeof(s_stats.client_ip));
+        }
         if (!printer_link_acquire(pdMS_TO_TICKS(ACQUIRE_WAIT_MS))) {
             ESP_LOGW(TAG, "printer link busy, rejecting %s", s_stats.client_ip);
             close(sock);

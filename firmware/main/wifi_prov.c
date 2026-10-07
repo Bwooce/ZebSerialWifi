@@ -9,6 +9,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "lwip/inet.h"
 #include "settings.h"
 
 static const char *TAG = "wifi";
@@ -25,6 +26,26 @@ static char s_ssid[SETTINGS_SSID_MAX];
 static char s_ap_ssid[20];
 static esp_timer_handle_t s_fallback_timer;
 static esp_timer_handle_t s_retry_timer;
+static settings_net_t s_net;
+
+static void apply_static_ip(void)
+{
+    esp_netif_ip_info_t info = {
+        .ip.addr = htonl(s_net.ip),
+        .netmask.addr = htonl(s_net.mask),
+        .gw.addr = htonl(s_net.gw),
+    };
+    esp_err_t err = esp_netif_set_ip_info(s_sta_netif, &info);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "static IP: %s", esp_err_to_name(err));
+        return;
+    }
+    uint32_t dns = s_net.dns ? s_net.dns : s_net.gw;
+    if (dns) {
+        esp_netif_dns_info_t d = {.ip.type = ESP_IPADDR_TYPE_V4, .ip.u_addr.ip4.addr = htonl(dns)};
+        esp_netif_set_dns_info(s_sta_netif, ESP_NETIF_DNS_MAIN, &d);
+    }
+}
 
 /* Set the mode with both interfaces at 20 MHz; 40 MHz would force the station down from 11ax to 11n. */
 static void set_mode(wifi_mode_t mode)
@@ -101,6 +122,14 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         if (s_have_creds) {
             esp_wifi_connect();
         }
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+        esp_netif_create_ip6_linklocal(s_sta_netif);
+        if (s_net.static_ip) {
+            apply_static_ip();  /* posts IP_EVENT_STA_GOT_IP */
+        }
+    } else if (base == IP_EVENT && id == IP_EVENT_GOT_IP6) {
+        ip_event_got_ip6_t *e = data;
+        ESP_LOGI(TAG, "got IPv6 " IPV6STR, IPV62STR(e->ip6_info.ip));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *d = data;
         if (s_state == WIFI_ST_CONNECTED) {
@@ -125,7 +154,12 @@ void wifi_prov_start(void)
 {
     s_sta_netif = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
-    esp_netif_set_hostname(s_sta_netif, "zebserial");
+    settings_get_net(&s_net);
+    esp_netif_set_hostname(s_sta_netif, s_net.hostname);
+    if (s_net.static_ip) {
+        esp_netif_dhcpc_stop(s_sta_netif);
+        ESP_LOGI(TAG, "static IP " IPSTR, IP2STR(&(esp_ip4_addr_t){.addr = htonl(s_net.ip)}));
+    }
 
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
@@ -136,6 +170,7 @@ void wifi_prov_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, on_event, NULL));
 
     const esp_timer_create_args_t fb = {.callback = fallback_cb, .name = "wifi_fb"};
     ESP_ERROR_CHECK(esp_timer_create(&fb, &s_fallback_timer));
@@ -191,6 +226,20 @@ void wifi_prov_ip(char out[16])
     if (s_state == WIFI_ST_CONNECTED && esp_netif_get_ip_info(s_sta_netif, &info) == ESP_OK) {
         snprintf(out, 16, IPSTR, IP2STR(&info.ip));
     }
+}
+
+int wifi_prov_ip6(char out[WIFI_PROV_IP6_MAX][46])
+{
+    if (s_state != WIFI_ST_CONNECTED) {
+        return 0;
+    }
+    esp_ip6_addr_t addrs[LWIP_IPV6_NUM_ADDRESSES];
+    int n = esp_netif_get_all_ip6(s_sta_netif, addrs);
+    int k = 0;
+    for (int i = 0; i < n && k < WIFI_PROV_IP6_MAX; i++) {
+        snprintf(out[k++], 46, IPV6STR, IPV62STR(addrs[i]));
+    }
+    return k;
 }
 
 const char *wifi_prov_ssid(void)

@@ -3,6 +3,7 @@
  * WiFi station with SoftAP provisioning fallback. With no saved credentials,
  * or no IP within 60 s, an open AP "ZebSerial-XXXX" serves the setup page.
  */
+#include <stdbool.h>
 #include "esp_wifi_types.h"
 
 typedef enum {
@@ -21,6 +22,10 @@ bool wifi_prov_ap_active(void);
 
 int wifi_prov_rssi(void);
 void wifi_prov_ip(char out[16]);
+
+#define WIFI_PROV_IP6_MAX 3
+/* IPv6 addresses of the station (link-local and SLAAC), as text. Returns how many. */
+int wifi_prov_ip6(char out[WIFI_PROV_IP6_MAX][46]);
 const char *wifi_prov_ssid(void);
 const char *wifi_prov_ap_ssid(void);
 

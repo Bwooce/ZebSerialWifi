@@ -8,7 +8,7 @@
 
 typedef struct {
     bool active;
-    char client_ip[16];       /* current or last client */
+    char client_ip[46];       /* current or last client, IPv4 or IPv6 */
     uint32_t sessions;
     uint32_t aborted;         /* sessions dropped because the printer stalled */
     uint64_t bytes_to_printer;

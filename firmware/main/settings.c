@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include "nvs.h"
+#include "netcfg.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
@@ -174,6 +175,90 @@ esp_err_t settings_set_flag(const char *key, bool value)
     if (err == ESP_OK) {
         err = nvs_commit(h);
     }
+    nvs_close(h);
+    return err;
+}
+
+void settings_get_net(settings_net_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    strlcpy(out->hostname, SETTINGS_DEFAULT_HOSTNAME, sizeof(out->hostname));
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    char name[sizeof(out->hostname)];
+    size_t len = sizeof(name);
+    if (nvs_get_str(h, "hostname", name, &len) == ESP_OK && netcfg_hostname_valid(name)) {
+        strlcpy(out->hostname, name, sizeof(out->hostname));
+    }
+    uint8_t st = 0;
+    uint32_t ip = 0;
+    uint32_t mask = 0;
+    uint32_t gw = 0;
+    uint32_t dns = 0;
+    nvs_get_u8(h, "static_ip", &st);
+    nvs_get_u32(h, "ip", &ip);
+    nvs_get_u32(h, "mask", &mask);
+    nvs_get_u32(h, "gw", &gw);
+    nvs_get_u32(h, "dns", &dns);
+    nvs_close(h);
+    /* only trust a static config that still validates */
+    if (st && netcfg_static_valid(ip, mask, gw)) {
+        out->static_ip = true;
+        out->ip = ip;
+        out->mask = mask;
+        out->gw = gw;
+        out->dns = dns;
+    }
+}
+
+esp_err_t settings_set_net(const settings_net_t *net)
+{
+    if (!netcfg_hostname_valid(net->hostname) ||
+        (net->static_ip && !netcfg_static_valid(net->ip, net->mask, net->gw))) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_str(h, "hostname", net->hostname);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, "static_ip", net->static_ip ? 1 : 0);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "ip", net->ip);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "mask", net->mask);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "gw", net->gw);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "dns", net->dns);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t settings_clear_net(void)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    static const char *keys[] = {"hostname", "static_ip", "ip", "mask", "gw", "dns"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        nvs_erase_key(h, keys[i]);
+    }
+    err = nvs_commit(h);
     nvs_close(h);
     return err;
 }
