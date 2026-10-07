@@ -87,43 +87,88 @@ void board_init(void)
     ESP_ERROR_CHECK(esp_timer_start_periodic(timer, LED_TICK_MS * 1000));
 }
 
-bool board_detect_uart_pins(int *tx, int *rx)
+typedef enum { PIN_FLOATING, PIN_DRIVEN_LOW, PIN_DRIVEN_HIGH, PIN_MIXED } pin_state_t;
+
+/* Fraction of samples reading high with the given pull, 0..20. */
+static int sample_high(int gpio, bool pull_up)
 {
     gpio_config_t in = {
-        .pin_bit_mask = (1ULL << GPIO_UART_A) | (1ULL << GPIO_UART_B),
+        .pin_bit_mask = 1ULL << gpio,
         .mode = GPIO_MODE_INPUT,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = pull_up ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = pull_up ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
     };
-    ESP_ERROR_CHECK(gpio_config(&in));
-    esp_rom_delay_us(2000);
-
-    /* sample several times so a byte arriving from the printer does not fool us */
-    int high_a = 0;
-    int high_b = 0;
-    const int samples = 20;
-    for (int i = 0; i < samples; i++) {
-        high_a += gpio_get_level(GPIO_UART_A);
-        high_b += gpio_get_level(GPIO_UART_B);
-        esp_rom_delay_us(500);
+    gpio_config(&in);
+    esp_rom_delay_us(1000);
+    int high = 0;
+    for (int i = 0; i < 20; i++) {
+        high += gpio_get_level(gpio);
+        esp_rom_delay_us(250);
     }
-    gpio_reset_pin(GPIO_UART_A);
-    gpio_reset_pin(GPIO_UART_B);
+    return high;
+}
 
-    bool a_high = high_a > samples * 3 / 4;
-    bool b_high = high_b > samples * 3 / 4;
-    bool a_low = high_a < samples / 4;
-    bool b_low = high_b < samples / 4;
-    if (a_high && b_low) {
+/*
+ * A pin that reads the same with a pull-up and a pull-down is being driven by
+ * something else; one that follows the pull is floating. MIXED means it is
+ * toggling (data arriving) and the test should not be trusted.
+ */
+static pin_state_t probe_pin(int gpio)
+{
+    int up = sample_high(gpio, true);
+    int down = sample_high(gpio, false);
+    gpio_reset_pin(gpio);
+    if (up == 20 && down == 20) {
+        return PIN_DRIVEN_HIGH;
+    }
+    if (up == 0 && down == 0) {
+        return PIN_DRIVEN_LOW;
+    }
+    if (up == 20 && down == 0) {
+        return PIN_FLOATING;
+    }
+    return PIN_MIXED;
+}
+
+static const char *pin_state_name(pin_state_t s)
+{
+    static const char *names[] = {"floating", "driven low", "driven high", "toggling"};
+    return names[s];
+}
+
+/* XIAO pad names and GPIOs, for the wiring diagnostic. */
+static const struct {
+    const char *pad;
+    int gpio;
+} XIAO_PADS[] = {
+    {"D0", 0}, {"D1", 1}, {"D2", 2}, {"D3", 21}, {"D4", 22}, {"D5", 23},
+    {"D6", 16}, {"D7", 17}, {"D8", 19}, {"D9", 20}, {"D10", 18},
+};
+
+bool board_detect_uart_pins(int *tx, int *rx)
+{
+    pin_state_t a = probe_pin(GPIO_UART_A);
+    pin_state_t b = probe_pin(GPIO_UART_B);
+    ESP_LOGI(TAG, "D4/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B, pin_state_name(b));
+
+    /* MAX3232 R1OUT idles high (RS232 input open or at mark); T1IN is an undriven input */
+    if (a == PIN_DRIVEN_HIGH && b != PIN_DRIVEN_HIGH) {
         *rx = GPIO_UART_A;
         *tx = GPIO_UART_B;
-    } else if (b_high && a_low) {
+    } else if (b == PIN_DRIVEN_HIGH && a != PIN_DRIVEN_HIGH) {
         *rx = GPIO_UART_B;
         *tx = GPIO_UART_A;
     } else {
         *tx = CONFIG_ZEB_UART_TX_GPIO;
         *rx = CONFIG_ZEB_UART_RX_GPIO;
-        ESP_LOGW(TAG, "UART pin detection inconclusive (GPIO%d high %d/%d, GPIO%d high %d/%d), using defaults",
-                 GPIO_UART_A, high_a, samples, GPIO_UART_B, high_b, samples);
+        ESP_LOGW(TAG, "UART pin detection inconclusive, using TX=GPIO%d RX=GPIO%d. "
+                      "Check the module has power and its TXD pin goes to D4 or D5.", *tx, *rx);
+        for (size_t i = 0; i < sizeof(XIAO_PADS) / sizeof(XIAO_PADS[0]); i++) {
+            pin_state_t s = probe_pin(XIAO_PADS[i].gpio);
+            if (s != PIN_FLOATING) {
+                ESP_LOGW(TAG, "  pad %s (GPIO%d) is %s", XIAO_PADS[i].pad, XIAO_PADS[i].gpio, pin_state_name(s));
+            }
+        }
         return false;
     }
     ESP_LOGI(TAG, "UART pins detected: TX=GPIO%d RX=GPIO%d", *tx, *rx);
