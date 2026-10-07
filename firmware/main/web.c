@@ -1,6 +1,7 @@
 #include "web.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "bridge.h"
 #include "esp_app_desc.h"
@@ -8,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "netcfg.h"
 #include "printer_link.h"
 #include "settings.h"
 #include "urlcodec.h"
@@ -44,6 +46,8 @@ static const char PAGE_HEAD[] =
     "td{padding:.15em .6em .15em 0;vertical-align:top}td:first-child{opacity:.7}"
     "form.inline{display:inline-block;width:48%}"
     "h2 svg{width:1.6em;height:1.6em;vertical-align:middle;margin:0 .35em .15em 0}"
+    "fieldset{border:1px solid #8884;margin:1em 0;padding:.5em 1em}label small{opacity:.7}"
+    "input[type=checkbox]{width:auto}"
     "</style></head><body>";
 static const char PAGE_TAIL[] = "</body></html>";
 
@@ -136,7 +140,7 @@ static esp_err_t send_setup_page(httpd_req_t *req)
 }
 
 static const char STATUS_BODY[] =
-    "<h2>" LOGO_SVG "ZebSerial</h2><table id=t></table>"
+    "<h2>" LOGO_SVG "ZebSerial</h2><table id=t></table><p><a href=/settings>Settings</a></p>"
     "<form class=inline method=post action=/redetect><button>Re-detect printer</button></form> "
     "<form class=inline method=post action=/forget onsubmit=\"return confirm('Forget WiFi and reboot into setup mode?')\">"
     "<button>Forget WiFi</button></form>"
@@ -147,7 +151,9 @@ static const char STATUS_BODY[] =
     "function flags(h){var f=[];for(var k in h)if(h[k]===true)f.push(k.replace('_',' '));return f.length?f.join(', '):'ok'}"
     "async function upd(){try{var s=await(await fetch('/api/status')).json();var p=s.printer,b=s.bridge;"
     "document.getElementById('t').innerHTML="
-    "row('WiFi',s.wifi.ssid+' '+s.wifi.ip+' ('+s.wifi.rssi+' dBm)')+"
+    "row('WiFi',s.wifi.ssid+' ('+s.wifi.rssi+' dBm)')+"
+    "row('Address',s.wifi.hostname+'.local, '+s.wifi.ip+(s.wifi.static_ip?' (static)':' (DHCP)'))+"
+    "row('IPv6',s.wifi.ip6.length?s.wifi.ip6.join('<br>'):'none')+"
     "row('Printer',p.detected?('detected at '+p.baud+' baud'):('not detected (trying '+p.baud+')'))+"
     "row('Status',p.hs_valid?flags(p.hs)+' ('+Math.round(p.hs_age_ms/1000)+' s ago)':'unknown')+"
     "row('Handshake',p.handshake||'unknown')+"
@@ -239,9 +245,24 @@ static esp_err_t status_get(httpd_req_t *req)
     ssid_esc[o] = '\0';
     const esp_app_desc_t *app = esp_app_get_description();
 
-    char json[1024];
+    settings_net_t net;
+    settings_options_t opt;
+    settings_get_net(&net);
+    settings_get_options(&opt);
+    char ip6[WIFI_PROV_IP6_MAX][46];
+    int n6 = wifi_prov_ip6(ip6);
+    char ip6_json[WIFI_PROV_IP6_MAX * 50 + 4] = "[";
+    for (int i = 0; i < n6; i++) {
+        size_t l = strlen(ip6_json);
+        snprintf(ip6_json + l, sizeof(ip6_json) - l, "%s\"%s\"", i ? "," : "", ip6[i]);
+    }
+    strlcat(ip6_json, "]", sizeof(ip6_json));
+
+    char json[1600];
     snprintf(json, sizeof(json),
-             "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d},"
+             "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"hostname\":\"%s\",\"static_ip\":%s,"
+             "\"ip6\":%s},"
+             "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
              "\"printer\":{\"detected\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
              "\"hs_valid\":%s,\"hs_age_ms\":%lld,\"hs\":{\"paper_out\":%s,\"pause\":%s,\"head_up\":%s,"
              "\"ribbon_out\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
@@ -249,7 +270,8 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"bridge\":{\"active\":%s,\"client_ip\":\"%s\",\"sessions\":%lu,\"aborted\":%lu,"
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
-             ssid_esc, ip, wifi_prov_rssi(), p.detected ? "true" : "false", (unsigned long)p.baud, p.handshake,
+             ssid_esc, ip, wifi_prov_rssi(), net.hostname, net.static_ip ? "true" : "false", ip6_json,
+             (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false", (unsigned long)p.baud, p.handshake,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
              p.hs.paper_out ? "true" : "false", p.hs.pause ? "true" : "false", p.hs.head_up ? "true" : "false",
              p.hs.ribbon_out ? "true" : "false", p.hs.buffer_full ? "true" : "false",
@@ -262,6 +284,163 @@ static esp_err_t status_get(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_sendstr(req, json);
+}
+
+static esp_err_t redirect_home(httpd_req_t *req);
+
+static void ip_str(uint32_t v, char out[16])
+{
+    if (v == 0) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, 16, "%lu.%lu.%lu.%lu", (unsigned long)(v >> 24), (unsigned long)(v >> 16 & 255),
+             (unsigned long)(v >> 8 & 255), (unsigned long)(v & 255));
+}
+
+static esp_err_t settings_get_page(httpd_req_t *req)
+{
+    settings_options_t opt;
+    settings_net_t net;
+    settings_get_options(&opt);
+    settings_get_net(&net);
+    char ip[16];
+    char mask[16];
+    char gw[16];
+    char dns[16];
+    ip_str(net.ip, ip);
+    ip_str(net.mask, mask);
+    ip_str(net.gw, gw);
+    ip_str(net.dns, dns);
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    char buf[1536];
+    snprintf(buf, sizeof(buf),
+             "<h2>" LOGO_SVG "ZebSerial settings</h2><form method=post action=/config>"
+             "<fieldset><legend>Printer</legend>"
+             "<label>Printer baud <small>(the printer is moved to this rate at detection)</small></label>"
+             "<select name=baud>"
+             "<option value=115200%s>115200</option><option value=57600%s>57600</option>"
+             "<option value=38400%s>38400</option><option value=19200%s>19200</option>"
+             "<option value=9600%s>9600</option><option value=0%s>Leave the printer as it is</option></select>",
+             opt.target_baud == 115200 ? " selected" : "", opt.target_baud == 57600 ? " selected" : "",
+             opt.target_baud == 38400 ? " selected" : "", opt.target_baud == 19200 ? " selected" : "",
+             opt.target_baud == 9600 ? " selected" : "", opt.target_baud == 0 ? " selected" : "");
+    httpd_resp_sendstr_chunk(req, buf);
+    snprintf(buf, sizeof(buf),
+             "<label>UART pins <small>(reboots)</small></label><select name=pins>"
+             "<option value=0%s>Detect at boot</option>"
+             "<option value=1%s>TX on D4, RX on D5</option>"
+             "<option value=2%s>TX on D5, RX on D4</option></select>"
+             "<label>Close an idle print connection after (seconds, %d to %d)</label>"
+             "<input name=idle type=number min=%d max=%d value=%u></fieldset>",
+             opt.pins == SETTINGS_PINS_AUTO ? " selected" : "", opt.pins == SETTINGS_PINS_TX_D4 ? " selected" : "",
+             opt.pins == SETTINGS_PINS_TX_D5 ? " selected" : "", SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S,
+             SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S, (unsigned)opt.idle_timeout_s);
+    httpd_resp_sendstr_chunk(req, buf);
+    snprintf(buf, sizeof(buf),
+             "<fieldset><legend>Network <small>(changes reboot)</small></legend>"
+             "<label>Hostname <small>(lower case, digits, hyphens; reached as name.local)</small></label>"
+             "<input name=hostname maxlength=32 pattern='[a-z0-9]([a-z0-9-]*[a-z0-9])?' value='%s'>"
+             "<label><input type=checkbox name=static value=1%s> Static IPv4 address "
+             "<small>(otherwise DHCP; IPv6 is automatic)</small></label>"
+             "<label>Address</label><input name=ip value='%s' placeholder='192.168.1.50'>"
+             "<label>Netmask</label><input name=mask value='%s' placeholder='255.255.255.0'>"
+             "<label>Gateway</label><input name=gw value='%s' placeholder='192.168.1.1'>"
+             "<label>DNS <small>(blank uses the gateway)</small></label><input name=dns value='%s'>"
+             "</fieldset><button type=submit>Save</button></form>"
+             "<p><a href=/>Back to status</a></p>"
+             "<p><small>Holding the BOOT button for 5 s clears WiFi and network settings.</small></p>",
+             net.hostname, net.static_ip ? " checked" : "", ip, mask, gw, dns);
+    httpd_resp_sendstr_chunk(req, buf);
+    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
+    return httpd_resp_sendstr_chunk(req, NULL);
+}
+
+static esp_err_t config_post(httpd_req_t *req)
+{
+    char body[BODY_MAX + 1];
+    if (req->content_len > BODY_MAX) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "form too large");
+    }
+    int got = 0;
+    while (got < (int)req->content_len) {
+        int r = httpd_req_recv(req, body + got, req->content_len - got);
+        if (r <= 0) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "read failed");
+        }
+        got += r;
+    }
+    body[got] = '\0';
+
+    settings_options_t old_opt;
+    settings_net_t old_net;
+    settings_get_options(&old_opt);
+    settings_get_net(&old_net);
+    settings_options_t opt = old_opt;
+    settings_net_t net = old_net;
+    char v[40];
+
+    if (form_get(body, "baud", v, sizeof(v))) {
+        opt.target_baud = (uint32_t)strtoul(v, NULL, 10);
+    }
+    if (form_get(body, "pins", v, sizeof(v))) {
+        opt.pins = (settings_pins_t)atoi(v);
+    }
+    if (form_get(body, "idle", v, sizeof(v))) {
+        long idle = strtol(v, NULL, 10);
+        opt.idle_timeout_s = (idle < 0 || idle > 65535) ? 0 : (uint16_t)idle;
+    }
+    if (form_get(body, "hostname", v, sizeof(v))) {
+        strlcpy(net.hostname, v, sizeof(net.hostname));
+    }
+    net.static_ip = form_get(body, "static", v, sizeof(v)) && strcmp(v, "1") == 0;
+    if (net.static_ip) {
+        const char *keys[] = {"ip", "mask", "gw", "dns"};
+        uint32_t *dst[] = {&net.ip, &net.mask, &net.gw, &net.dns};
+        for (int i = 0; i < 4; i++) {
+            *dst[i] = 0;
+            if (form_get(body, keys[i], v, sizeof(v)) && v[0] != '\0' && !netcfg_ipv4_parse(v, dst[i])) {
+                snprintf(body, sizeof(body), "%s is not a valid IPv4 address", keys[i]);
+                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, body);
+            }
+        }
+    }
+
+    if (settings_set_options(&opt) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "printer settings out of range");
+    }
+    if (settings_set_net(&net) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "invalid hostname, or the static address, netmask and gateway do not fit together");
+    }
+    printer_link_set_target_baud(opt.target_baud);
+
+    bool reboot = opt.pins != old_opt.pins || strcmp(net.hostname, old_net.hostname) != 0 ||
+                  net.static_ip != old_net.static_ip ||
+                  (net.static_ip && (net.ip != old_net.ip || net.mask != old_net.mask || net.gw != old_net.gw ||
+                                     net.dns != old_net.dns));
+    ESP_LOGI(TAG, "settings saved: baud %lu, pins %d, idle %u s, host %s, %s%s", (unsigned long)opt.target_baud,
+             (int)opt.pins, (unsigned)opt.idle_timeout_s, net.hostname, net.static_ip ? "static" : "DHCP",
+             reboot ? ", rebooting" : "");
+    if (!reboot) {
+        return redirect_home(req);
+    }
+    char ip[16];
+    ip_str(net.ip, ip);
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             "<p>Saved. Rebooting. Reconnect at <a href='http://%s.local/'>http://%s.local/</a>%s%s%s.</p>",
+             net.hostname, net.hostname, net.static_ip ? " or <a href='http://" : "", net.static_ip ? ip : "",
+             net.static_ip ? "/'>that address</a>" : "");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(req, msg);
+    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
+    httpd_resp_sendstr_chunk(req, NULL);
+    restart_soon();
+    return ESP_OK;
 }
 
 static esp_err_t favicon_get(httpd_req_t *req)
@@ -320,6 +499,8 @@ void web_start(void)
         {.uri = "/save", .method = HTTP_POST, .handler = save_post},
         {.uri = "/api/status", .method = HTTP_GET, .handler = status_get},
         {.uri = "/favicon.svg", .method = HTTP_GET, .handler = favicon_get},
+        {.uri = "/settings", .method = HTTP_GET, .handler = settings_get_page},
+        {.uri = "/config", .method = HTTP_POST, .handler = config_post},
         {.uri = "/redetect", .method = HTTP_POST, .handler = redetect_post},
         {.uri = "/forget", .method = HTTP_POST, .handler = forget_post},
     };
