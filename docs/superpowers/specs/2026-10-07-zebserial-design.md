@@ -205,6 +205,27 @@ because it flexes for snap-fits without cracking.
 - PNG renders from several angles for review before printing.
 - A one-page fit-check list of the measurements to confirm with calipers.
 
+## Changes made during implementation (2026-10-07)
+
+- **TX/RX detection:** each pin is probed with a pull-up and then a pull-down, which classifies it as driven high,
+  driven low or floating. RX is the pin driven high. When the result is inconclusive, every XIAO pad is reported.
+- **Fallback baud:** if no candidate answers, the UART returns to the last saved baud, or 9600 (the GK420t factory
+  default) if none is saved. It is never left on the last baud it tried.
+- **SGD fallback probe:** a second probe, `! U1 getvar "device.languages"`, also counts as detection, so a printer in EPL
+  mode is still found. Probe replies that don't parse are hex-dumped to the log.
+- **Status polling:** instead of the "3 failed sessions" heuristic, `~HS` is polled every 30 s while no client is
+  connected. 3 failed polls trigger a rescan.
+- **Second client:** a second client waits in the listen backlog (4 deep) until the first finishes, rather than being
+  closed. Jobs are queued instead of failing.
+- **Stalls:** the fixed 30 s limit is gone. A printer holding XOFF (paper out, head up) is waited out for as long as the
+  client is alive. TCP keepalive (10 s idle, 5 s interval, 3 probes) detects a dead client. The job is discarded only
+  when the client is gone, or after 30 minutes.
+- **WiFi bandwidth:** both interfaces are fixed at 20 MHz, so the station stays on 802.11ax while the setup AP runs.
+- **Setup page scan:** the WiFi scan is cached for 60 s, with a "Scan again" link.
+- **Build verification:** a build is checked by the `ELF file SHA256` line in the boot log, matched against
+  `shasum -a 256 build/zebserial.elf`. The version string only updates when CMake reconfigures.
+- **Partition table:** single-app large (1.5 MB) with size optimisation. The image is about 0.95 MB.
+
 ## Out of scope
 
 - OTA updates: USB-C is accessible.
