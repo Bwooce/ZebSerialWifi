@@ -7,6 +7,8 @@ on pixel boundaries at 16 px. The mark itself spans 56 units, so at the 22 mm de
 and the 0.8 mm minimum stroke/gap for a 0.4 mm nozzle is 2.0 units.
 
 Usage: python3 make_logo.py [font.ttf]
+After changing the mark, update LOGO_D in firmware/main/web.c and, if the outline moved, logo_svg_w / logo_svg_c in
+enclosure/zebserial_case.scad (the imported bounding box, which OpenSCAD reports for import() of the deboss SVG).
 The wordmark uses Liberation Sans Bold (SIL OFL), converted to paths, so the SVGs need no font.
 """
 import math
@@ -60,10 +62,6 @@ def rounded_poly(pts, r):
         out.append(("L" if out else "M") + pt(t0))
         out.append(f"A{f(r)} {f(r)} 0 0 1 {pt(t1)}")
     return "".join(out) + "Z"
-
-
-def circle(c, r):
-    return f"M{f(c[0] - r)} {f(c[1])}a{f(r)} {f(r)} 0 1 0 {f(2 * r)} 0a{f(r)} {f(r)} 0 1 0 {f(-2 * r)} 0Z"
 
 
 def band(ri, ro):
