@@ -93,7 +93,7 @@ step_w = -1;             // -1 = body_w
 lug_h = 3.4;             // measured
 lug_end = 12.0;          // measured: flange FRONT face to the lug rear faces
 lug_hole_y = 4.6;        // measured: hole centre behind the flange front face
-lug_hole_x = -1;         // hole centre |X|; -1 = fl_hole_pitch / 2 (NOT measured, print-blocking)
+lug_hole_x = 12.45;      // measured: leg centres about 24.9 apart (approximate, so the pockets keep +-1 mm extra in X)
 lug_hole_d = 2.5;        // only used by the (off) pins
 lug_hole_depth = 3.4;    // ghost only
 // The "holes" are filled by metal board-lock legs soldered to the PCB, so the lid pins cannot be used.

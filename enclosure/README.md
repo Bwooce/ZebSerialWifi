@@ -109,16 +109,15 @@ What the style changed underneath:
   - The PCB front edge is flush with the flange front face, so the PCB runs under the 0.38 mm flange. It sticks out
     0.38 mm ahead of the case front face, below the flange.
   - Board-lock legs: the lug "screw holes" are filled by soldered metal legs at Y 4.6. Their tails are round, 3.1 mm
-    across, and stick out 3.0 mm below the PCB, so their tips reach the tray floor top.
-- **Not measured:**
-  - The leg X position, assumed ±12.5, under the flange screw holes (`lug_hole_x`). The pockets are slotted to
-    tolerate an error of about 1 mm.
-  - Whether there is a step behind the flange. The user mentioned none, so `step_on = false`.
+    across, and stick out 3.0 mm below the PCB, so their tips reach the tray floor top. The leg centres are about
+    24.9 mm apart (`lug_hole_x = 12.45`). That is approximate, so the pockets keep their ±1 mm extra in X.
+- **Not measured:** whether there is a step behind the flange. The user mentioned none, so `step_on = false`.
 - **Case front face:** the plane of the flange back. It stops the case moving forwards.
 - **Anti-slide: leg-tail pockets** (`leg_pocket_on = true`). Each board-lock leg tail drops into a slot in the tray.
   That locks the board, and with it the case, fore-aft in both directions, so pulling a USB plug out (6–20 N) cannot
   slide the case off the connector.
-  - **Slots:** 0.3 mm clearance in Y (fore-aft, the direction that matters) and 0.3 + 1.0 mm each way in X, with a
+  - **Slots:** 0.3 mm clearance in Y (fore-aft, the direction that matters) and 0.3 + 1.0 mm each way in X (the leg
+    spacing is only approximately measured), with a
     0.6 mm 45° lead-in so the board drops in.
   - **Positive controls:** the legs shifted ±0.25 mm in Y give no contact; ±0.35 hits. The legs shifted ±0.9 mm in X
     give no contact.
@@ -346,9 +345,8 @@ and the wire zones are enforced.
 
 ## Fit-check list
 
-Everything the case depends on is now measured or tolerated:
+Everything the case depends on is now measured. The one open note:
 
-- **Leg X position:** `lug_hole_x` is not measured, but the slots tolerate ±1 mm in X.
 - **Step:** the user mentioned no step behind the flange, so `step_on = false`. If there is one, set `step_on`,
   `step_h` and `step_d`, then rerun `./build.sh`.
 
