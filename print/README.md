@@ -1,6 +1,6 @@
 # Print project (Bambu Lab H2D)
 
-`zebserial_case.3mf` is a Bambu Studio project with the tray and the lid on one plate, already sliced: about 66 min and 15.9 g of PETG, sliced from the enclosure at commit 0ddd40f. Open it in Bambu
+`zebserial_case.3mf` is a Bambu Studio project with the tray and the lid on one plate, already sliced: about 62 min and 15.5 g of PETG, sliced from the enclosure at commit 7a8dd04. Open it in Bambu
 Studio and print, or re-slice after changing anything.
 
 ## Settings and why
