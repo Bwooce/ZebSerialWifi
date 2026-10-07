@@ -15,8 +15,16 @@ static const char *TAG = "bridge";
 #define CHUNK 1024
 #define BACKLOG 4
 #define ACQUIRE_WAIT_MS 15000
-#define STALL_LIMIT_MS 30000
-#define DRAIN_LIMIT_MS 60000
+/*
+ * A printer out of paper or ribbon, or with the head up, holds XOFF until
+ * someone fixes it, so a stall alone is no reason to drop the job. The job is
+ * abandoned only when the client is gone (TCP keepalive notices a dead peer)
+ * or after this safety limit.
+ */
+#define STALL_LIMIT_MS (30 * 60 * 1000)
+#define KEEPALIVE_IDLE_S 10
+#define KEEPALIVE_INTVL_S 5
+#define KEEPALIVE_COUNT 3
 
 static bridge_stats_t s_stats;
 
@@ -39,12 +47,24 @@ static bool pump_from_printer(int sock, TickType_t wait)
 }
 
 /*
- * Write all n bytes to the printer. Returns false if the printer made no
- * progress for STALL_LIMIT_MS (XOFF held, cable pulled).
+ * False once the peer has gone away. A half-closed socket (recv returns 0) is
+ * still alive: CUPS shuts down its sending side and then waits for our EOF.
+ */
+static bool client_alive(int sock)
+{
+    uint8_t b;
+    int r = recv(sock, &b, 1, MSG_PEEK | MSG_DONTWAIT);
+    return r >= 0 || errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
+/*
+ * Write all n bytes to the printer. Returns false if the client vanished
+ * while the printer held XOFF, or after STALL_LIMIT_MS without progress.
  */
 static bool write_all(int sock, const uint8_t *data, size_t n)
 {
     int64_t last_progress = now_ms();
+    bool warned = false;
     while (n > 0) {
         int w = printer_link_write(data, n, pdMS_TO_TICKS(100));
         if (w > 0) {
@@ -53,8 +73,15 @@ static bool write_all(int sock, const uint8_t *data, size_t n)
             s_stats.bytes_to_printer += (uint64_t)w;
             last_progress = now_ms();
             board_led_activity();
-        } else if (now_ms() - last_progress > STALL_LIMIT_MS) {
-            return false;
+        } else {
+            int64_t stalled = now_ms() - last_progress;
+            if (!warned && stalled > 10000) {
+                ESP_LOGW(TAG, "printer paused (XOFF) for 10 s, waiting: check paper, ribbon and head");
+                warned = true;
+            }
+            if (stalled > STALL_LIMIT_MS || !client_alive(sock)) {
+                return false;
+            }
         }
         /* keep status replies flowing back while we wait */
         if (!pump_from_printer(sock, 0)) {
@@ -75,17 +102,25 @@ static void serve(int sock)
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     int one = 1;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    int ka_idle = KEEPALIVE_IDLE_S;
+    int ka_intvl = KEEPALIVE_INTVL_S;
+    int ka_cnt = KEEPALIVE_COUNT;
+    setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &ka_idle, sizeof(ka_idle));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &ka_intvl, sizeof(ka_intvl));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &ka_cnt, sizeof(ka_cnt));
 
     while (!client_done) {
         int n = recv(sock, buf, sizeof(buf), 0);
         if (n > 0) {
             last_activity = now_ms();
             if (!write_all(sock, buf, (size_t)n)) {
-                ESP_LOGW(TAG, "printer made no progress for %d s, dropping client", STALL_LIMIT_MS / 1000);
+                ESP_LOGW(TAG, "client gone or printer stalled too long, discarding the rest of the job");
                 s_stats.aborted++;
                 printer_link_abort_tx();
                 return;
             }
+            last_activity = now_ms();  /* a long XOFF pause is not client idleness */
         } else if (n == 0) {
             client_done = true;  /* client finished sending (CUPS half-closes and waits for EOF) */
         } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -108,8 +143,8 @@ static void serve(int sock)
     /* let the queued job reach the printer, then pass back any final replies */
     int64_t drain_start = now_ms();
     while (!printer_link_tx_idle()) {
-        if (now_ms() - drain_start > DRAIN_LIMIT_MS) {
-            ESP_LOGW(TAG, "printer did not drain the job in %d s", DRAIN_LIMIT_MS / 1000);
+        if (now_ms() - drain_start > STALL_LIMIT_MS || !client_alive(sock)) {
+            ESP_LOGW(TAG, "job not drained to the printer and client gone or limit reached, discarding");
             s_stats.aborted++;
             printer_link_abort_tx();
             return;
