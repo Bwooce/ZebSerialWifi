@@ -26,13 +26,29 @@ static char s_ap_ssid[20];
 static esp_timer_handle_t s_fallback_timer;
 static esp_timer_handle_t s_retry_timer;
 
+/* Set the mode with both interfaces at 20 MHz; 40 MHz would force the station down from 11ax to 11n. */
+static void set_mode(wifi_mode_t mode)
+{
+    ESP_ERROR_CHECK(esp_wifi_set_mode(mode));
+    if (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
+        esp_err_t err = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "AP bandwidth: %s", esp_err_to_name(err));
+        }
+    }
+    esp_err_t err = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "STA bandwidth: %s", esp_err_to_name(err));
+    }
+}
+
 static void start_ap(void)
 {
     if (s_ap_active) {
         return;
     }
     ESP_LOGI(TAG, "starting setup AP %s", s_ap_ssid);
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    set_mode(WIFI_MODE_APSTA);
     wifi_config_t ap = {
         .ap = {
             .channel = 1,
@@ -57,7 +73,7 @@ static void stop_ap(void)
     }
     ESP_LOGI(TAG, "station connected, stopping setup AP");
     dns_hijack_stop();
-    esp_wifi_set_mode(WIFI_MODE_STA);
+    set_mode(WIFI_MODE_STA);
     s_ap_active = false;
 }
 
@@ -134,7 +150,7 @@ void wifi_prov_start(void)
         strlcpy((char *)sta.sta.password, pass, sizeof(sta.sta.password));
         sta.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
         sta.sta.pmf_cfg.capable = true;
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        set_mode(WIFI_MODE_STA);
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
         ESP_LOGI(TAG, "connecting to \"%s\"", s_ssid);
         s_state = WIFI_ST_CONNECTING;
@@ -142,7 +158,7 @@ void wifi_prov_start(void)
         ESP_ERROR_CHECK(esp_wifi_start());
     } else {
         ESP_LOGI(TAG, "no saved WiFi credentials");
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        set_mode(WIFI_MODE_APSTA);
         ESP_ERROR_CHECK(esp_wifi_start());
         start_ap();
     }
