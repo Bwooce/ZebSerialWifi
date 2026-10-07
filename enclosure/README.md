@@ -41,9 +41,9 @@ printer. The two parts snap together, with no screws.
   - The top of each snap catch window in the tray is a 6.6 mm bridge.
   - The USB slot opens to the lid rim. The optional leg-tail pockets open upwards with a 45° lead-in.
   - The ledges and lips on the XIAO clamps have 45° faces where they would otherwise overhang.
-- **Size:** 39.9 × 34.9 × 26.1 mm assembled (the case shell, from the flange back). The top is 19.9 mm above the RS232
+- **Size:** 39.9 × 35.0 × 26.1 mm assembled (the case shell, from the flange back). The top is 19.9 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.8 cm³ for the tray and 8.1 cm³ for the lid. That is roughly 16.5 g of PETG at 100 %, less with
+- **Material:** about 4.9 cm³ for the tray and 8.0 cm³ for the lid. That is roughly 16.5 g of PETG at 100 %, less with
   infill.
 
 ## Exterior style: faceted pincushion
@@ -104,37 +104,34 @@ What the style changed underneath:
 
 - **Measured:**
   - Flange bottom level with the PCB top (`fl_bot = 0`), so the flange and D-shell centre are 6.25 mm up.
-  - Rear body 17.2 wide × 10.4 high.
-  - Each side of the body, a plastic lug 3.4 high runs out to the full PCB width. Each lug has a vertical screw hole
-    4.6 behind the flange front face.
+  - Rear body 17.2 wide × 10.4 high, ending 12.5 mm behind the flange front (`body_end`).
+  - Each side of the body, a plastic lug 3.4 high runs out to the full PCB width and back to Y 12.0 (`lug_end`).
   - The PCB front edge is flush with the flange front face, so the PCB runs under the 0.38 mm flange. It sticks out
     0.38 mm ahead of the case front face, below the flange.
-- **From the drawings, not measured:** the rear body ends 12.42 mm behind the flange front (`body_end`).
-- **Board-lock legs:** the lug "screw holes" are filled by metal board-lock legs soldered to the PCB, at Y 4.6. Their
-  tails stick out below the PCB into the 3 mm under-board space.
+  - Board-lock legs: the lug "screw holes" are filled by soldered metal legs at Y 4.6. Their tails are round, 3.1 mm
+    across, and stick out 3.0 mm below the PCB, so their tips reach the tray floor top.
 - **Not measured:**
-  - The lug rear faces, assumed at Y 6.5 (`lug_end`).
-  - The leg X position, assumed ±12.5 = the flange screw pitch (`lug_hole_x`).
-  - The leg tails: assumed 1.0 × 1.0 mm (`leg_w`, `leg_t`; `leg_t = 0` for round) and 2.0 mm below the PCB
-    (`leg_tail_l`).
-  - No step behind the flange (`step_on = false`).
+  - The leg X position, assumed ±12.5, under the flange screw holes (`lug_hole_x`). The pockets are slotted to
+    tolerate an error of about 1 mm.
+  - Whether there is a step behind the flange. The user mentioned none, so `step_on = false`.
 - **Case front face:** the plane of the flange back. It stops the case moving forwards.
-- **Anti-slide, default: friction only.** Nothing positive stops the case sliding rearwards off the connector, for
-  example when a USB plug is pulled out (6–20 N). The model `ECHO`s "friction only".
-  - The lid pins into the lug holes (`lug_pin_on`) are off, because the holes are filled. The code is kept for reference.
-  - A feature hooking the lug rear faces would not help: those faces point rearwards, so it would only stop forward
-    motion, which the flange already does.
-- **Anti-slide option: leg-tail pockets** (`leg_pocket_on`, off until the tails are measured).
-  - Each leg tail drops into a pocket in a boss rising from the tray floor. That locks the board, and with it the case,
-    fore-aft in both directions.
-  - The tails only reach 2.0 mm below the PCB and the floor is 3.0 mm below it, so a pocket cut into the floor alone
-    would not reach them. The boss stands up to 0.2 mm below the PCB.
-  - Clearance is 0.3 mm per side, with a 0.6 mm 45° lead-in so the board drops in. The pocket bottom is 0.3 mm below
-    the tail tip.
-  - The model warns if a pocket would come within 0.8 mm of the outside of the floor. For example, a 3.6 mm tail
-    triggers it.
-  - The bosses (wall 1.2 mm round the pocket) assume no other through-hole pin within about 2 mm of each leg.
-  - `renders/section_leg_pockets.png` and `section_leg_pocket_length.png` show them switched on.
+- **Anti-slide: leg-tail pockets** (`leg_pocket_on = true`). Each board-lock leg tail drops into a slot in the tray.
+  That locks the board, and with it the case, fore-aft in both directions, so pulling a USB plug out (6–20 N) cannot
+  slide the case off the connector.
+  - **Slots:** 0.3 mm clearance in Y (fore-aft, the direction that matters) and 0.3 + 1.0 mm each way in X, with a
+    0.6 mm 45° lead-in so the board drops in.
+  - **Positive controls:** the legs shifted ±0.25 mm in Y give no contact; ±0.35 hits. The legs shifted ±0.9 mm in X
+    give no contact.
+  - **Bosses:** the tails end level with the floor top, so a pocket cut into the floor alone would be a 0.3 mm dimple
+    with nothing beside the tail. Each slot therefore sits in a boss standing up to 0.2 mm below the PCB. The boss
+    wall is 1.8 mm, so it is still 1.2 mm where the lead-in starts.
+  - **Floor:** the slot goes 0.3 mm into the floor, below the tail tip, which leaves 1.3 mm of floor under it. That is
+    above the 0.8 mm minimum, so no thickening was needed. The model `ECHO`s the figure and warns below 0.8.
+  - **Keep-out:** the 3.1 mm tails and bosses sit outside the DB9 body (from X ±8.6). The red through-hole pin
+    keep-out is cut back around the bosses, which assumes no other pin within about 2 mm of each leg.
+  - **Renders:** `section_leg_pockets.png` and `section_leg_pocket_length.png`.
+- **With the pockets off** (`leg_pocket_on = false`), only friction holds the case rearwards, and the model says so.
+  The lid pins into the lug holes (`lug_pin_on`) stay off because the holes are filled; the code is kept for reference.
 
 ### RS232 board
 
@@ -145,13 +142,13 @@ What the style changed underneath:
   - A 0.4 mm gusset fills the corner between the floor and the front skin. It keeps 1.2 mm of material square to the
     bottom front chamfer, and it stays outside the pin zone.
 - **Clips:** cantilever clips in the tray side walls catch the PCB top edge.
-  - Default positions: −X at Y 9.5; +X at Y 9.5 and 23.25. The clips are 3.5 mm wide with 0.5 mm side slots, so
-    at least 1.2 mm of wall remains between each slot and the nearest snap pocket.
-  - A clip that would collide with a lid-snap pocket is dropped, with an `ECHO` note. The rear lid snap's position
-    follows the XIAO's rear end (Y 27.4), not the board's depth. So the +X clip at 23.25 is still dropped, and no Y
-    between the two snaps has room for it. Clips in front of Y 7 would land on the lugs.
-- **Pressers:** ribs on the lid (1.2 × 2 mm) come down to 0.1 mm above the board edge, to hold it down: −X at Y 12.5
-  (in front of the header), +X at Y 16 and 24.
+  - Positions: −X at Y 13.9; +X at Y 13.9 and 20.5. They sit just behind the lugs (Y 12.0); the −X clip is also in
+    front of the header (Y 15.6). The front lid snap moved forward to Y 7 to make room.
+  - The clips are 3.5 mm wide with 0.5 mm side slots, so at least 1.2 mm of wall remains between each slot and the
+    nearest snap pocket.
+  - A clip that would collide with a lid-snap pocket is dropped, with an `ECHO` note. None is dropped now.
+- **Pressers:** ribs on the lid (1.2 × 2 mm) come down to 0.1 mm above the board edge, to hold it down: +X at Y 17
+  and 24. There is no room on −X: the lugs run to Y 12.0, the clip sits at 13.9 and the header starts at 15.6.
 - **Clear space:** there is 3 mm clear below the board. The red ghost volume shows the through-hole pin zone, kept
   1.25 mm in from the board edges.
 
@@ -172,8 +169,8 @@ The XIAO dimensions come from Seeed's own XIAO ESP32-C6 v1.0 KiCad PCB, plus the
 **Fore-aft position: exactly 2.0 mm on the DB9 body** (`xiao_rest = 2.0`; `xiao_front_y = -1` derives it, or set it
 directly). That gives:
 
-- the antenna edge at Y 10.42
-- the USB edge at Y 31.38, which is 5.38 mm past the RS232 PCB
+- the antenna edge at Y 10.5
+- the USB edge at Y 31.46, which is 5.46 mm past the RS232 PCB
 
 This is the shortest case with the 2 mm rest the user asked for, leaving more room for the wires under the XIAO.
 
@@ -246,9 +243,10 @@ The green ghost wires show one feasible route, and the interference check confir
 
 ### Lid-tray snaps
 
-- **Fingers:** there are two snap fingers per side, 1.4 mm thick and 6 mm wide, flush with the outside.
-  - The free length is 10 mm: 4 mm is slotted into the lid wall, and 6 mm hangs below the split.
-  - The bending strain at full hook deflection is about 1.3 %, comfortable for PETG.
+- **Fingers:** there are two snap fingers per side (Y 7 and 27.5), 1.4 mm thick and 6 mm wide, flush with the outside.
+  - The free length is 9 mm: 4 mm is slotted into the lid wall, and 5 mm hangs below the split. That keeps the catch
+    windows above the leg-tail bosses.
+  - The bending strain at full hook deflection is about 1.6 %, comfortable for PETG.
 - **Catch:** the hooks catch on the top edge of a window through the tray wall, in pockets on its outer face. The
   window opens below the RS232 board, beside the ledge.
 - **Opening:** there is a 0.9 mm pry gap below each finger tip. Push a thin screwdriver in and lever the finger
@@ -336,41 +334,33 @@ from thin material. These show up in sweeps at other `xiao_overhang` values.
 | [0, 0, +0.09] | `check_lid` | none |
 | [0, 0, +0.11] | `check_lid` | hits both clamp lips |
 
-| `leg_pocket_on`, `ghost_lug_dy` ±0.25 (moves only the ghost legs) | `check_tray` | none |
-| `leg_pocket_on`, `ghost_lug_dy` ±0.35 | `check_tray` | hits both leg pockets (round tails too) |
-| `leg_pocket_on`, `leg_tail_l=3.6` | — | floor-breach warning |
+| `ghost_lug_dy` ±0.25 (moves only the ghost legs) | `check_tray` | none |
+| `ghost_lug_dy` ±0.35 | `check_tray` | hits both leg pockets |
+| `ghost_lug_dx` ±0.9 | `check_tray` | none (the slots tolerate an X error) |
+| `ghost_lug_dx` 1.4 | `check_tray` | hits |
+| `leg_tail_l=3.6` | — | floor-breach warning |
 | an −X clamp at d 13–17 | `check_lid` | about 18 mm³ in the D4/D5 wire zone, plus a used-pad warning |
 
 So the rear support and the clamps really sit at their 0.05 mm and 0.1 mm gaps, the leg pockets have 0.3 mm per side,
 and the wire zones are enforced.
 
-## Fit-check list: what is still open
+## Fit-check list
 
-The user has measured the board, the DB9 body and the XIAO. These are still open:
+Everything the case depends on is now measured or tolerated:
 
-| # | Measure | Parameter | Default | Why it matters |
-|---|---------|-----------|---------|----------------|
-| 1 | **Print-blocking for the leg pockets.** How far each board-lock leg tail sticks out below the RS232 PCB | `leg_tail_l` | 2.0 | Pocket depth; floor-breach warning |
-| 2 | **Print-blocking for the leg pockets.** Leg tail cross-section: X × Y, or the diameter if round (`leg_t = 0`) | `leg_w`, `leg_t` | 1.0 × 1.0 | Pocket size, 0.3 mm clearance per side |
-| 3 | **Print-blocking for the leg pockets.** Leg centre X (Y is measured at 4.6) | `lug_hole_x` | −1 (= 12.5, the flange pitch) | Pocket position |
-| 4 | Flange front face to the lug rear faces | `lug_end` | 6.5 | Ghost only |
-| 5 | Flange front face to the back of the DB9 rear body | `body_end` | 12.42 (drawing) | Sets the XIAO position (2.0 mm on the body) and the case length |
-| 6 | A taller step on the body right behind the flange, if any | `step_on`, `step_h`, `step_d` | off | The lid front notch must clear it |
-
-Once items 1–3 are measured, set `leg_pocket_on = true` and rerun `./build.sh`. Until then the case is held on the
-connector by friction only.
+- **Leg X position:** `lug_hole_x` is not measured, but the slots tolerate ±1 mm in X.
+- **Step:** the user mentioned no step behind the flange, so `step_on = false`. If there is one, set `step_on`,
+  `step_h` and `step_d`, then rerun `./build.sh`.
 
 ## Concerns to check before printing
 
-- **Anti-slide:** with the defaults, only friction stops the case sliding rearwards off the connector. Measure the
-  leg tails and turn on `leg_pocket_on`.
 - **Antenna proximity:** the front strut runs to 0.2 mm from the XIAO's antenna end, 0.25 mm from the ceramic antenna
   in X, and the DB9's metal flange and shell are not far away. If WiFi range is poor, use the U.FL socket.
 - **Board clip strain:** the board clips are 1.0 mm thick and bend from the floor top (about 5 mm free length). They
   work at roughly 3 % strain. The RS232 board is mainly held by the lid pressers. The clips only hold it during assembly.
 - **Light gap at the snaps:** the catch windows open into the space under the board. A sliver of light shows below
   each snap finger tip, where the pry gap meets the window.
-- **+X board clip:** at the default overhang, the second +X board clip is dropped to make room for the rear lid snap.
-  The board is held by two clips (both at Y 9.5) plus three lid pressers.
+- **Board hold-down on −X:** there is no lid presser on the −X side; the −X clip and ledge hold that edge. The leg
+  pockets also locate the board.
 - **Strut engagement:** the front strut bears on 1.1 of the 1.2 mm XIAO edge, not the full edge, because the PCB rests
   on the DB9 body.

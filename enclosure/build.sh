@@ -32,8 +32,8 @@ run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D leg_p
 run $IMG --camera=0,14,2,90,0,90,90 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="x"' -D section_pos=13.5 -D section_t=2 -o renders/section_leg_pocket_length.png
 # lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
 run $IMG --camera=0,15,8,35,0,0,125 -D 'part="assembly"' -o renders/lid_top_logo.png
-# sections through each lid snap finger (front pair at Y 16.5, rear pair at Y 27.4 by default), seen from the front
-run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=15.5 -D section_t=2 -o renders/section_snap_front.png
+# sections through each lid snap finger (front pair at Y 7, rear pair at Y 27.5 by default), seen from the front
+run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=6 -D section_t=2 -o renders/section_snap_front.png
 run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=26.4 -D section_t=2 -o renders/section_snap_rear.png
 # exterior style, same viewpoints as the reference renders (plan from above, isometric from the front left)
 run $IMG --camera=0,19,6,0,0,0,120 --projection=o -D 'part="assembly"' -o renders/style_plan.png

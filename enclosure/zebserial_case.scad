@@ -26,7 +26,8 @@ section_t = 3;           // slab thickness, so walls behind the cut do not hide 
 explode = 25;
 // Positive-control offset for the interference check (moves the XIAO ghost).
 ghost_offset = [0, 0, 0];
-ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes in Y
+ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes / legs in Y
+ghost_lug_dx = 0;        // positive control: moves only the ghost legs in X
 
 /* [Measured by the user (calipers)] */
 board_w = 31.5;          // RS232 board width
@@ -82,7 +83,7 @@ ds_h = 8.4;              // D-shell outer height
 ds_proj = 6.0;           // D-shell projection forward of the flange
 body_w = 17.2;           // measured: main rear body width
 body_h = 10.4;           // measured: rear body height above the PCB top = XIAO underside
-body_end = 12.42;        // flange FRONT face to the back of the rear body (drawing value, NOT measured)
+body_end = 12.5;         // measured: flange FRONT face to the back of the rear body
 body_d = body_end - fl_t;
 step_on = false;         // taller step right behind the flange (Norcomp); no information for this part
 step_h = 12.2;
@@ -90,7 +91,7 @@ step_d = 2.9;
 step_w = -1;             // -1 = body_w
 // Lugs: plastic each side of the body, 3.4 high, out to the full PCB width, with a vertical screw hole
 lug_h = 3.4;             // measured
-lug_end = 6.5;           // flange FRONT face to the lug rear faces (NOT measured)
+lug_end = 12.0;          // measured: flange FRONT face to the lug rear faces
 lug_hole_y = 4.6;        // measured: hole centre behind the flange front face
 lug_hole_x = -1;         // hole centre |X|; -1 = fl_hole_pitch / 2 (NOT measured, print-blocking)
 lug_hole_d = 2.5;        // only used by the (off) pins
@@ -99,11 +100,13 @@ lug_hole_depth = 3.4;    // ghost only
 lug_pin_on = false;      // kept for reference: lid pins into empty lug holes
 // Anti-slide via the board-lock leg tails below the PCB: tray bosses with pockets around them lock the
 // board, and so the case, fore-aft in both directions. Off until the tails are measured.
-leg_pocket_on = false;
-leg_tail_l = 2.0;        // tail protrusion below the RS232 PCB (NOT measured, print-blocking)
-leg_w = 1.0;             // tail size across X (NOT measured, print-blocking)
-leg_t = 1.0;             // tail size along Y; 0 = round tail of diameter leg_w (NOT measured, print-blocking)
+leg_pocket_on = true;
+leg_tail_l = 3.0;        // measured: tail protrusion below the RS232 PCB (the tip reaches the floor top)
+leg_w = 3.1;             // measured: tail diameter (round) or size across X
+leg_t = 0;               // tail size along Y; 0 = round tail of diameter leg_w (measured: round)
 leg_clr = 0.3;           // pocket clearance per side
+leg_slot_x = 1.0;        // extra slot length either side in X: lug_hole_x is not measured, so an X error up to
+                         // about 1 mm cannot jam the board; Y (fore-aft, the direction that matters) stays at leg_clr
 leg_leadin = 0.6;        // 45 degree lead-in at the pocket mouth
 front_wall_t = 3.2;      // lid front wall depth behind the flange when the pins are off
 pin_d = 2.2;
@@ -162,14 +165,14 @@ lc_t = 1.4;              // finger thickness
 lc_gap = 0.15;           // finger to pocket floor
 lc_hook = 0.75;          // hook protrusion
 lc_above = 4.0;          // finger free length above the split (slots into the lid wall)
-lc_below = 6.0;          // finger length below the split
+lc_below = 5.0;          // finger length below the split (keeps the catch windows above the leg-tail bosses)
 lc_side_gap = 0.5;       // slot width either side of the finger in the lid wall
 lc_pry = 0.9;            // gap under the finger tip for a screwdriver (keeps min_wall above the bottom chamfer)
-lc_front_y = 16.5;       // first lid clip centre (Y)
+lc_front_y = 7.0;        // first lid clip centre (Y); forward, so the board clips can sit just behind the lugs
 lc_rear_from_back = 4.2; // second lid clip centre, distance from the interior rear face
 // RS232 board side clips in the tray (Y centres)
-bc_y_left = [9.5];
-bc_y_right = [9.5, 23.25];
+bc_y_left = [13.9];      // just behind the lugs (Y 12.0) and in front of the header (Y 15.6)
+bc_y_right = [13.9, 20.5];
 bc_w = 3.5;
 bc_side_gap = 0.5;       // slot either side of the finger (Y)
 bc_t = 1.0;
@@ -178,8 +181,8 @@ bc_hook = 0.5;
 ledge_w = 1.2;           // board support ledge, from the wall inner face
 ledge_front_skip = 7.0;  // keep the ledge clear of DB9 board-lock pegs (and of the first board clip slot)
 // Lid pressers that hold the RS232 board down at the edges (Y centres)
-press_y_left = [12.5];   // in front of the header (header starts at Y 15.6)
-press_y_right = [16.0, 24.0];
+press_y_left = [];       // no room on -X: lugs to Y 12.0, clip at 13.9, header from 15.6
+press_y_right = [17.0, 24.0];
 press_w = 2.0;
 press_reach = 1.2;       // over the board edge (from the wall inner face)
 // XIAO side clamps hanging from the lid: [side (-1 / +1), d0, d1] along the unused-pad stretches.
@@ -245,9 +248,10 @@ hdr_y1 = y_pcb1 - hdr_rear;
 skin_y1 = max(y_fb, y_pcb0) + 1.2;   // front skin under the PCB front edge
 leg_tip = -pcb_t - leg_tail_l;       // bottom of the board-lock leg tails
 leg_pocket_bot = leg_tip - leg_clr;
-leg_px = (leg_t == 0 ? leg_w : leg_w) / 2 + leg_clr;   // pocket half sizes
+leg_px = leg_w / 2 + leg_clr + leg_slot_x;           // pocket half sizes (slotted in X)
 leg_py = (leg_t == 0 ? leg_w : leg_t) / 2 + leg_clr;
 leg_boss_top = -pcb_t - 0.2;
+leg_boss_wall = min_wall + leg_leadin;   // so the wall is still min_wall where the lead-in starts
 hdr_y0 = hdr_y1 - hdr_pins * 2.54;
 lc_ys = [lc_front_y, y_in1 - lc_rear_from_back];
 pocket = lc_t + lc_gap;
@@ -307,6 +311,9 @@ echo(lug_pin_on ? str("ZEBCASE ANTI-SLIDE: lid pins (", pin_d, " x ", pin_flat, 
                            " (tail ", leg_w, " x ", leg_t == 0 ? "round" : leg_t, ", ", leg_tail_l, " below the PCB) lock the board fore-aft")
      : "ZEBCASE ANTI-SLIDE: friction only (lug pins off, leg pockets off)");
 if (lug_pin_on && pin_d > lug_hole_d - 0.2) echo("ZEBCASE WARNING: pin_d is too big for lug_hole_d");
+if (leg_pocket_on) echo(str("ZEBCASE leg pockets: floor under the pocket ", leg_pocket_bot - z_bot, " mm (minimum 0.8)"));
+if (leg_pocket_on && lc_tip - 0.2 < leg_boss_top + 0.3)
+    echo("ZEBCASE WARNING: a snap catch window comes down beside the leg-tail bosses");
 if (leg_pocket_on && leg_pocket_bot < z_bot + 0.8)
     echo(str("ZEBCASE WARNING: the leg-tail pocket bottom (z ", leg_pocket_bot, ") comes within 0.8 mm of the tray floor bottom"));
 echo(str("ZEBCASE SUPPORT front: ", front_on_body ? str("rests on the DB9 body top, overlap ", body_overlap, " mm (body is the active front support; no lid rest)")
@@ -391,8 +398,10 @@ module tray() intersection() {
             // side ledges
             mirror_x_both() box(x_in - ledge_w, x_in + eps, y_pcb0 + ledge_front_skip, y_pcb1 - 0.5, z_floor - eps, -pcb_t);
             // bosses around the board-lock leg tails
-            if (leg_pocket_on) mirror_x_both() translate([lug_hx, lug_hole_y, 0])
-                box(-leg_px - min_wall, leg_px + min_wall, -leg_py - min_wall, leg_py + min_wall, z_floor - eps, leg_boss_top);
+            // (the tails only reach the floor top, so the walls that lock them have to stand up around them)
+            if (leg_pocket_on) mirror_x_both()
+                box(lug_hx - leg_px - leg_boss_wall, min(lug_hx + leg_px + leg_boss_wall, x_in + 0.5),
+                    lug_hole_y - leg_py - leg_boss_wall, lug_hole_y + leg_py + leg_boss_wall, z_floor - eps, leg_boss_top);
             // rear tongue that fills the lid USB slot under the receptacle
             box(-usb_slot_w / 2 + clip_clr / 2, usb_slot_w / 2 - clip_clr / 2, y_in1, y_out1, split_z - eps, zx1 - tongue_gap);
         }
@@ -407,6 +416,11 @@ module tray() intersection() {
         // board clip slots
         for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip_cut(y);
         for (y = bc_y_right) if (!lc_hit(y, bc_half)) board_clip_cut(y);
+        // no ledge stubs shorter than 2 mm between neighbouring clip cuts
+        for (side = [[-1, bc_y_left], [1, bc_y_right]]) let(ys = side[1])
+            for (i = [0 : len(ys) - 2]) let(a = ys[i] + bc_half + 0.5, b = ys[i + 1] - bc_half - 0.5)
+                if (b > a && b - a < 2) mirror([side[0] < 0 ? 1 : 0, 0, 0])
+                    box(x_in - ledge_w - 0.1, x_in, a - eps, b + eps, z_floor, -pcb_t + 0.1);
         usb_recess_cut();
     }
     for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip(y);
@@ -520,16 +534,19 @@ module lug_pin() {
     }
 }
 
+// Slot around a leg tail: leg_clr in Y, leg_clr + leg_slot_x in X, down to leg_clr below the tail tip,
+// with a 45 degree lead-in at the top. Rounded ends for round tails.
 module leg_pocket() {
-    if (leg_t == 0) {
-        translate([0, 0, leg_pocket_bot]) cylinder(r = leg_px, h = leg_boss_top - leg_pocket_bot + 1);
-        translate([0, 0, leg_boss_top - leg_leadin]) cylinder(r1 = leg_px, r2 = leg_px + leg_leadin + 0.01, h = leg_leadin + 0.01);
-    } else {
-        box(-leg_px, leg_px, -leg_py, leg_py, leg_pocket_bot, leg_boss_top + 1);
-        hull() {
-            box(-leg_px, leg_px, -leg_py, leg_py, leg_boss_top - leg_leadin, leg_boss_top - leg_leadin + 0.01);
-            box(-leg_px - leg_leadin, leg_px + leg_leadin, -leg_py - leg_leadin, leg_py + leg_leadin, leg_boss_top, leg_boss_top + 0.01);
-        }
+    r = leg_py;                                   // Y half size
+    hx = leg_px - (leg_t == 0 ? r : 0);           // straight length either side
+    module slot(rr, z0, h) {
+        if (leg_t == 0) hull() for (sx = [-1, 1]) translate([sx * hx, 0, z0]) cylinder(r = rr, h = h);
+        else translate([-hx - (rr - r), -rr, z0]) cube([2 * (hx + rr - r), 2 * rr, h]);
+    }
+    slot(r, leg_pocket_bot, leg_boss_top - leg_pocket_bot + 1);
+    hull() {
+        slot(r, leg_boss_top - leg_leadin, 0.01);
+        slot(r + leg_leadin, leg_boss_top, 0.01);
     }
 }
 
@@ -599,7 +616,7 @@ module ghost_db9() {
             translate([lug_hx, lug_hole_y + ghost_lug_dy, lug_h - lug_hole_depth - eps]) cylinder(d = lug_hole_d, h = lug_hole_depth + 1);
     }
     // board-lock legs through the lugs and the PCB, with their tails below the board
-    if (!lug_pin_on) gcol("silver") mirror_x_both() translate([lug_hx, lug_hole_y + ghost_lug_dy, 0])
+    if (!lug_pin_on) gcol("silver") mirror_x_both() translate([lug_hx + ghost_lug_dx, lug_hole_y + ghost_lug_dy, 0])
         if (leg_t == 0) translate([0, 0, leg_tip]) cylinder(d = leg_w, h = lug_h - leg_tip, $fn = 24);
         else box(-leg_w / 2, leg_w / 2, -leg_t / 2, leg_t / 2, leg_tip, lug_h);
     gcol("dimgray") {
@@ -615,7 +632,7 @@ module ghost_rs232() {
     gcol("red", 0.4) difference() {
         box(-board_w / 2 + 1.25, board_w / 2 - 1.25, max(y_pcb0, y_fb) + 1.25, y_pcb1 - 1.25, -pcb_t - 2.5, -pcb_t);
         if (leg_pocket_on) mirror_x_both() translate([lug_hx, lug_hole_y, 0])
-            box(-leg_px - min_wall - 0.01, leg_px + min_wall + 0.01, -leg_py - min_wall - 0.01, leg_py + min_wall + 0.01, -10, 0);
+            box(-leg_px - leg_boss_wall - 0.01, leg_px + leg_boss_wall + 0.01, -leg_py - leg_boss_wall - 0.01, leg_py + leg_boss_wall + 0.01, -10, 0);
     }
     gcol("black") box(hdr_x0, hdr_x0 + 2.54, hdr_y0, hdr_y1, 0, hdr_h);
 }
