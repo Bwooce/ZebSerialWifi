@@ -37,3 +37,18 @@ bool zpl_sgd_value(const uint8_t *buf, size_t len, char *out, size_t out_len);
  * 9600, 19200, 38400, 57600, without duplicates.
  */
 void zpl_baud_candidates(uint32_t saved, uint32_t out[ZPL_BAUD_MAX_CANDIDATES], size_t *n);
+
+/*
+ * Build the ZPL that sets the serial port to baud, 8N1, XON/XOFF, no Zebra
+ * protocol, and saves it (^JUS). Returns the length, or 0 if out is too small.
+ */
+size_t zpl_sc_command(char *out, size_t out_len, uint32_t baud);
+
+/*
+ * Find the handshake line in ^HH (configuration dump) output and copy its
+ * value, e.g. "XON/XOFF" from "  XON/XOFF.........HOST HANDSHAKE".
+ */
+bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len);
+
+/* True if a handshake value (SGD or ^HH form) includes XON/XOFF. */
+bool zpl_handshake_is_xon(const char *value);

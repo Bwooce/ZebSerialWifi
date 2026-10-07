@@ -151,3 +151,29 @@ esp_err_t settings_set_options(const settings_options_t *opt)
     nvs_close(h);
     return err;
 }
+
+bool settings_get_flag(const char *key)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, key, &v);
+        nvs_close(h);
+    }
+    return v != 0;
+}
+
+esp_err_t settings_set_flag(const char *key, bool value)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_u8(h, key, value ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}

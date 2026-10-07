@@ -17,6 +17,8 @@ static const char *TAG = "printer";
 #define RX_BUF 4096
 #define TX_BUF 8192
 #define PROBE_TIMEOUT_MS 500
+#define HH_TIMEOUT_MS 3000
+#define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
 #define POLL_INTERVAL_MS 30000
 #define POLL_FAILS_BEFORE_RESCAN 3
@@ -145,15 +147,7 @@ static bool sgd_get(const char *name, char *out, size_t out_len)
     return zpl_sgd_value(buf, len, out, out_len);
 }
 
-static void sgd_set(const char *name, const char *value)
-{
-    char cmd[96];
-    snprintf(cmd, sizeof(cmd), "! U1 setvar \"%s\" \"%s\"\r\n", name, value);
-    send_str(cmd);
-    uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
-}
-
-/* Baud the bridge uses while the printer is not detected: last known good, else the GK420t default. */
+/* Baud the bridge uses while the printer is not detected: last known good, else the G-series default. */
 static uint32_t fallback_baud(void)
 {
     uint32_t saved = settings_get_baud();
@@ -189,54 +183,100 @@ static bool scan(void)
     return false;
 }
 
-static void check_handshake(void)
+/* Stop reading the ^HH dump once its closing ETX has arrived. */
+static bool etx_done(const uint8_t *buf, size_t len)
 {
-    char hs[16] = "";
-    if (sgd_get("comm.handshake", hs, sizeof(hs))) {
-        ESP_LOGI(TAG, "comm.handshake = %s", hs);
-        if (strstr(hs, "xon") == NULL) {
-            ESP_LOGW(TAG, "setting comm.handshake to xon/xoff");
-            sgd_set("comm.handshake", "xon/xoff");
-            if (!sgd_get("comm.handshake", hs, sizeof(hs))) {
-                hs[0] = '\0';
-            }
-        }
-    } else {
-        ESP_LOGW(TAG, "no reply to getvar comm.handshake");
+    return memchr(buf, ETX_BYTE, len) != NULL;
+}
+
+/*
+ * Read the printer's handshake setting: SGD comm.handshake first (newer
+ * firmware), then the ^HH configuration dump, which every ZPL printer
+ * answers. Returns false if neither gave an answer.
+ */
+static bool read_handshake(char *out, size_t out_len)
+{
+    if (sgd_get("comm.handshake", out, out_len)) {
+        return true;
     }
+    static uint8_t dump[2048];
+    uart_flush_input(PORT);
+    send_str("^XA^HH^XZ");
+    size_t len = collect(dump, sizeof(dump), HH_TIMEOUT_MS, etx_done);
+    if (zpl_hh_handshake(dump, len, out, out_len)) {
+        return true;
+    }
+    ESP_LOGW(TAG, "no handshake in %u bytes of ^HH output", (unsigned)len);
+    if (len > 0) {
+        ESP_LOG_BUFFER_HEXDUMP(TAG, dump, len < 128 ? len : 128, ESP_LOG_WARN);
+    }
+    return false;
+}
+
+static void publish_handshake(const char *hs)
+{
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     strlcpy(s_handshake, hs, sizeof(s_handshake));
     xSemaphoreGive(s_status_lock);
 }
 
+/*
+ * Make sure the printer uses XON/XOFF and, if a target is set, runs at the
+ * target baud. Both are set with one ZPL ^SC ... ^JUS, which saves to the
+ * printer's flash, so it is only sent when something needs to change. If
+ * the handshake cannot be read at all, ^SC is sent once and remembered in
+ * NVS so it is not rewritten on every boot.
+ * Returns false if the printer was lost and could not be found again.
+ */
+static bool configure_printer(void)
+{
+    char hs[24] = "";
+    bool known = read_handshake(hs, sizeof(hs));
+    if (known) {
+        ESP_LOGI(TAG, "printer handshake: %s", hs);
+    }
+    bool hs_bad = known ? !zpl_handshake_is_xon(hs) : !settings_get_flag("sc_sent");
+    uint32_t target = s_target_baud;
+    bool move = target != 0 && s_baud != target && !s_raise_tried;
+    publish_handshake(known ? hs : "");
+    if (!hs_bad && !move) {
+        return true;
+    }
+
+    uint32_t new_baud = move ? target : s_baud;
+    char cmd[48];
+    zpl_sc_command(cmd, sizeof(cmd), new_baud);
+    if (move) {
+        s_raise_tried = true;
+    }
+    ESP_LOGI(TAG, "configuring printer: %lu baud, XON/XOFF (%s%s%s)", (unsigned long)new_baud,
+             move ? "baud change" : "", move && hs_bad ? ", " : "",
+             hs_bad ? (known ? "handshake was not XON/XOFF" : "handshake unreadable") : "");
+    send_str(cmd);
+    uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    set_baud(new_baud);
+    if (!probe_hs()) {
+        ESP_LOGW(TAG, "no reply at %lu baud after ^SC, rescanning; the printer may need a power cycle",
+                 (unsigned long)new_baud);
+        if (!scan()) {
+            return false;
+        }
+    }
+    settings_set_flag("sc_sent", true);
+    if (read_handshake(hs, sizeof(hs))) {
+        ESP_LOGI(TAG, "printer handshake now: %s", hs);
+        publish_handshake(hs);
+    }
+    return true;
+}
+
 /* Full detection. Caller holds s_lock. */
 static bool detect(void)
 {
-    if (!scan()) {
+    if (!scan() || !configure_printer()) {
         s_detected = false;
         return false;
-    }
-    check_handshake();
-    uint32_t target = s_target_baud;
-    if (target != 0 && s_baud != target && !s_raise_tried) {
-        s_raise_tried = true;
-        uint32_t old = s_baud;
-        char value[12];
-        snprintf(value, sizeof(value), "%lu", (unsigned long)target);
-        ESP_LOGI(TAG, "moving printer from %lu to %lu baud", (unsigned long)old, (unsigned long)target);
-        sgd_set("comm.baud", value);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        set_baud(target);
-        if (probe_hs()) {
-            ESP_LOGI(TAG, "printer now at %lu baud", (unsigned long)target);
-        } else {
-            ESP_LOGW(TAG, "no reply at %lu baud after setvar, rescanning; the printer may need a power cycle",
-                     (unsigned long)target);
-            if (!scan()) {
-                s_detected = false;
-                return false;
-            }
-        }
     }
     s_detected = true;
     settings_set_baud(s_baud);

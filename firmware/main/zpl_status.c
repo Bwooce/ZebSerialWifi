@@ -1,5 +1,6 @@
 #include "zpl_status.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define STX 0x02
@@ -188,4 +189,68 @@ void zpl_baud_candidates(uint32_t saved, uint32_t out[ZPL_BAUD_MAX_CANDIDATES], 
         }
     }
     *n = k;
+}
+
+size_t zpl_sc_command(char *out, size_t out_len, uint32_t baud)
+{
+    int n = snprintf(out, out_len, "^XA^SC%lu,8,N,1,X,N^JUS^XZ", (unsigned long)baud);
+    if (n < 0 || (size_t)n >= out_len) {
+        if (out_len > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    return (size_t)n;
+}
+
+bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len)
+{
+    static const char key[] = "HANDSHAKE";
+    const size_t klen = sizeof(key) - 1;
+    size_t line = 0;
+    for (size_t i = 0; i <= len; i++) {
+        if (i < len && buf[i] != '\r' && buf[i] != '\n') {
+            continue;
+        }
+        /* line is buf[line, i) */
+        bool has_key = false;
+        for (size_t j = line; j + klen <= i; j++) {
+            if (memcmp(buf + j, key, klen) == 0) {
+                has_key = true;
+                break;
+            }
+        }
+        if (has_key) {
+            size_t s = line;
+            while (s < i && (buf[s] == ' ' || buf[s] == 0x02)) {
+                s++;
+            }
+            size_t e = s;
+            while (e < i && !(buf[e] == '.' && e + 1 < i && buf[e + 1] == '.')) {
+                e++;
+            }
+            while (e > s && buf[e - 1] == ' ') {
+                e--;
+            }
+            size_t n = e - s;
+            if (n == 0 || n + 1 > out_len) {
+                return false;
+            }
+            memcpy(out, buf + s, n);
+            out[n] = '\0';
+            return true;
+        }
+        line = i + 1;
+    }
+    return false;
+}
+
+bool zpl_handshake_is_xon(const char *value)
+{
+    for (const char *p = value; p[0] && p[1] && p[2]; p++) {
+        if ((p[0] == 'x' || p[0] == 'X') && (p[1] == 'o' || p[1] == 'O') && (p[2] == 'n' || p[2] == 'N')) {
+            return true;
+        }
+    }
+    return false;
 }

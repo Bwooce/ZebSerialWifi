@@ -43,6 +43,10 @@ esp_err_t settings_set_options(const settings_options_t *opt);
 /* True for 0 (leave as is) and the standard rates 9600..115200. */
 bool settings_target_baud_valid(uint32_t baud);
 
+/* Small persistent flags (0/1), false when unset. */
+bool settings_get_flag(const char *key);
+esp_err_t settings_set_flag(const char *key, bool value);
+
 /* Returns 0 when no baud has been saved. */
 uint32_t settings_get_baud(void);
 esp_err_t settings_set_baud(uint32_t baud);

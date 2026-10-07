@@ -174,6 +174,54 @@ static void test_baud_candidates(void)
     CHECK(c[0] == 115200 && c[1] == 9600);
 }
 
+
+static void test_sc_command(void)
+{
+    char out[64];
+    CHECK(zpl_sc_command(out, sizeof(out), 115200) > 0);
+    CHECK(strcmp(out, "^XA^SC115200,8,N,1,X,N^JUS^XZ") == 0);
+    CHECK(zpl_sc_command(out, sizeof(out), 9600) > 0);
+    CHECK(strcmp(out, "^XA^SC9600,8,N,1,X,N^JUS^XZ") == 0);
+    char tiny[8];
+    CHECK(zpl_sc_command(tiny, sizeof(tiny), 9600) == 0);
+}
+
+/*
+ * ^HH sends the configuration label as text. The line layout used here
+ * (value, dot leader, label) is the configuration-label layout; the exact
+ * GK420t label text is still to be confirmed against a real printer.
+ */
+static void test_hh_handshake(void)
+{
+    char v[24];
+    const char *hh = "\x02"
+                     "  PRINTER CONFIGURATION\r\n"
+                     "  9600.............BAUD\r\n"
+                     "  8 BITS...........DATA BITS\r\n"
+                     "  XON/XOFF.........HOST HANDSHAKE\r\n"
+                     "  NONE.............PROTOCOL\r\n"
+                     "\x03";
+    CHECK(zpl_hh_handshake((const uint8_t *)hh, strlen(hh), v, sizeof(v)));
+    CHECK(strcmp(v, "XON/XOFF") == 0);
+    CHECK(zpl_handshake_is_xon(v));
+
+    const char *dtr = "  DTR & XON/XOFF...HOST HANDSHAKE\r\n";
+    CHECK(zpl_hh_handshake((const uint8_t *)dtr, strlen(dtr), v, sizeof(v)));
+    CHECK(strcmp(v, "DTR & XON/XOFF") == 0);
+    CHECK(zpl_handshake_is_xon(v));
+
+    const char *hw = "  DTR/DSR..........HOST HANDSHAKE\r\n";
+    CHECK(zpl_hh_handshake((const uint8_t *)hw, strlen(hw), v, sizeof(v)));
+    CHECK(!zpl_handshake_is_xon(v));
+
+    const char *none = "  9600.............BAUD\r\n";
+    CHECK(!zpl_hh_handshake((const uint8_t *)none, strlen(none), v, sizeof(v)));
+
+    CHECK(zpl_handshake_is_xon("xon/xoff"));
+    CHECK(!zpl_handshake_is_xon("rts/cts"));
+    CHECK(!zpl_handshake_is_xon(""));
+}
+
 int main(void)
 {
     test_hs_ok();
@@ -184,6 +232,8 @@ int main(void)
     test_url_decode();
     test_form_get();
     test_baud_candidates();
+    test_sc_command();
+    test_hh_handshake();
     printf("%d checks, %d failures\n", s_checks, s_failures);
     return s_failures ? 1 : 0;
 }

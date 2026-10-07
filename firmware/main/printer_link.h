@@ -10,7 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "zpl_status.h"
 
-#define PRINTER_DEFAULT_BAUD 9600   /* GK420t factory setting */
+#define PRINTER_DEFAULT_BAUD 9600   /* G-series factory setting */
 
 typedef struct {
     uint32_t baud;
