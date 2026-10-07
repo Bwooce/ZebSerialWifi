@@ -1,0 +1,23 @@
+menu "ZebSerialWifi"
+
+    config ZEB_UART_TX_GPIO
+        int "Default UART TX GPIO (used when pin detection is inconclusive)"
+        default 22
+
+    config ZEB_UART_RX_GPIO
+        int "Default UART RX GPIO (used when pin detection is inconclusive)"
+        default 23
+
+    config ZEB_EXTERNAL_ANTENNA
+        bool "Use the U.FL external antenna instead of the ceramic antenna"
+        default n
+
+    config ZEB_TCP_PORT
+        int "Raw print TCP port"
+        default 9100
+
+    config ZEB_IDLE_TIMEOUT_S
+        int "Close an idle print client after this many seconds"
+        default 30
+
+endmenu

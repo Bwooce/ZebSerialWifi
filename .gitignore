@@ -3,3 +3,4 @@ firmware/sdkconfig.old
 firmware/managed_components/
 firmware/test_host/build/
 .DS_Store
+firmware/sdkconfig
