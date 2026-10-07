@@ -38,7 +38,7 @@ printer. The two parts snap together, with no screws.
   - The lips on the XIAO clips have a 45° underside.
 - **Size:** 38.3 × 36.1 × 23.8 mm assembled, with the default `xiao_overhang = 5`. The top is 18.2 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.6 cm³ for the tray and 8.4 cm³ for the lid. That is roughly 16 g of PETG at 100 %, less with
+- **Material:** about 4.6 cm³ for the tray and 8.2 cm³ for the lid. That is roughly 16 g of PETG at 100 %, less with
   infill. Not sliced, so print time is not estimated.
 
 ## How it works
@@ -111,6 +111,19 @@ The green ghost wires show one feasible route, and the interference check confir
 - **Catch:** the hooks catch in 0.85 mm recesses in pockets on the tray's outer wall.
 - **Opening:** there is a 1.5 mm pry gap below each finger tip. Push a small screwdriver in and lever the finger
   outwards.
+
+### Logo
+
+- **Deboss:** the ZebSerial mark (`assets/logo/zebserial-mark-deboss.svg`) is cut 0.5 mm (`logo_depth`) into the lid's
+  outer top face, centred, 22 mm wide (`logo_w`). `show_logo = false` leaves the top plain.
+- **Orientation:** the mark reads upright when you look down on the assembled case with the DB9 at the bottom edge,
+  nearest you. The WiFi arcs point towards the USB-C end. `renders/lid_top_logo.png` shows this view.
+- **Skin:** the top skin is 2.23 mm, because the USB plug relief sets the lid height, so 1.73 mm remains under the
+  deboss. The model asserts at least 1.0 mm. Nothing inside the lid comes above the ceiling, so the deboss cannot
+  meet a strut or clip.
+- **Printing:** the lid prints top down, so the deboss is in the first 0.5 mm of layers and needs no support. At 22 mm
+  wide the narrowest raised strip is about 1.0 mm (between the inner arc's ends and the shell) and the narrowest
+  recess about 1.5 mm (the shell rim beside the stripes), against the 0.8 mm minimum for a 0.4 mm nozzle.
 
 ## Assembly order
 

@@ -93,6 +93,15 @@ usb_recess_h = 7.0;
 usb_recess_d = 1.6;      // depth of the relief behind the receptacle mouth
 usb_mouth_inset = 0.0;   // receptacle mouth to relief floor (0 = flush, plug pushes on the case)
 
+/* [Logo] */
+// Debossed into the lid top, centred; reads upright seen from above with the DB9 at the bottom edge.
+show_logo = true;
+logo_w = 22.0;           // mark width
+logo_depth = 0.5;
+logo_file = "../assets/logo/zebserial-mark-deboss.svg";   // from assets/logo/make_logo.py, 1 unit = 1 mm
+logo_svg_w = 52.76;      // mark width in that file
+logo_svg_c = [32, 30];   // mark centre once imported (OpenSCAD flips the SVG Y axis)
+
 /* [Clips] */
 // Lid-to-tray snaps (on both side walls)
 lc_w = 6.0;              // finger width
@@ -169,6 +178,8 @@ echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_fb, " Z ", z_top - z_b
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
+echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
+assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
 for (y = bc_y_left)  if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
 for (y = bc_y_right) if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
@@ -296,7 +307,14 @@ module lid() {
         // USB-C slot, open to the rim so the receptacle drops in; the tray tongue fills below it
         box(-usb_slot_w / 2, usb_slot_w / 2, y_in1 - 1, y_out1 + 1, split_z - 1, zx1 + usb_h + usb_clr);
         usb_recess_cut();
+        if (show_logo) logo_cut();
     }
+}
+
+// Seen from above, +Y (away from the DB9) is up, so the mark needs no rotation or mirroring.
+module logo_cut() {
+    translate([0, (y_fb + y_out1) / 2, z_top - logo_depth])
+        linear_extrude(logo_depth + 1) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
 }
 
 module presser(y) {

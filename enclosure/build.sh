@@ -28,6 +28,8 @@ run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'sect
 run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=27.6 -D section_t=2 -o renders/section_xiao_clip_left.png
 # y plane through the DB9 hardware sockets, seen from the front
 run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=2.5 -D section_t=2 -o renders/section_db9_sockets.png
+# lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
+run $IMG --camera=0,15,8,35,0,0,125 -D 'part="assembly"' -o renders/lid_top_logo.png
 # print orientation
 run $IMG --camera=0,0,0,55,0,25,130 --autocenter --viewall -D 'part="tray"' -o renders/print_tray.png
 run $IMG --camera=0,0,0,55,0,205,130 --autocenter --viewall -D 'part="lid"' -o renders/print_lid.png
