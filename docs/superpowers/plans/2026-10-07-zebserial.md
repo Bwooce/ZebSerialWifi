@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Firmware that bridges TCP port 9100 to a Zebra GK420t's RS232 port, running on a XIAO ESP32-C6, plus a
+**Goal:** Firmware that bridges TCP port 9100 to a Zebra GK430t's RS232 port, running on a XIAO ESP32-C6, plus a
 printed snap-fit enclosure.
 
 **Architecture:**

@@ -1,5 +1,5 @@
 /*
- * ZebSerialWifi: WiFi to RS232 bridge for a Zebra GK420t on a XIAO ESP32-C6.
+ * ZebSerialWifi: WiFi to RS232 bridge for a Zebra GK430t on a XIAO ESP32-C6.
  * Raw TCP 9100 <-> UART1 (MAX3232), advertised over mDNS as zebserial.local.
  */
 #include "board.h"
@@ -27,17 +27,17 @@ static void mdns_setup(void)
 {
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set("zebserial");
-    mdns_instance_name_set("ZebSerial GK420t");
+    mdns_instance_name_set("ZebSerial GK430t");
     mdns_txt_item_t txt[] = {
         {"txtvers", "1"},
         {"qtotal", "1"},
-        {"ty", "Zebra GK420t"},
-        {"product", "(Zebra GK420t)"},
+        {"ty", "Zebra GK430t"},
+        {"product", "(Zebra GK430t)"},
         {"usb_MFG", "Zebra"},
-        {"usb_MDL", "GK420t"},
+        {"usb_MDL", "GK430t"},
         {"note", "ZebSerialWifi"},
     };
-    mdns_service_add("ZebSerial GK420t", "_pdl-datastream", "_tcp", CONFIG_ZEB_TCP_PORT, txt,
+    mdns_service_add("ZebSerial GK430t", "_pdl-datastream", "_tcp", CONFIG_ZEB_TCP_PORT, txt,
                      sizeof(txt) / sizeof(txt[0]));
     mdns_service_add("ZebSerial status", "_http", "_tcp", 80, NULL, 0);
 }

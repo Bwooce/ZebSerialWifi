@@ -4,7 +4,7 @@ Date: 2026-10-07
 
 ## Purpose
 
-A small WiFi-to-RS232 bridge that plugs straight into the DB9 serial port of a Zebra GK420t
+A small WiFi-to-RS232 bridge that plugs straight into the DB9 serial port of a Zebra GK430t (300 dpi G-series; same serial interface as the GK420t)
 thermal transfer printer. The Mac prints to it as a network printer (CUPS `socket://`, so Label
 LIVE sees it as a System printer), and the bridge forwards the bytes to the printer's serial port.
 
@@ -27,7 +27,7 @@ Success means:
 - **YL-97 RS232-TTL module** (MAX3232) with a male DB9 and a 4-pin header (VCC, GND, TXD, RXD).
   - **VCC must be on the XIAO 3V3 pad, not 5V.** The MAX3232's TTL output swings to VCC, and the C6's GPIOs are not
     5V-tolerant. The user is moving the wire.
-- **GK420t serial port:** DTE with a female DB9 (pin 2 = printer RX, pin 3 = printer TX, pin 5 = GND). A direct plug-in
+- **GK430t serial port:** DTE with a female DB9 (pin 2 = printer RX, pin 3 = printer TX, pin 5 = GND). A direct plug-in
   needs the module's TX on pin 2.
   - Check: power the module from 3V3 with no printer attached. The pin idling at about −5 V relative to pin 5 is the
     module's TX.
@@ -104,7 +104,7 @@ pin that reads high is RX and the other is TX. Both pins are inputs during the t
 - **mDNS:**
   - Hostname `zebserial`.
   - Services:
-    - `_pdl-datastream._tcp` on port 9100, with TXT `ty=Zebra GK420t`, `product=(GK420t)`, `note=ZebSerialWifi`.
+    - `_pdl-datastream._tcp` on port 9100, with TXT `ty=Zebra GK430t`, `product=(GK430t)`, `note=ZebSerialWifi`.
     - `_http._tcp` on port 80.
 
 ### Status LED
@@ -209,7 +209,7 @@ because it flexes for snap-fits without cracking.
 
 - **TX/RX detection:** each pin is probed with a pull-up and then a pull-down, which classifies it as driven high,
   driven low or floating. RX is the pin driven high. When the result is inconclusive, every XIAO pad is reported.
-- **Fallback baud:** if no candidate answers, the UART returns to the last saved baud, or 9600 (the GK420t factory
+- **Fallback baud:** if no candidate answers, the UART returns to the last saved baud, or 9600 (the GK430t factory
   default) if none is saved. It is never left on the last baud it tried.
 - **SGD fallback probe:** a second probe, `! U1 getvar "device.languages"`, also counts as detection, so a printer in EPL
   mode is still found. Probe replies that don't parse are hex-dumped to the log.
@@ -225,6 +225,16 @@ because it flexes for snap-fits without cracking.
 - **Build verification:** a build is checked by the `ELF file SHA256` line in the boot log, matched against
   `shasum -a 256 build/zebserial.elf`. The version string only updates when CMake reconfigures.
 - **Partition table:** single-app large (1.5 MB) with size optimisation. The image is about 0.95 MB.
+- **Printer configuration uses ZPL `^SC`, not SGD:**
+  - G-series SGD support is partial, so baud and XON/XOFF are set with one command: `^XA^SC<baud>,8,N,1,X,N^JUS^XZ`.
+  - The handshake is read back with SGD `comm.handshake` first, falling back to the `^HH` configuration dump.
+  - `^SC` saves to the printer's flash, so it is only sent when the handshake is not XON/XOFF or the baud is off target.
+    If the handshake can't be read at all, it is sent once and an NVS flag (`sc_sent`) remembers that.
+  - Assumption: the `^HH` line layout (`XON/XOFF.....HOST HANDSHAKE`) is unconfirmed until a real GK430t is connected.
+    Unparsed output is hex-dumped to the log.
+- **Runtime options** (NVS, settings form): idle timeout, target baud (0 = leave the printer alone), and UART pin mode
+  (auto, or forced either way). The antenna choice stays build-time only, because selecting U.FL with no antenna
+  fitted would cut WiFi and lock the user out of the page.
 
 ## Out of scope
 
