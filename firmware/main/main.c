@@ -86,10 +86,23 @@ void app_main(void)
     ESP_ERROR_CHECK(settings_init());
     board_init();
 
+    settings_options_t opt;
+    settings_get_options(&opt);
     int tx;
     int rx;
-    board_detect_uart_pins(&tx, &rx);
+    if (opt.pins == SETTINGS_PINS_TX_D4) {
+        tx = 22;
+        rx = 23;
+        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO22 (D4) RX=GPIO23 (D5)");
+    } else if (opt.pins == SETTINGS_PINS_TX_D5) {
+        tx = 23;
+        rx = 22;
+        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO23 (D5) RX=GPIO22 (D4)");
+    } else {
+        board_detect_uart_pins(&tx, &rx);
+    }
     ESP_ERROR_CHECK(printer_link_init(tx, rx));
+    printer_link_set_target_baud(opt.target_baud);
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());

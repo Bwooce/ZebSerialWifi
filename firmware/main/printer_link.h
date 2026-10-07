@@ -10,7 +10,6 @@
 #include "freertos/FreeRTOS.h"
 #include "zpl_status.h"
 
-#define PRINTER_TARGET_BAUD 115200
 #define PRINTER_DEFAULT_BAUD 9600   /* GK420t factory setting */
 
 typedef struct {
@@ -24,6 +23,7 @@ typedef struct {
     uint64_t rx_bytes;
     int tx_gpio;
     int rx_gpio;
+    uint32_t target_baud;     /* 0 = leave the printer's baud alone */
 } printer_status_t;
 
 esp_err_t printer_link_init(int tx_gpio, int rx_gpio);
@@ -51,6 +51,15 @@ bool printer_link_tx_idle(void);
 void printer_link_abort_tx(void);
 
 void printer_link_get_status(printer_status_t *out);
+
+/*
+ * Baud the printer should be moved to after detection; 0 leaves it where it
+ * is. Changing it triggers a re-detect.
+ */
+void printer_link_set_target_baud(uint32_t baud);
+
+/* Move the UART to other pins (waits for any print job to finish), then re-detect. */
+esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio);
 
 /* Ask the background task to re-run detection at the next idle moment. */
 void printer_link_request_redetect(void);

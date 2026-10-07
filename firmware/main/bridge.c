@@ -9,6 +9,7 @@
 #include "lwip/sockets.h"
 #include "printer_link.h"
 #include "sdkconfig.h"
+#include "settings.h"
 
 static const char *TAG = "bridge";
 
@@ -94,7 +95,9 @@ static bool write_all(int sock, const uint8_t *data, size_t n)
 static void serve(int sock)
 {
     uint8_t buf[CHUNK];
-    const int64_t idle_limit = (int64_t)CONFIG_ZEB_IDLE_TIMEOUT_S * 1000;
+    settings_options_t opt;
+    settings_get_options(&opt);
+    const int64_t idle_limit = (int64_t)opt.idle_timeout_s * 1000;
     int64_t last_activity = now_ms();
     bool client_done = false;
 
@@ -135,7 +138,7 @@ static void serve(int sock)
             last_activity = now_ms();
         }
         if (!client_done && now_ms() - last_activity > idle_limit) {
-            ESP_LOGI(TAG, "client idle for %d s, closing", CONFIG_ZEB_IDLE_TIMEOUT_S);
+            ESP_LOGI(TAG, "client idle for %u s, closing", (unsigned)opt.idle_timeout_s);
             return;
         }
     }

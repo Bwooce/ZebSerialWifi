@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -42,6 +43,7 @@ static uint64_t s_tx_bytes;
 static uint64_t s_rx_bytes;
 static volatile bool s_redetect;
 static bool s_raise_tried;
+static volatile uint32_t s_target_baud = 115200;
 
 static esp_err_t uart_setup(uint32_t baud)
 {
@@ -215,18 +217,21 @@ static bool detect(void)
         return false;
     }
     check_handshake();
-    if (s_baud != PRINTER_TARGET_BAUD && !s_raise_tried) {
+    uint32_t target = s_target_baud;
+    if (target != 0 && s_baud != target && !s_raise_tried) {
         s_raise_tried = true;
         uint32_t old = s_baud;
-        ESP_LOGI(TAG, "raising printer from %lu to %d baud", (unsigned long)old, PRINTER_TARGET_BAUD);
-        sgd_set("comm.baud", "115200");
+        char value[12];
+        snprintf(value, sizeof(value), "%lu", (unsigned long)target);
+        ESP_LOGI(TAG, "moving printer from %lu to %lu baud", (unsigned long)old, (unsigned long)target);
+        sgd_set("comm.baud", value);
         vTaskDelay(pdMS_TO_TICKS(1000));
-        set_baud(PRINTER_TARGET_BAUD);
+        set_baud(target);
         if (probe_hs()) {
-            ESP_LOGI(TAG, "printer now at %d baud", PRINTER_TARGET_BAUD);
+            ESP_LOGI(TAG, "printer now at %lu baud", (unsigned long)target);
         } else {
-            ESP_LOGW(TAG, "no reply at %d baud after setvar, rescanning; the printer may need a power cycle",
-                     PRINTER_TARGET_BAUD);
+            ESP_LOGW(TAG, "no reply at %lu baud after setvar, rescanning; the printer may need a power cycle",
+                     (unsigned long)target);
             if (!scan()) {
                 s_detected = false;
                 return false;
@@ -355,7 +360,40 @@ void printer_link_get_status(printer_status_t *out)
     out->rx_bytes = s_rx_bytes;
     out->tx_gpio = s_tx_gpio;
     out->rx_gpio = s_rx_gpio;
+    out->target_baud = s_target_baud;
     xSemaphoreGive(s_status_lock);
+}
+
+void printer_link_set_target_baud(uint32_t baud)
+{
+    if (baud != s_target_baud) {
+        s_target_baud = baud;
+        printer_link_request_redetect();
+    }
+}
+
+esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio)
+{
+    if (tx_gpio == s_tx_gpio && rx_gpio == s_rx_gpio) {
+        return ESP_OK;
+    }
+    if (!printer_link_acquire(pdMS_TO_TICKS(30000))) {
+        return ESP_ERR_TIMEOUT;
+    }
+    uart_wait_tx_done(PORT, pdMS_TO_TICKS(2000));
+    /* release the old pins from the UART before claiming the new ones */
+    gpio_reset_pin(s_tx_gpio);
+    gpio_reset_pin(s_rx_gpio);
+    esp_err_t err = uart_set_pin(PORT, tx_gpio, rx_gpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (err == ESP_OK) {
+        s_tx_gpio = tx_gpio;
+        s_rx_gpio = rx_gpio;
+        uart_flush_input(PORT);
+        ESP_LOGI(TAG, "UART moved to TX=GPIO%d RX=GPIO%d", tx_gpio, rx_gpio);
+    }
+    printer_link_release();
+    printer_link_request_redetect();
+    return err;
 }
 
 void printer_link_request_redetect(void)
