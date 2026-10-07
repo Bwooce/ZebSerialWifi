@@ -117,6 +117,11 @@ static bool probe_hs(void)
     size_t len = collect(buf, sizeof(buf), PROBE_TIMEOUT_MS, hs_done);
     zpl_hs_t hs;
     if (!zpl_hs_parse(buf, len, &hs)) {
+        if (len > 0) {
+            /* bytes came back but did not parse: wrong baud, or a reply format we do not expect */
+            ESP_LOGW(TAG, "%u bytes at %lu baud did not parse as ~HS:", (unsigned)len, (unsigned long)s_baud);
+            ESP_LOG_BUFFER_HEXDUMP(TAG, buf, len < 64 ? len : 64, ESP_LOG_WARN);
+        }
         return false;
     }
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
@@ -146,6 +151,18 @@ static void sgd_set(const char *name, const char *value)
     uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
 }
 
+/* Baud the bridge uses while the printer is not detected: last known good, else the GK420t default. */
+static uint32_t fallback_baud(void)
+{
+    uint32_t saved = settings_get_baud();
+    return saved ? saved : PRINTER_DEFAULT_BAUD;
+}
+
+/*
+ * Try each candidate baud with ~HS (ZPL), then with an SGD getvar, which
+ * also answers in EPL mode. On failure the UART goes back to the fallback
+ * baud so jobs still go out at the last known good rate.
+ */
 static bool scan(void)
 {
     uint32_t cand[ZPL_BAUD_MAX_CANDIDATES];
@@ -157,8 +174,16 @@ static bool scan(void)
             ESP_LOGI(TAG, "printer answered ~HS at %lu baud", (unsigned long)cand[i]);
             return true;
         }
-        ESP_LOGD(TAG, "no ~HS reply at %lu baud", (unsigned long)cand[i]);
+        char lang[32];
+        if (sgd_get("device.languages", lang, sizeof(lang))) {
+            ESP_LOGW(TAG, "printer answered SGD at %lu baud but not ~HS; device.languages = %s",
+                     (unsigned long)cand[i], lang);
+            return true;
+        }
+        ESP_LOGD(TAG, "no reply at %lu baud", (unsigned long)cand[i]);
     }
+    set_baud(fallback_baud());
+    ESP_LOGW(TAG, "printer not found at any baud, staying at %lu", (unsigned long)s_baud);
     return false;
 }
 
@@ -254,7 +279,7 @@ esp_err_t printer_link_init(int tx_gpio, int rx_gpio)
     s_status_lock = xSemaphoreCreateMutex();
     s_hs_time_us = -1;
     uint32_t saved = settings_get_baud();
-    s_baud = saved ? saved : PRINTER_TARGET_BAUD;
+    s_baud = saved ? saved : PRINTER_DEFAULT_BAUD;
     ESP_LOGI(TAG, "UART1 TX=GPIO%d RX=GPIO%d, starting at %lu baud (saved %lu)", tx_gpio, rx_gpio,
              (unsigned long)s_baud, (unsigned long)saved);
     return uart_setup(s_baud);

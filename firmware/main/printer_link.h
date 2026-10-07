@@ -11,6 +11,7 @@
 #include "zpl_status.h"
 
 #define PRINTER_TARGET_BAUD 115200
+#define PRINTER_DEFAULT_BAUD 9600   /* GK420t factory setting */
 
 typedef struct {
     uint32_t baud;
