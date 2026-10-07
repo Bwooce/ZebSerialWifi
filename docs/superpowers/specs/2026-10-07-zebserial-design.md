@@ -190,7 +190,7 @@ because it flexes for snap-fits without cracking.
 - **Wires:** a channel at the header end for the four wires.
 - **Antenna:** no wall material over the XIAO's ceramic antenna end beyond the 1.6 mm skin. There's a U.FL fallback if
   the signal is poor.
-- **Print orientation:** tray and lid each print flat on their open side down, with no supports.
+- **Print orientation:** the tray prints floor-down and the lid top-down, both without supports. (Printing the tray open side down would make its whole floor one long bridge.)
 
 ### Tolerances (parameters)
 
