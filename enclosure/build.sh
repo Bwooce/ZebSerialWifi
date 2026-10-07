@@ -22,10 +22,10 @@ run $IMG --camera=0,18,6,60,0,205,140 -D 'part="assembly"' -o renders/assembly_r
 run $IMG --camera=0,18,14,60,0,25,180 -D 'part="exploded"' -o renders/exploded.png
 run $IMG --camera=0,18,14,60,0,205,180 -D 'part="exploded"' -D show_ghosts=false -o renders/exploded_case_only.png
 # sections: x=0 plane through the XIAO length and DB9 body, seen from +X
-run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=1.5 -o renders/section_xiao_length.png
-# y plane through the XIAO clips (right clip), seen from the front
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=17.4 -D section_t=2 -o renders/section_xiao_clip_right.png
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=27.6 -D section_t=2 -o renders/section_xiao_clip_left.png
+run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_xiao_length.png
+# y planes across the XIAO through each side clamp (defaults: +X clamp Y 12.6..18.6, -X clamp Y 19.9..28.2), from the front
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=15 -D section_t=2 -o renders/section_xiao_clamp_plusx.png
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=23.5 -D section_t=2 -o renders/section_xiao_clamp_minusx.png
 # y plane through the DB9 hardware sockets, seen from the front
 run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=2.5 -D section_t=2 -o renders/section_db9_sockets.png
 # lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
