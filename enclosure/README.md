@@ -8,9 +8,10 @@ printer. The two parts snap together, with no screws.
 |------|------|
 | `zebserial_case.scad` | The model. All dimensions are top-level parameters, grouped as *given*, *Seeed data*, *standard DB9 defaults (not measured)*, *header guesses*, *print/tolerance* and *clips*. |
 | `out/tray.stl`, `out/lid.stl` | Print-ready, already in print orientation. |
-| `renders/*.png` | Assembly, exploded, sections and print-orientation views. |
+| `renders/*.png` | Assembly, exploded, sections, exterior style (`style_*.png`) and print-orientation views. |
 | `build.sh` | Regenerates the STLs and renders, then runs the interference checks. Extra `-D` overrides apply to the checks, for example `./build.sh -D xiao_overhang=3`. |
 | `stlinfo.py` | Reports STL volume and bounding box, and with `--components` the overlapping pieces. |
+| `wallprobe.py` | Measures local wall thickness by ray casting from every face; `build.sh` lists everything under 1.2 mm. |
 
 ## Coordinates
 
@@ -26,20 +27,70 @@ printer. The two parts snap together, with no screws.
 - **Walls:** 4 (1.6 mm).
 - **Infill:** 25 % gyroid. Most of the part is walls anyway.
 - **Supports:** none.
-- **Brim:** none needed. The parts are 38 × 36 mm.
+- **Brim:** none needed. The parts are 40 × 37 mm.
 - **Orientation:** the STLs are already oriented.
   - Tray: floor on the bed (open side up).
   - Lid: top skin on the bed (open side up).
   - The spec's line "both print open side down" is wrong for the tray. Printed that way, the whole floor would be one
     bridge.
 - **Overhangs:** the steepest unsupported features are the flat catch faces of the snap hooks, at 0.5–0.75 mm. These are
-  fine in PETG. Everything else is either vertical or opens upwards in print orientation:
+  fine in PETG. Everything else is either vertical, at 45°, a short bridge, or opens upwards in print orientation:
+  - The perimeter chamfers on the bed side of each part are 45°.
+  - The top of each snap catch window in the tray is a 6.6 mm bridge.
   - The DB9 sockets and the USB slot open to the lid rim.
   - The lips on the XIAO clips have a 45° underside.
-- **Size:** 38.3 × 36.1 × 23.8 mm assembled, with the default `xiao_overhang = 5`. The top is 18.2 mm above the RS232
+- **Size:** 39.9 × 36.9 × 25.4 mm assembled, with the default `xiao_overhang = 5`. The top is 19.8 mm above the RS232
   board, against a 25 mm limit.
-- **Material:** about 4.6 cm³ for the tray and 8.2 cm³ for the lid. That is roughly 16 g of PETG at 100 %, less with
+- **Material:** about 4.7 cm³ for the tray and 8.9 cm³ for the lid. That is roughly 17 g of PETG at 100 %, less with
   infill. Not sliced, so print time is not estimated.
+
+## Exterior style: faceted pincushion
+
+The outside copies the look of the user's factory Radar360 case. The look is defined in
+`~/personal_scripts/ai-config/instructions/enclosure_styles.md`. `renders/style_plan.png`, `style_iso.png` and
+`style_side.png` show it from the same viewpoints as the reference renders.
+
+| Feature | Parameter | Value |
+|---------|-----------|-------|
+| Side and rear faces bow inwards at mid-span (2 % of each face's length) | `sag_frac` | 0.02: 0.74 mm on the sides, 0.80 mm on the rear |
+| Each face is three flat facets: a flat middle third, sloping to the corners | `facet_flat` | 0.3 (0 gives a two-facet V) |
+| Vertical corner edges cut by 45° flat chamfers | `corner_chamfer` | 2.8 mm (7 % of the width) |
+| Top and bottom perimeter edges chamfered at 45°, so the side profile is an elongated octagon | `edge_chamfer` | 1.5 mm |
+| Shadow-line groove on the lid just above the seam, interrupted at the snap fingers | `seam_reveal`, `reveal_d`, `reveal_h` | on, 0.45 deep × 0.5 tall |
+
+The tray and the lid are both cut from one `outer_solid()`, so the seam lines up exactly.
+
+Deliberate departures from the reference:
+
+- **Flat top and bottom.** The reference's top and bottom are concave too. Here they are flat:
+  - The lid prints top down and carries the logo deboss.
+  - The tray prints floor down.
+  - A flat bed face prints cleanly and needs no support.
+- **Flat front face** (`front_sag = 0`):
+  - It is the datum the DB9 flange sits against, and it is what stops the case sliding back along the connector. A
+    concave front would leave the case free to move about 0.8 mm.
+  - The flange covers most of that face anyway.
+- **Corner chamfer of 2.8 mm** rather than the reference's ~10 % of the width. At the front corners, the tray side wall
+  beside the open DB9 face keeps exactly 1.2 mm with a 4.0 mm wall and a 2.8 mm chamfer. A larger chamfer needs a
+  thicker wall.
+
+What the style changed underneath:
+
+- **Wall thickness:**
+  - Side walls are 4.0 mm at the corner ends (`side_t`, was 3.2), so that the deepest point of the bow keeps the old
+    3.26 mm.
+  - The rear wall is 0.8 mm thicker at its ends, so that the USB relief keeps its 1.6 mm depth at the middle of the
+    concave rear face. The relief floor is still flush with the receptacle mouth.
+- **Height:** the lid is 1.6 mm taller (top 19.8 mm above the board). The 45° top chamfer would otherwise leave only
+  0.5 mm of material over the USB overmould relief. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the
+  antenna still has only a thin skin over it.
+- **Snap fingers:** every snap dimension is measured from `lc_face()`, the lowest point of the bowed side face over that
+  clip.
+  - Fingers are never thinner than 1.4 mm, and the wall behind each pocket is never thinner than 1.7 mm.
+  - The rear fingers sit on a sloping facet, so they taper from 1.4 to about 1.8 mm across their width. That is
+    slightly stiffer, at about 1.6 % strain.
+- **Snap catches:** these are now through-windows in the tray wall instead of 0.85 mm blind recesses, because a blind
+  recess would leave under 1.2 mm behind it.
 
 ## How it works
 
@@ -59,11 +110,14 @@ printer. The two parts snap together, with no screws.
 - **Ledges:** the board sits on 1.2 mm side ledges, with a 1.2 mm front skin under its front edge.
   - The ledges stop 6 mm short of the flange (DB9 board-lock pegs).
   - On the −X side, the ledges are relieved under the header pins.
+  - A 0.4 mm gusset fills the corner between the floor and the front skin. It keeps 1.2 mm of material square to the
+    bottom front chamfer, and it stays outside the pin zone.
 - **Clips:** cantilever clips in the tray side walls catch the PCB top edge.
-  - Default positions: −X at Y 9.5; +X at Y 9.5 and 23.2.
+  - Default positions: −X at Y 9.5; +X at Y 9.5 and 23.25. The clips are 3.5 mm wide with 0.5 mm side slots, so
+    at least 1.2 mm of wall remains between each slot and the nearest snap pocket.
   - A clip that would collide with a lid-snap pocket is dropped, with an `ECHO` note. This happens at
     `xiao_overhang` ≤ ~4.
-- **Pressers:** ribs on the lid come down to 0.1 mm above the board edge, to hold it down.
+- **Pressers:** ribs on the lid (1.2 × 2 mm) come down to 0.1 mm above the board edge, to hold it down.
 - **Clear space:** there is 3 mm clear below the board. The red ghost volume shows the through-hole pin zone, kept
   1.25 mm in from the board edges.
 
@@ -108,9 +162,10 @@ The green ghost wires show one feasible route, and the interference check confir
 - **Fingers:** there are two snap fingers per side, 1.4 mm thick and 6 mm wide, flush with the outside.
   - The free length is 10 mm: 4 mm is slotted into the lid wall, and 6 mm hangs below the split.
   - The bending strain at full hook deflection is about 1.3 %, comfortable for PETG.
-- **Catch:** the hooks catch in 0.85 mm recesses in pockets on the tray's outer wall.
-- **Opening:** there is a 1.5 mm pry gap below each finger tip. Push a small screwdriver in and lever the finger
-  outwards.
+- **Catch:** the hooks catch on the top edge of a window through the tray wall, in pockets on its outer face. The
+  window opens below the RS232 board, beside the ledge.
+- **Opening:** there is a 0.9 mm pry gap below each finger tip. Push a thin screwdriver in and lever the finger
+  outwards. A larger gap would bring the pocket floor within 1.2 mm of the bottom chamfer.
 
 ### Logo
 
@@ -118,9 +173,8 @@ The green ghost wires show one feasible route, and the interference check confir
   outer top face, centred, 22 mm wide (`logo_w`). `show_logo = false` leaves the top plain.
 - **Orientation:** the mark reads upright when you look down on the assembled case with the DB9 at the bottom edge,
   nearest you. The WiFi arcs point towards the USB-C end. `renders/lid_top_logo.png` shows this view.
-- **Skin:** the top skin is 2.23 mm, because the USB plug relief sets the lid height, so 1.73 mm remains under the
-  deboss. The model asserts at least 1.0 mm. Nothing inside the lid comes above the ceiling, so the deboss cannot
-  meet a strut or clip.
+- **Skin:** the top skin is 1.6 mm (`ceil_t`), so 1.1 mm remains under the 0.5 mm deboss. The model asserts at least
+  1.0 mm. Nothing inside the lid comes above the ceiling, so the deboss cannot meet a strut or clip.
 - **Printing:** the lid prints top down, so the deboss is in the first 0.5 mm of layers and needs no support. At 22 mm
   wide the narrowest raised strip is about 1.0 mm (between the inner arc's ends and the shell) and the narrowest
   recess about 1.5 mm (the shell rim beside the stripes), against the 0.8 mm minimum for a 0.4 mm nozzle.
@@ -154,6 +208,23 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the PCB on the ledges
 - the lid rim on the tray rim
 
+**Wall thickness:** `build.sh` also exports both parts in assembly position (`part="tray_inplace"`/`"lid_inplace"`). It
+runs `wallprobe.py`, which casts a ray inwards from sample points on every face and lists everything under 1.2 mm.
+What remains is all deliberate, flexing or bearing-edge detail, not walls:
+
+- the 1.0 mm board-clip fingers and their 0.3–0.5 mm hook tips
+- the XIAO C-clip hooks and lips (0.45–0.8 mm, and the 45° lead-in tips)
+- the lid snap hooks (0.84–1.0 mm)
+- the 1.1 mm skin under the logo deboss
+
+The probe found and fixed these (most already existed before the restyle):
+
+- 0.6–0.9 mm webs between board-clip slots and snap pockets
+- a knife-edge cusp where the DB9 socket meets the body notch
+- 0.5 mm over the USB relief
+- a 0.1 mm strut tip at `xiao_overhang = 3`
+- 0.4 mm webs at the ends of the seam groove
+
 **Positive control:** with `-D 'ghost_offset=[1,-1,0]'` (the XIAO ghost moved 1 mm into the clips and stops), `check_lid`
 reports about 9 mm³ of overlap. It is spread over the stop struts, a C-clip and the USB slot. This confirms that the
 check can see a collision.
@@ -173,7 +244,7 @@ reruns the interference checks.
 | 6 | Diameter of the hardware behind each hole (jackscrew, spring, nut or rivet: take the widest part) and whether there is a bracket under it down to the PCB | `hw_d` | 5.0 | Socket fit; the stop plates come within 0.3 mm of the PCB at Y 5.4–6.6, X 10.2–15.95 |
 | 7 | DB9 rear plastic body: width, height above PCB top, depth behind the flange back | `body_w`, `body_h`, `body_d` | 20 × 10.5 × 9.5 | `body_h` also sets the XIAO height. `body_w` is assumed to fit between the screw hardware, as photo 1 suggests; if the body is wider, the sockets merge into the body notch automatically |
 | 8 | D-shell outer width × height and projection | `ds_w`, `ds_h`, `ds_proj` | 16.9 × 8.4 × 6 | Ghost only |
-| 9 | Header position: inset of its outer edge from the −X PCB edge (negative if it overhangs) and from the rear edge; header height | `hdr_edge`, `hdr_rear`, `hdr_h` | 0.3, 0.2, 8.5 | There is a 0.6 mm wall relief beside the header; ledge relief under its pins |
+| 9 | Header position: inset of its outer edge from the −X PCB edge (negative if it overhangs) and from the rear edge; header height | `hdr_edge`, `hdr_rear`, `hdr_h` | 0.3, 0.2, 8.5 | A wall relief beside the header is cut only if it overhangs (`hdr_edge` < 0.2). Rerun `build.sh` and check the wall probe if so. Ledge relief under its pins |
 | 10 | Any component or solder joint within 1.2 mm of the RS232 PCB side edges, underneath (ledges) or on top at the presser/clip Y positions | `ledge_w`, `press_y_*`, `bc_y_*` | — | Ledges, pressers and clips touch the board there |
 | 11 | Through-hole pin protrusion under the RS232 board | `below_clear` | 3.0 | Ghost pin zone assumes 2.5 mm or less |
 | 12 | XIAO outline and thickness | `xiao_l`, `xiao_w`, `xiao_pcb_t` | 21 × 17.8 × 1.0 | Pocket, clips. The outline is from the Seeed drawing (XIAO ESP32C3 page; the C6 uses the same outline per the Seeed wiki), not measured |
@@ -190,7 +261,9 @@ reruns the interference checks.
 - **Stop plates:** the lid's stop plates sit directly behind the flange hardware, down to 0.3 mm above the PCB. If the
   DB9 has board-lock brackets or solder lugs there, reduce their reach (the `0.3` in `lid()`) or remove them. The
   sockets alone still locate the case.
-- **Board clip strain:** the board clips are 1.0 mm thick and bend from the floor top (about 5 mm free length). They work at roughly 3 %
-  strain. The RS232 board is mainly held by the lid pressers. The clips only hold it during assembly.
+- **Board clip strain:** the board clips are 1.0 mm thick and bend from the floor top (about 5 mm free length). They
+  work at roughly 3 % strain. The RS232 board is mainly held by the lid pressers. The clips only hold it during assembly.
+- **Light gap at the snaps:** the catch windows open into the space under the board. A sliver of light shows below
+  each snap finger tip, where the pry gap meets the window.
 - **Overhang ≤ ~4 mm:** at `xiao_overhang` ≤ ~4, the second +X board clip is dropped to make room for the rear lid
   snap.

@@ -13,7 +13,7 @@
 //   openscad -D 'part="lid"'  -D show_ghosts=false -o out/lid.stl  zebserial_case.scad
 //   part = "tray" | "lid" (print orientation), "assembly" | "exploded" (with optional ghosts),
 //          "check_tray" | "check_lid" | "check_traylid" (interference volumes, should be empty),
-//          "ghosts" (ghost models only).
+//          "ghosts" (ghost models only), "tray_inplace" | "lid_inplace" (assembly coordinates, for wallprobe.py).
 
 /* [View] */
 part = "assembly";
@@ -78,7 +78,7 @@ hdr_rear = 0.2;          // header body end inset from the PCB rear edge
 
 /* [Print / tolerance] */
 wall = 1.6;              // minimum wall (4 perimeters)
-side_t = 3.2;            // side walls (room for flush snap clips)
+side_t = 4.0;            // side walls at the corners; the pincushion sag thins them towards mid-span
 floor_t = 1.6;
 ceil_t = 1.6;            // top skin, also the only material over the XIAO antenna
 pcb_clr = 0.2;           // per side on PCB pockets
@@ -92,6 +92,18 @@ usb_recess_w = 12.0;     // plug overmould relief
 usb_recess_h = 7.0;
 usb_recess_d = 1.6;      // depth of the relief behind the receptacle mouth
 usb_mouth_inset = 0.0;   // receptacle mouth to relief floor (0 = flush, plug pushes on the case)
+
+/* [Exterior style: faceted pincushion] */
+// See ~/personal_scripts/ai-config/instructions/enclosure_styles.md. Applied to both halves so the seam lines up.
+sag_frac = 0.02;         // inward bow of each face at mid-span, as a fraction of that face's length
+front_sag = 0;           // the front face stays flat: it is the datum the DB9 flange sits against
+facet_flat = 0.3;        // flat middle facet as a fraction of each face (0 = two facets meeting in a V)
+corner_chamfer = 2.8;    // vertical corner chamfers, 45 degrees in plan (about 7 % of the width)
+edge_chamfer = 1.5;      // top and bottom perimeter chamfers, 45 degrees (prints without support)
+seam_reveal = true;      // shadow-line groove on the lid just above the seam
+reveal_d = 0.45;
+reveal_h = 0.5;
+min_wall = 1.2;          // checked by wallprobe.py, not just assumed
 
 /* [Logo] */
 // Debossed into the lid top, centred; reads upright seen from above with the DB9 at the bottom edge.
@@ -111,12 +123,14 @@ lc_hook = 0.75;          // hook protrusion
 lc_above = 4.0;          // finger free length above the split (slots into the lid wall)
 lc_below = 6.0;          // finger length below the split
 lc_side_gap = 0.5;       // slot width either side of the finger in the lid wall
+lc_pry = 0.9;            // gap under the finger tip for a screwdriver (keeps min_wall above the bottom chamfer)
 lc_front_y = 16.5;       // first lid clip centre (Y)
 lc_rear_from_back = 4.2; // second lid clip centre, distance from the interior rear face
 // RS232 board side clips in the tray (Y centres)
 bc_y_left = [9.5];
-bc_y_right = [9.5, 23.2];
-bc_w = 4.0;
+bc_y_right = [9.5, 23.25];
+bc_w = 3.5;
+bc_side_gap = 0.5;       // slot either side of the finger (Y)
 bc_t = 1.0;
 bc_gap = 0.8;
 bc_hook = 0.5;
@@ -126,7 +140,7 @@ ledge_front_skip = 6.0;  // keep the ledge clear of DB9 board-lock pegs
 press_y_left = [16.0];
 press_y_right = [16.0, 27.0];
 press_w = 2.0;
-press_reach = 1.0;       // over the board edge (from the wall inner face)
+press_reach = 1.2;       // over the board edge (from the wall inner face)
 // XIAO C-clips hanging from the lid ceiling: [side (-1 left, +1 right), pad index centre]
 xc_list = [[-1, 2], [1, 6]];
 xc_w = 4.0;
@@ -151,14 +165,18 @@ zx1 = zx0 + xiao_pcb_t;              // XIAO top
 y_mouth = yx1 + usb_over;
 usb_cz = zx1 + usb_h / 2;
 x_in = board_w / 2 + pcb_clr;
-x_out = x_in + side_t;
+x_out = x_in + side_t;               // outermost X (at the corner ends of the side faces)
 y_in0 = y_fb;
 y_in1 = max(y_pcb1, yx1) + pcb_clr;
-y_out1 = max(y_mouth + usb_mouth_inset + usb_recess_d, y_in1 + wall);
+y_rear_face = max(y_mouth + usb_mouth_inset + usb_recess_d, y_in1 + wall);   // rear face at its mid-span
+rear_sag = sag_frac * 2 * x_out;
+y_out1 = y_rear_face + rear_sag;     // outermost Y; the concave rear face comes back to y_rear_face at mid-span
 z_floor = -pcb_t - below_clear;
 z_bot = z_floor - floor_t;
-z_ceil = zx1 + xiao_top_clear;
-z_top = max(z_ceil + ceil_t, usb_cz + usb_recess_h / 2 + wall);
+// The top also has to clear the USB overmould relief by min_wall measured square to the 45 degree top chamfer.
+z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
+            usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2));
+z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
 socket_d = hw_d + 2 * socket_clr;
 socket_end = hw_face_to_end + clip_clr;
@@ -166,23 +184,56 @@ y_fw1 = socket_end + socket_back;    // lid front wall rear face
 body_cut_x = body_w / 2 + pcb_clr;
 usb_slot_w = usb_w + 2 * usb_clr;
 hdr_x0 = -board_w / 2 + hdr_edge;
+hdr_relief = hdr_edge >= pcb_clr ? 0 : pcb_clr - hdr_edge + 0.2;   // wall relief only if the header overhangs
 hdr_y1 = y_pcb1 - hdr_rear;
 hdr_y0 = hdr_y1 - hdr_pins * 2.54;
 lc_ys = [lc_front_y, y_in1 - lc_rear_from_back];
 pocket = lc_t + lc_gap;
 
+// ---- exterior outline (plan), CCW seen from above
+side_sag = sag_frac * (y_out1 - y_fb);
+function side_mid(a, b, sg) = sg <= 0 ? [] :
+    let(d = b - a, n = [-d[1], d[0]] / norm(d), t1 = (1 - facet_flat) / 2, t2 = (1 + facet_flat) / 2)
+    facet_flat > 0 ? [a + d * t1 + n * sg, a + d * t2 + n * sg] : [a + d * 0.5 + n * sg];
+function outline() = let(X = x_out, c = corner_chamfer, y0 = y_fb, Y1 = y_out1,
+        fl = [-X + c, y0], fr = [X - c, y0], r0 = [X, y0 + c], r1 = [X, Y1 - c],
+        rr = [X - c, Y1], rl = [-X + c, Y1], l1 = [-X, Y1 - c], l0 = [-X, y0 + c])
+    concat([fl], side_mid(fl, fr, front_sag), [fr, r0], side_mid(r0, r1, side_sag), [r1, rr],
+           side_mid(rr, rl, rear_sag), [rl, l1], side_mid(l1, l0, side_sag), [l0]);
+// inward offset of a polygon by d (edge lines shifted, then intersected)
+function _line(p, q, d) = let(u = (q - p) / norm(q - p)) [p + [-u[1], u[0]] * d, u];
+function _isect(l1, l2) = let(p = l1[0], r = l1[1], q = l2[0], v = l2[1],
+        den = r[0] * v[1] - r[1] * v[0]) p + r * (((q[0] - p[0]) * v[1] - (q[1] - p[1]) * v[0]) / den);
+function offset_poly(P, d) = let(n = len(P))
+    [for (i = [0 : n - 1]) _isect(_line(P[(i - 1 + n) % n], P[i], d), _line(P[i], P[(i + 1) % n], d))];
+// right-hand side face X at a given Y (the left side is its mirror image)
+function surf_x(y) = let(a = y_fb + corner_chamfer, b = y_out1 - corner_chamfer, t = (y - a) / (b - a),
+        t1 = (1 - facet_flat) / 2, t2 = (1 + facet_flat) / 2,
+        sg = (t <= 0 || t >= 1) ? 0 : t < t1 ? side_sag * t / t1 : t > t2 ? side_sag * (1 - t) / (1 - t2) : side_sag)
+    x_out - sg;
+// lowest X of the side face over a Y span: the flat that the snap finger and pocket are cut from
+function face_x(y0, y1) = let(a = y_fb + corner_chamfer, b = y_out1 - corner_chamfer,
+        f0 = a + (b - a) * (1 - facet_flat) / 2, f1 = a + (b - a) * (1 + facet_flat) / 2)
+    min(surf_x(y0), surf_x(y1), (y0 < f1 && y1 > f0) ? x_out - side_sag : 1e9);
+function lc_face(c) = face_x(c - lc_w / 2 - clip_clr - lc_side_gap, c + lc_w / 2 + clip_clr + lc_side_gap);
+
 function pad_y(i) = yx1 - xiao_pad1 - (i - 1) * xiao_pitch;
-function lc_hit(y, half) = max([for (c = lc_ys) (abs(y - c) < half + lc_w / 2 + clip_clr + lc_side_gap) ? 1 : 0]) == 1;
+// true if a board clip slot of half-width `half` at Y would leave less than min_wall to a lid clip pocket
+function lc_hit(y, half) = max([for (c = lc_ys) (abs(y - c) < half + lc_w / 2 + clip_clr + min_wall) ? 1 : 0]) == 1;
+bc_half = bc_w / 2 + bc_side_gap;
 
 echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_fb, " Z ", z_top - z_bot,
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
+echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front sag ", front_sag,
+         ", corner chamfer ", corner_chamfer, ", edge chamfer ", edge_chamfer,
+         ", snap faces at X ", [for (c = lc_ys) lc_face(c)]));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
 echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
 assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
-for (y = bc_y_left)  if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
-for (y = bc_y_right) if (lc_hit(y, bc_w / 2 + bc_gap)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
+for (y = bc_y_left)  if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
+for (y = bc_y_right) if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
 for (c = xc_list) {
     used = c[0] < 0 ? used_pads_left : used_pads_right;
     for (u = used)
@@ -200,40 +251,72 @@ module xz_prism(pts, y0, y1) {
     translate([0, y1, 0]) rotate([90, 0, 0]) linear_extrude(y1 - y0) polygon(pts);
 }
 
+// Faceted pincushion exterior: concave plan outline with corner chamfers, extruded with
+// 45 degree chamfers on the top and bottom perimeter edges. Top and bottom stay flat.
+module outer_solid() {
+    P = outline();
+    Q = offset_poly(P, edge_chamfer);
+    n = len(P);
+    e = edge_chamfer;
+    pts = concat([for (p = Q) [p[0], p[1], z_bot]], [for (p = P) [p[0], p[1], z_bot + e]],
+                 [for (p = P) [p[0], p[1], z_top - e]], [for (p = Q) [p[0], p[1], z_top]]);
+    faces = concat([[for (i = [0 : n - 1]) i]], [[for (i = [n - 1 : -1 : 0]) 3 * n + i]],
+                   [for (k = [0 : 2]) for (i = [0 : n - 1])
+                       [k * n + i, (k + 1) * n + i, (k + 1) * n + (i + 1) % n, k * n + (i + 1) % n]]);
+    polyhedron(pts, faces, convexity = 4);
+}
+
+// shadow-line groove on the lid just above the seam, interrupted at the snap fingers
+module reveal_cut() {
+    difference() {
+        box(-x_out - 5, x_out + 5, y_fb - 5, y_out1 + 5, split_z - 1, split_z + reveal_h);
+        translate([0, 0, split_z - 2]) linear_extrude(reveal_h + 3) polygon(offset_poly(outline(), reveal_d));
+        for (c = lc_ys) mirror_x_both()
+            box(x_in, x_out + 6, c - lc_w / 2, c + lc_w / 2, split_z - 2, split_z + 2);   // groove runs into the side slots: no webs
+    }
+}
+
 // ---------------------------------------------------------------- tray
-module tray() {
+module tray() intersection() {
+  outer_solid();
+  union() {
     difference() {
         union() {
             difference() {
-                box(-x_out, x_out, y_fb, y_out1, z_bot, split_z);
+                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_fb - 1, y_out1 + 1, z_bot - 1, split_z); }
                 box(-x_in, x_in, y_in0 - 1, y_in1, z_floor, split_z + 1);
             }
             // front skin under the PCB, supports the PCB front edge
             box(-x_in, x_in, y_fb, y_fb + 1.2, z_floor - eps, -pcb_t);
+            // small gusset in the floor / front skin corner: keeps min_wall square to the bottom front chamfer
+            fg = max(0, edge_chamfer + min_wall * sqrt(2) - floor_t - 1.2);
+            if (fg > 0) translate([x_in, 0, 0]) rotate([0, -90, 0]) linear_extrude(2 * x_in)
+                polygon([[z_floor - eps, y_fb + 1.2 - eps], [z_floor - eps, y_fb + 1.2 + fg], [z_floor + fg, y_fb + 1.2 - eps]]);
             // side ledges
             mirror_x_both() box(x_in - ledge_w, x_in + eps, y_fb + ledge_front_skip, y_pcb1 - 0.5, z_floor - eps, -pcb_t);
             // rear tongue that fills the lid USB slot under the receptacle
             box(-usb_slot_w / 2 + clip_clr / 2, usb_slot_w / 2 - clip_clr / 2, y_in1, y_out1, split_z - eps, zx1 - usb_clr);
         }
         // ledge relief at the header pins (header side is -X)
-        box(-x_in - eps, -x_in + ledge_w + 0.1, hdr_y0 - 1, hdr_y1 + 1, z_floor, -pcb_t + 0.1);
-        // header body relief in the wall
-        box(-x_in - 0.6, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, split_z + 1);
+        box(-x_in, -x_in + ledge_w + 0.1, hdr_y0 - 1, hdr_y1 + 1, z_floor, -pcb_t + 0.1);
+        // header body relief in the wall (only when the header overhangs the PCB edge)
+        if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, split_z + 1);
         // lid clip pockets and catch recesses
         for (c = lc_ys) mirror_x_both() lid_clip_tray_cut(c);
         // board clip slots
-        for (y = bc_y_left)  if (!lc_hit(y, bc_w / 2 + bc_gap)) mirror([1, 0, 0]) board_clip_cut(y);
-        for (y = bc_y_right) if (!lc_hit(y, bc_w / 2 + bc_gap)) board_clip_cut(y);
+        for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip_cut(y);
+        for (y = bc_y_right) if (!lc_hit(y, bc_half)) board_clip_cut(y);
         usb_recess_cut();
     }
-    for (y = bc_y_left)  if (!lc_hit(y, bc_w / 2 + bc_gap)) mirror([1, 0, 0]) board_clip(y);
-    for (y = bc_y_right) if (!lc_hit(y, bc_w / 2 + bc_gap)) board_clip(y);
+    for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip(y);
+    for (y = bc_y_right) if (!lc_hit(y, bc_half)) board_clip(y);
+  }
 }
 
 module board_clip_cut(y) {
-    box(x_in - eps, x_in + bc_t + bc_gap, y - bc_w / 2 - bc_gap, y + bc_w / 2 + bc_gap, z_bot - 1, split_z + 1);
+    box(x_in - eps, x_in + bc_t + bc_gap, y - bc_half, y + bc_half, z_floor, split_z + 1);
     // ledge must not tie the finger to the floor
-    box(x_in - ledge_w - 0.1, x_in + eps, y - bc_w / 2 - bc_gap, y + bc_w / 2 + bc_gap, z_floor, -pcb_t + 0.1);
+    box(x_in - ledge_w - 0.1, x_in, y - bc_half - 0.5, y + bc_half + 0.5, z_floor, -pcb_t + 0.1);   // no ledge slivers
 }
 module board_clip(y) {
     h0 = 0.15;                    // catch face above the PCB top
@@ -247,24 +330,29 @@ module board_clip(y) {
 // lid-clip geometry, right side (+X); mirrored for the left
 lc_tip = split_z - lc_below;
 lc_hook_top = lc_tip + 1.4;
+// All snap geometry is measured from xo = the lowest point of the concave side face over the
+// clip's span, so the bow never thins the finger or the wall behind its pocket.
 module lid_clip_tray_cut(c) {
     hw = lc_w / 2 + clip_clr;
-    box(x_out - pocket, x_out + 1, c - hw, c + hw, lc_tip - 1.5, split_z + 1);       // pocket + pry gap
-    box(x_out - pocket - lc_hook - 0.1, x_out - pocket + eps, c - hw, c + hw,
-        lc_tip - 0.2, lc_hook_top + 0.1);                                              // catch recess
+    xo = lc_face(c);
+    box(xo - pocket, x_out + 1, c - hw, c + hw, lc_tip - lc_pry, split_z + 1);        // pocket + pry gap
+    // catch window, through to the inside (below the board, beside the ledge): a blind recess
+    // would leave less than min_wall behind it at mid-span
+    box(x_in, xo - pocket + eps, c - hw, c + hw, lc_tip - 0.2, lc_hook_top + 0.1);
 }
 module lid_clip_lid_cut(c) {
     hw = lc_w / 2;
+    xo = lc_face(c);
     // slots either side and behind the finger, up into the lid wall
     difference() {
-        box(x_out - pocket, x_out + 1, c - hw - lc_side_gap, c + hw + lc_side_gap, split_z - 1, split_z + lc_above);
-        box(x_out - lc_t, x_out + 1, c - hw, c + hw, split_z - 1, split_z + lc_above + 1);
+        box(xo - pocket, x_out + 1, c - hw - lc_side_gap, c + hw + lc_side_gap, split_z - 1, split_z + lc_above);
+        box(xo - lc_t, x_out + 1, c - hw, c + hw, split_z - 1, split_z + lc_above + 1);
     }
 }
 module lid_clip_finger(c) {
     hw = lc_w / 2;
-    xi = x_out - lc_t;
-    box(xi, x_out, c - hw, c + hw, lc_tip, split_z + eps);
+    xi = lc_face(c) - lc_t;
+    box(xi, x_out + 1, c - hw, c + hw, lc_tip, split_z + eps);     // outer face trimmed by outer_solid()
     xz_prism([[xi + eps, lc_tip], [xi, lc_tip], [xi - lc_hook, lc_tip + lc_hook],
               [xi - lc_hook, lc_hook_top], [xi + eps, lc_hook_top]], c - hw, c + hw);
 }
@@ -275,11 +363,12 @@ module usb_recess_cut() {
 }
 
 // ---------------------------------------------------------------- lid
-module lid() {
+module lid() intersection() {
+  outer_solid();
     difference() {
         union() {
             difference() {
-                box(-x_out, x_out, y_fb, y_out1, split_z, z_top);
+                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_fb - 1, y_out1 + 1, split_z, z_top + 1); }
                 box(-x_in, x_in, y_in0 - 1, y_in1, split_z - 1, z_ceil);
                 for (c = lc_ys) mirror_x_both() lid_clip_lid_cut(c);
             }
@@ -297,23 +386,26 @@ module lid() {
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_fb + body_d + pcb_clr, -1, body_h + pcb_clr);
+        // flat ceiling between the body notch and each socket, so no knife-edge cusp is left where they meet
+        mirror_x_both() box(body_cut_x - eps, fl_hole_pitch / 2, y_fb - 1, socket_end, -1, hole_z + socket_d / 2);
         // U-shaped blind sockets for the flange hardware (open downwards)
         for (s = [-1, 1]) translate([s * fl_hole_pitch / 2, 0, 0]) hull() {
             translate([0, y_fb - 1, hole_z]) rotate([-90, 0, 0]) cylinder(d = socket_d, h = socket_end - y_fb + 1);
             translate([0, y_fb - 1, -1]) rotate([-90, 0, 0]) cylinder(d = socket_d, h = socket_end - y_fb + 1);
         }
-        // header relief
-        box(-x_in - 0.6, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, hdr_h + 1);
+        // header relief (only when the header overhangs the PCB edge)
+        if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, hdr_h + 1);
         // USB-C slot, open to the rim so the receptacle drops in; the tray tongue fills below it
         box(-usb_slot_w / 2, usb_slot_w / 2, y_in1 - 1, y_out1 + 1, split_z - 1, zx1 + usb_h + usb_clr);
         usb_recess_cut();
         if (show_logo) logo_cut();
+        if (seam_reveal) reveal_cut();
     }
 }
 
 // Seen from above, +Y (away from the DB9) is up, so the mark needs no rotation or mirroring.
 module logo_cut() {
-    translate([0, (y_fb + y_out1) / 2, z_top - logo_depth])
+    translate([0, (y_fb + y_rear_face) / 2, z_top - logo_depth])
         linear_extrude(logo_depth + 1) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
 }
 
@@ -345,7 +437,7 @@ module front_stop(x) {
     body_end = y_fb + body_d + pcb_clr;
     tip0 = max(y1 - stop_t, body_end);          // tip behind the DB9 body can reach below the PCB
     box(x - stop_w / 2, x + stop_w / 2, y_fw1 - eps, y1, body_h + pcb_clr, z_ceil + eps);
-    if (y1 > tip0) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);
+    if (y1 - tip0 >= min_wall) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);   // no slivers
 }
 
 // ---------------------------------------------------------------- ghosts
@@ -448,4 +540,8 @@ if (part == "tray") {
     intersection() { lid(); ghosts(); }
 } else if (part == "check_traylid") {
     intersection() { tray(); lid(); }
+} else if (part == "tray_inplace") {                               // assembly coordinates, for wallprobe.py
+    tray();
+} else if (part == "lid_inplace") {
+    lid();
 }

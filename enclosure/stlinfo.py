@@ -62,15 +62,20 @@ def components(tris):
     return list(groups.values())
 
 
-for path in [a for a in sys.argv[1:] if not a.startswith('--')]:
-    tris = read_stl(path)
-    if not tris:
-        print(f'{path}: EMPTY')
-        continue
-    lo, hi = bbox(tris)
-    print(f'{path}: {len(tris)} tris, volume {vol(tris) / 1000:.3f} cm3, '
-          f'bbox {[round(v, 2) for v in lo]} .. {[round(v, 2) for v in hi]}')
-    if '--components' in sys.argv:
-        for g in sorted(components(tris), key=vol, reverse=True):
-            lo, hi = bbox(g)
-            print(f'   piece vol {vol(g):8.3f} mm3  {[round(v, 2) for v in lo]} .. {[round(v, 2) for v in hi]}')
+def main():
+    for path in [a for a in sys.argv[1:] if not a.startswith('--')]:
+        tris = read_stl(path)
+        if not tris:
+            print(f'{path}: EMPTY')
+            continue
+        lo, hi = bbox(tris)
+        print(f'{path}: {len(tris)} tris, volume {vol(tris) / 1000:.3f} cm3, '
+              f'bbox {[round(v, 2) for v in lo]} .. {[round(v, 2) for v in hi]}')
+        if '--components' in sys.argv:
+            for g in sorted(components(tris), key=vol, reverse=True):
+                lo, hi = bbox(g)
+                print(f'   piece vol {vol(g):8.3f} mm3  {[round(v, 2) for v in lo]} .. {[round(v, 2) for v in hi]}')
+
+
+if __name__ == '__main__':
+    main()
