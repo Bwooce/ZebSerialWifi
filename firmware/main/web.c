@@ -17,6 +17,7 @@ static const char *TAG = "web";
 
 #define MAX_SCAN 20
 #define BODY_MAX 512
+#define SCAN_MAX_AGE_US (60LL * 1000 * 1000)
 
 static const char PAGE_HEAD[] =
     "<!doctype html><html><head><meta charset=utf-8>"
@@ -77,8 +78,20 @@ static esp_err_t send_setup_page(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
     httpd_resp_sendstr_chunk(req, "<h2>ZebSerial WiFi setup</h2><form method=post action=/save>"
                                   "<label>Network</label><select name=ssid>");
+    /*
+     * Phones fire several captive-portal probes that all land here; scanning
+     * on each one disrupts the AP, so reuse a recent scan unless asked.
+     */
     static wifi_ap_record_t recs[MAX_SCAN];
-    int n = wifi_prov_scan(recs, MAX_SCAN);
+    static int n;
+    static int64_t scanned_at;
+    char q[16] = "";
+    bool want_rescan = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && strstr(q, "rescan") != NULL;
+    int64_t now = esp_timer_get_time();
+    if (want_rescan || scanned_at == 0 || now - scanned_at > SCAN_MAX_AGE_US) {
+        n = wifi_prov_scan(recs, MAX_SCAN);
+        scanned_at = now;
+    }
     char esc[200];
     char line[512];
     for (int i = 0; i < n; i++) {
@@ -100,7 +113,8 @@ static esp_err_t send_setup_page(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, "</select>"
                                   "<label>or type a network name</label><input name=ssid_manual maxlength=32>"
                                   "<label>Password</label><input name=pass type=password maxlength=64>"
-                                  "<button type=submit>Save and reboot</button></form>");
+                                  "<button type=submit>Save and reboot</button></form>"
+                                  "<p><a href='/?rescan=1'>Scan again</a></p>");
     httpd_resp_sendstr_chunk(req, PAGE_TAIL);
     return httpd_resp_sendstr_chunk(req, NULL);
 }
