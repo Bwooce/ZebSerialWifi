@@ -117,8 +117,12 @@ What the style changed underneath:
     a hex nut, 5.5 mm across corners.
   - Socket depth: they end 0.3 mm behind the measured 5.1 mm.
 - **Stop plates:** behind each socket, a stop plate reaches down to 0.3 mm above the PCB.
-- **Result:** the case cannot slide forward (the flange is against the case face) or back (the hardware is against the
-  socket ends).
+- **What this locates:** the case cannot slide forward relative to the connector. The blind socket ends sit behind the
+  hardware tails, and the case front face sits against the flange back. Both of these resist only forward motion.
+- **Known gap:** nothing positive stops the case sliding back off the connector. Pulling a USB plug out (6–20 N) pushes
+  it that way. It is held only by friction and the snaps until internal parts meet, after about 1 mm. The only
+  forward-facing surfaces inside are the RS232 PCB front edge and the header, so a proper stop waits for the measured
+  `pcb_front_y`.
 
 ### RS232 board
 
@@ -290,7 +294,8 @@ from thin material. These show up in sweeps at other `xiao_overhang` values.
 | [0, 0, −0.06] | `check_tray` | hits the tongue |
 | [0, 0, −0.09] | `check_lid` | none |
 | [0, 0, −0.11] | `check_lid` | hits both clamp ledges |
-| [0, 0, ±0.09] / [0, 0, +0.11] | `check_lid` | none / hits both lips |
+| [0, 0, +0.09] | `check_lid` | none |
+| [0, 0, +0.11] | `check_lid` | hits both clamp lips |
 
 So the rear support and the clamps really sit at their 0.05 mm and 0.1 mm gaps.
 
@@ -302,15 +307,23 @@ calipers. Change the parameter, then rerun `./build.sh`; it reports the active X
 | # | Measure | Parameter | Default | Why it matters |
 |---|---------|-----------|---------|----------------|
 | 1 | XIAO rear (USB) PCB edge past the RS232 PCB rear edge | `xiao_overhang` | 2.0 | Case length, how far the XIAO lies on the DB9 body |
-| 2 | Or instead: DB9 flange **front** face to the XIAO front (antenna) PCB edge. Overrides item 1 | `xiao_front_from_flange` | −1 (off) | Same, measured from the connector |
-| 3 | DB9 rear body height above the RS232 PCB top, and the taller step right behind the flange (height and depth), if there is one | `body_h`, `step_on`, `step_h`, `step_d` | 11.1; on, 12.2, 2.9 | `body_h` sets the XIAO height, and with it the tray tongue height (0.05 mm gap) |
+| 2 | Or instead: DB9 flange **front** face (the face that meets the printer, not the back of the 0.38 mm flange) to the XIAO front (antenna) PCB edge. Overrides item 1 | `xiao_front_from_flange` | −1 (off) | Same, measured from the connector |
+| 3 | **Print-blocking.** DB9 rear body height above the RS232 PCB top, and the taller step right behind the flange (height and depth), if there is one | `body_h`, `step_on`, `step_h`, `step_d` | 11.1; on, 12.2, 2.9 | `body_h` sets the XIAO height, and with it the tray tongue height (0.05 mm gap) |
 | 4 | DB9 rear body width, and whether the screw hardware sits beside it or inside it | `body_w` | 20 | Not on the drawings. If it is wider than 25, the sockets merge into the body notch |
 | 5 | DB9 flange front face to the RS232 PCB front edge | `pcb_front_y` | −1 (= the flange back, 0.38) | Where the PCB, the ledges and the front skin sit |
 | 6 | Flange bottom relative to the RS232 PCB top (0 if it sits on the board) | `fl_bot` | 0 | Socket height: hole centre = `fl_bot` + 6.25 |
-| 7 | XIAO PCB thickness | `xiao_pcb_t` | 1.25 | Clamp lips, strut engagement, tongue height |
+| 7 | **Print-blocking.** XIAO PCB thickness | `xiao_pcb_t` | 1.25 | Clamp lips, strut engagement, tongue height |
 | 8 | Hardware behind each flange hole: the widest part, and whether it is a hex nut | `hw_d`, `hw_hex_nut` | 5.0, off (5.5 if on) | Socket fit |
 
 ## Concerns to check before printing
+
+- **XIAO height chain (fit-check items 3 and 7):** the XIAO's support gaps are tight. The tongue is 0.05 mm below the
+  USB shell, and the clamp ledges, lips and front strut are 0.1 mm from the PCB. The inputs are looser than that:
+  `body_h` is ±0.3 from the drawings, and `xiao_pcb_t` could be 1.0 or 1.25.
+  - If the board is really 1.0 mm and the model still says 1.25, the tongue pushes the USB shell up by about 0.2 mm and
+    the clamp lips sit 0.25 mm above the board, so it is loose.
+  - If `body_h` is off by more than about 0.1 mm, either the lid will not close over the XIAO or the XIAO rattles.
+  - Measure both and rerun `build.sh` before printing.
 
 - **DB9 on the board:** `fl_bot`, `body_h` and `hw_d` decide whether the lid drops over the connector and whether the
   XIAO sits at the right height for the tongue. Measure them first.

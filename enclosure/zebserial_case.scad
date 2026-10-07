@@ -265,6 +265,9 @@ assert(z_top <= max_above, "case taller than the 25 mm envelope above the board"
 echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
 assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
+if (body_cut_x > fl_hole_pitch / 2 - socket_d / 2)
+    echo(str("ZEBCASE NOTE: the DB9 body (", body_w, " wide) covers the screw hardware: the sockets merge into the body notch",
+             x_in - body_cut_x < min_wall ? " and the stop plates behind them are left off" : ""));
 echo(str("ZEBCASE SUPPORT front: ", front_on_body ? str("rests on the DB9 body top, overlap ", body_overlap, " mm")
          : str(body_overlap > 0 ? str("only ", body_overlap, " mm on the DB9 body, so ") : "not on the DB9 body, so ",
                "the lid adds a front rest (-X clamp on D6) beside the front of the +X clamp"),
@@ -427,7 +430,7 @@ module lid() intersection() {
             // front wall above the split
             box(-x_in - eps, x_in + eps, y_fb, y_fw1, split_z, z_top - eps);
             // stop plates behind the screw hardware, reaching down towards the PCB
-            mirror_x_both() box(body_cut_x, x_in, socket_end, y_fw1, 0.3, split_z + eps);
+            if (x_in - body_cut_x >= min_wall) mirror_x_both() box(body_cut_x, x_in, socket_end, y_fw1, 0.3, split_z + eps);
             // board pressers
             for (y = press_y_left)  mirror([1, 0, 0]) presser(y);
             for (y = press_y_right) presser(y);
@@ -441,7 +444,8 @@ module lid() intersection() {
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
         // flat ceiling between the body notch and each socket, so no knife-edge cusp is left where they meet
-        mirror_x_both() box(body_cut_x - eps, fl_hole_pitch / 2, y_fb - 1, socket_end, -1, hole_z + socket_d / 2);
+        if (body_cut_x < fl_hole_pitch / 2)
+            mirror_x_both() box(body_cut_x - eps, fl_hole_pitch / 2, y_fb - 1, socket_end, -1, hole_z + socket_d / 2);
         // U-shaped blind sockets for the flange hardware (open downwards)
         for (s = [-1, 1]) translate([s * fl_hole_pitch / 2, 0, 0]) hull() {
             translate([0, y_fb - 1, hole_z]) rotate([-90, 0, 0]) cylinder(d = socket_d, h = socket_end - y_fb + 1);
