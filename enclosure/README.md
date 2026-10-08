@@ -55,11 +55,11 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
   parts" (Bambu Studio), so they stay aligned; give the logo part the second filament. The inlay is the first three
   0.2 mm layers on the bed, flush with the lid top. For a single-colour print set `logo_mode = "deboss"` (0.6 mm deep)
   or `"none"` and rebuild.
-- **Size:** 39.9 × 35.4 × 26.3 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
-  1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 20.1 mm above the RS232
-  board, against a 25 mm limit (the Dupont wire-bend space sets it; see below).
-- **Material:** 5.5 cm³ for the tray, 8.5 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 18 g of PETG at
-  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 3.84 cm³ (lid), about 7.5 g together.
+- **Size:** 39.9 × 35.4 × 31.2 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
+  1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 25.0 mm above the RS232
+  board, exactly the 25 mm limit (`max_above`): the Dupont wires' measured turning space sets it; see below.
+- **Material:** 5.5 cm³ for the tray, 11.4 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 22 g of PETG at
+  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 5.02 cm³ (lid), about 9 g together.
 
 ## Exterior style: faceted pincushion
 
@@ -99,7 +99,7 @@ What the style changed underneath:
   - The rear wall is 0.8 mm thicker at its ends, so that the USB relief keeps its 1.6 mm depth at the middle of the
     concave rear face. The relief floor is still flush with the receptacle mouth.
 - **Height:** the lid top is set so the 45° top chamfer leaves 1.2 mm over the USB overmould relief. That alone would put it 19.95 mm
-  above the board; the Dupont wire-bend space now raises it to 20.1 mm. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the antenna still has only a thin
+  above the board; the Dupont wires' turning space (ceiling at least 23.4 mm above the PCB top) now raises it to 25.0 mm. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the antenna still has only a thin
   skin over it.
 - **Snap fingers:** every snap dimension is measured from `lc_face()`, the lowest point of the bowed side face over that
   clip.
@@ -113,7 +113,7 @@ What the style changed underneath:
 ### What the first print showed (revision 2)
 
 The first print (commit 731d0fb, PETG Basic) was test-fitted. The board-lock leg-tail pockets had been placed at the
-lug screw-hole position (`lug_hole_y` 4.6), but the leg tails (the spikes under the PCB) are really 8.9 mm behind the
+lug screw-hole position (`lug_hole_y` 4.6), but the leg tails (the spikes under the PCB) are really 8.9 mm (as first measured on the print) behind the
 flange front. The ghost legs used the same parameter, so the interference check could not see the error. With the
 board pushed 4.3 mm forward so the spikes drop into the pockets, the model reproduces what the user saw: the flange
 stands 4.3 mm in front of the case front face, the tray below it is open at the front while the lid front wall wraps
@@ -124,7 +124,7 @@ and the rear +X clip overhangs the moved PCB's rear corner by 0.55 mm). They wer
 fingers) and bent across the layer lines. This revision:
 
 - puts the flange flush in the case front and holds it with lips and the lid front wall;
-- gives the spikes their own parameter (`leg_y` 8.9) and makes their pockets loose;
+- gives the spikes their own parameter (`leg_y`, now measured to the centre: 9.5) and makes their pockets loose;
 - adds a rigid backstop behind the board;
 - replaces every flexing finger inside the case (RS232 board side clips and XIAO side clamps) with rigid features;
 - rounds the USB-C opening;
@@ -140,7 +140,7 @@ fingers) and bent across the layer lines. This revision:
   - Each side of the body, a plastic lug 3.4 high runs out to the full PCB width and back to Y 12.0 (`lug_end`).
   - The PCB front edge is flush with the flange front face, so the PCB runs under the flange.
   - Board-lock legs: soldered metal legs through the lugs, with round tails 3.1 mm across sticking out 3.0 mm below
-    the PCB, at Y 8.9 (`leg_y`, measured on the print) and about 24.9 mm apart (`lug_hole_x = 12.45`, approximate).
+    the PCB, centres at Y 9.5 (`leg_y`, measured with calipers) and about 24.9 mm apart (`lug_hole_x = 12.45`, approximate).
     `lug_hole_y` (4.6) is now only the screw-hole position on the ghost.
 - **Flush front.** The case front face is at Y 0, flush with the flange front face. The flange sits in the front
   opening between the side walls (0.55 mm each side). Above the flange (from z 12.8, `fl_clr_z` 0.3 above it) the
@@ -165,10 +165,10 @@ fingers) and bent across the layer lines. This revision:
   - The user lost the shield when the mounting nuts were off. The lips hold the shield's flange over the middle 16 mm
     at top and bottom; the screw holes stay free so the nuts can go back on.
 - **Leg-tail pockets** (`leg_pocket_on = true`): a secondary lock now, not the datum.
-  - Slots at Y 8.9 with 0.6 mm clearance per side in Y (`leg_clr_y`) and 0.3 + 1.0 mm per side in X, a 0.6 mm 45°
+  - Slots at Y 9.5 with 0.6 mm clearance per side in Y (`leg_clr_y`) and 0.3 + 1.0 mm per side in X, a 0.6 mm 45°
     lead-in, in bosses standing up to 0.2 mm below the PCB. The floor under each pocket is 1.3 mm (minimum 0.8, the
     model warns below).
-  - The side ledges now start behind the bosses (Y 12.85, `ledge_y0`), because the pocket lead-ins would otherwise
+  - The side ledges now start behind the bosses (Y 13.45, `ledge_y0`), because the pocket lead-ins would otherwise
     leave 0.1–0.2 mm slivers of ledge over them.
   - The front lid snap catch windows (Y 3.7–10.3) end 0.6 mm above the boss tops; the model warns if they meet.
   - The red through-hole pin keep-out is cut back around the bosses (plus the board's 0.25 mm fore-aft play), which
@@ -180,7 +180,7 @@ fingers) and bent across the layer lines. This revision:
 ### RS232 board
 
 - **Board:** 31.5 × 26.0 × 1.6 mm, measured.
-- **Support:** the board sits on a 1.2 mm front skin under its front edge and on 1.2 mm side ledges from Y 12.85.
+- **Support:** the board sits on a 1.2 mm front skin under its front edge and on 1.2 mm side ledges from Y 13.45.
   On the −X side the ledges are relieved under the header pins. A 0.4 mm gusset fills the corner between the floor
   and the front skin, keeping 1.2 mm square to the bottom front chamfer.
 - **Backstop** (`bs_*`): a rigid 1.6 mm rib across the tray floor, 0.25 mm behind the PCB rear edge (Y 26.25–27.85),
@@ -190,7 +190,8 @@ fingers) and bent across the layer lines. This revision:
 - **Side clips removed.** The flexing tray clips that caught the PCB edge (1.0 mm fingers grown along Z, bending
   across the layer lines) were removed, not enlarged. The board is held down by rigid lid pressers instead.
 - **Pressers:** ribs from the lid side walls come down to 0.1 mm above the board edge, covering 1.2 mm of it: −X at
-  Y 13.8 (between the lugs, which end at Y 12.0, and the header, which starts at 15.6), +X at Y 13.8, 17 and 24. Below
+  Y 13.8 (between the lugs, which end at Y 12.0, and the header, which starts at 15.6), +X at Y 13.8, 17 and 21 (moved from 24: nothing may press on the PCB top within 3 mm of its rear
+  edge, `pcb_rear_keepout`, where the board has resistors; an orange keep-out ghost enforces it). Below
   the split they stand 0.2 mm off the tray wall; above it they are rooted in the lid wall with a 45° top.
 - **Clear space:** there is 3 mm clear below the board. The red ghost volume shows the through-hole pin zone, kept
   1.25 mm in from the board edges.
@@ -295,12 +296,13 @@ A Dupont housing is plugged onto the RS232 board's 4-pin header (−X edge, Y 15
 the XIAO pads. Revision 2's −X XIAO guide sat right where they bend. The model now carries a keep-out (cyan/grey
 ghost, `ghost_dupont()`), and the interference checks fail if any case feature enters it:
 
-- **Housing:** 10.16 × 2.54 mm on the header, up to `dupont_top` = 14.5 mm above the PCB top (2.5 mm header base +
-  12 mm housing; to be measured).
+- **Housing:** 10.16 × 2.54 mm on the header, up to `dupont_top` = 16.7 mm above the PCB top (measured: 18.3 mm
+  above the PCB underside).
 - **Wire-bend zone:** above the housing up to the ceiling, across in +X to the XIAO's −X edge (X −8.89), over the
-  header's length. The ceiling is kept at least `dupont_bend_h` = 4.0 mm above the housing (about 3 mm bend radius
-  plus the wire), which raised the top by 0.15 mm to 20.1 mm above the board. A taller housing raises the top
-  automatically, up to `dupont_top` 19.4 within the 25 mm envelope.
+  header's length. The wires need 25 mm of turning space measured from the PCB underside (the user's measurement), so the
+  ceiling is at least `dupont_ceiling_min` = 23.4 mm above the PCB top (and at least `dupont_bend_h` = 4.0 above the
+  housing). With the 1.6 mm top skin that puts the outside top at 25.0 mm, exactly `max_above`; there is no margin
+  left in the envelope, and the model asserts it.
 - The −X guide is cut back to d 2.2–5.16 (see XIAO). The ghost wires now leave the top of the housing.
 - **Moved 1 mm** (`ghost_dupont_d`): +X and down stay clear. −X meets the side walls (the housing is 0.5 mm from the
   wall), −Y meets the −X board presser (0.84 mm away), +Y meets the remaining −X guide segment, and up meets the
@@ -333,10 +335,10 @@ ghost, `ghost_dupont()`), and the interference checks fail if any case feature e
 
 `part="coupon_tray"` and `part="coupon_lid"` (`out/coupon_tray.stl`, `out/coupon_lid.stl`) are the front of each part,
 cut flat at `coupon_y1` = 14.5 mm, in normal print orientation. They contain the flange recess, both lips, the lid
-front wall that the flange bears on, the leg-tail pockets at Y 8.9, the front pair of lid snaps (Y 7), the front
-pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 7.5 g of PETG. The lid
+front wall that the flange bears on, the leg-tail pockets at Y 9.5, the front pair of lid snaps (Y 7), the front
+pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 9 g of PETG. The lid
 coupon has no logo (single colour). The cut stops at 14.5 rather than 15 because the shield pad ring starts at
-Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.961 cm³, lid coupon 3.839 cm³. Both are single
+Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.957 cm³, lid coupon 5.018 cm³ (the lid coupon is now 26 mm tall). Both are single
 pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in them.
 
 ## Assembly order
@@ -375,7 +377,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the PCB on the front skin and the ledges
 - the lid rim on the tray rim
 
-**Controls** (`./controls.sh`, 41 lines, all must pass; about 80 s). Each moves one ghost and states whether a check must find
+**Controls** (`./controls.sh`, 42 lines, all must pass; about 80 s). Each moves one ghost and states whether a check must find
 real overlap (any piece of at least 0.01 mm³) or none:
 
 | Moved | Check | Result |
@@ -399,6 +401,7 @@ real overlap (any piece of at least 0.01 mm³) or none:
 | Dupont keep-out +X 1 / down 1 | lid | none |
 | Dupont keep-out −X 1 / −Y 1 / +Y 1 / up 1 | lid | hits the side wall / −X presser / −X guide / ceiling |
 | −X guide not trimmed (`dupont_clr=-20`) | lid | hits the Dupont zone |
+| +X presser back at Y 24 | lid | hits the rear-edge keep-out |
 | logo at 30 mm / 20 mm | `check_logo` | none / hits |
 | test block 0.5 under the XIAO edge (`ctl_undercut`) | lid / lid path | none / hits (2.0 mm³) |
 
@@ -430,20 +433,13 @@ The probe casts rays along face normals, so it does not measure distance square 
 
 ## Fit-check list (measure before printing)
 
-- **Dupont housing height:** `dupont_top` (14.5 mm above the PCB top, header base included) is an estimate. Measure
-  it with the plug on; the case top follows it.
-- **Leg tails at Y 8.9 — to the tail centre or to its front edge?** `leg_y` is the tail centre. The user reported
-  the spikes "recessed 8.9 mm from the front"; if that was measured to the tail's near (front) edge, the centre is
-  8.9 + 1.55 = 10.45 and `leg_y` must change. The pockets allow only ±0.6 mm in Y (and ±1.3 mm in X), so a
-  1.55 mm reference error would jam the board, the same kind of error that broke revision 1.
-- **Board-top parts under the pressers:** the revision 1 pressers barely existed, so the test fit never checked their
-  footprints. Check there are no parts within 1.2 mm of the RS232 board edge at Y 12.8–14.8 on both sides and at
-  Y 16–18 and 23–25 on +X.
+Measured and applied (2026-10-08): leg-tail centres at Y 9.5; Dupont top 18.3 mm above the PCB underside with
+25 mm of wire turning space; presser footprints clear; resistors near the PCB rear edge (3 mm keep-out); flange
+margins flat. Still open:
+
 - **Flange and D-shell:** 30.8 × 12.5 × 0.38 flange, bottom level with the PCB top; D-shell outline 2.05–10.45 above
   the PCB top. The lips assume these (1.05 mm clear of the D-shell top and bottom). If the D-shell is taller, reduce
   `lip_reach`.
-- **Flange flatness:** the lips sit 0.1 mm in front of the flange. A bowed or dimpled flange margin, or a shield that
-  stands proud of the flange there, needs a larger `lip_gap`.
 - **Board flush:** the PCB front edge flush with the flange front face (`pcb_front_y = 0`).
 - **Lips and the printer:** nothing on the printer side should stand within 1.3 mm of our flange over the middle
   16 mm (|X| ≤ 8) above and below the D-shell.

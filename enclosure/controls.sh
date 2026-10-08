@@ -67,6 +67,8 @@ ctl "dupont -Y 1 (-X presser)"     check_lid      hit  -D 'ghost_dupont_d=[0,-1,
 ctl "dupont +Y 1 (-X guide)"       check_lid      hit  -D 'ghost_dupont_d=[0,1,0]'
 ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
 ctl "-X guide untrimmed (zone)"    check_lid      hit  -D dupont_clr=-20
+# RS232 PCB rear-edge keep-out (resistors): a presser at Y 24 (the revision 2 position) must hit it
+ctl "+X presser at Y 24 (rear edge)" check_lid    hit  -D 'press_y_right=[13.8,17,24]'
 # logo: every stroke and gap >= logo_min at logo_w 30; the same mark at 20 mm breaks it (0.6 mm corner fillets)
 ctl "logo at 30 mm"                check_logo     none
 ctl "logo at 20 mm"                check_logo     hit  -D logo_w=20

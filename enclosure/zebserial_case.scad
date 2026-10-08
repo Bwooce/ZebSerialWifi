@@ -101,7 +101,7 @@ step_w = -1;             // -1 = body_w
 lug_h = 3.4;             // measured
 lug_end = 12.0;          // measured: flange FRONT face to the lug rear faces
 lug_hole_y = 4.6;        // measured: screw-hole centre behind the flange front face (ghost of the hole only)
-leg_y = 8.9;             // measured on the print: board-lock leg tails (spikes under the PCB) behind the flange front face
+leg_y = 9.5;             // measured (calipers): flange front face to the board-lock leg tail (spike) CENTRES
 lug_hole_x = 12.45;      // measured: leg centres about 24.9 apart (approximate, so the pockets keep +-1 mm extra in X)
 lug_hole_d = 2.5;        // only used by the (off) pins
 lug_hole_depth = 3.4;    // ghost only
@@ -144,8 +144,10 @@ hdr_pins = 4;
 hdr_h = 8.5;             // female header height above the PCB
 // Dupont housing plugged onto the 4-pin header, and the space its wires need to bend over towards the XIAO pads
 dupont_on = true;
-dupont_top = 14.5;       // housing top above the PCB top: 2.5 header base + 12 housing (to be measured)
-dupont_bend_h = 4.0;     // wire-bend space above the housing: about 3 mm bend radius plus the wire
+dupont_top = 16.7;       // measured: housing top 18.3 above the PCB underside = 16.7 above the PCB top
+dupont_bend_h = 4.0;     // minimum wire-bend space above the housing
+dupont_ceiling_min = 23.4;   // measured: the wires need 25 mm of turning space from the PCB underside, so the
+                             // lid ceiling must be at least 25 - 1.6 above the PCB top
 dupont_clr = 0.5;        // extra clearance in Y where lid features are trimmed for the zone
 ghost_dupont_d = [0, 0, 0];   // positive control: moves the Dupont housing and bend zone
 hdr_edge = 0.3;          // header body outer edge inset from the -X PCB edge (negative = overhangs)
@@ -210,7 +212,8 @@ ledge_w = 1.2;           // board support ledge, from the wall inner face
 ledge_front_skip = 7.0;  // ledges start at least this far behind the PCB front edge, and behind the leg-tail bosses
 // Lid pressers that hold the RS232 board down at the edges (Y centres)
 press_y_left = [13.8];   // between the lugs (to Y 12.0) and the header (from Y 15.6)
-press_y_right = [13.8, 17.0, 24.0];
+press_y_right = [13.8, 17.0, 21.0];   // the last one ends 1 mm in front of the rear-edge keep-out
+pcb_rear_keepout = 3.0;  // resistors near the RS232 PCB rear edge: nothing may press within this of the edge
 press_w = 2.0;
 press_reach = 1.4;       // presser inner face from the wall inner face (1.2 over the board edge)
 press_wall_clr = 0.2;    // presser to the tray wall below the split
@@ -274,7 +277,7 @@ z_bot = z_floor - floor_t;
 // The top also has to clear the USB overmould relief by min_wall measured square to the 45 degree top chamfer.
 z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
             usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2),
-            dupont_on ? dupont_top + dupont_bend_h + ceil_t : 0);   // ceiling above the Dupont wire bends
+            dupont_on ? max(dupont_top + dupont_bend_h, dupont_ceiling_min) + ceil_t : 0);   // ceiling over the Dupont wires
 z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
 z_fl_top = fl_bot + fl_h;
@@ -345,6 +348,7 @@ echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front
          ", corner chamfer ", corner_chamfer, ", corner facet ", corner_facet, ", edge chamfer ", edge_chamfer,
          ", snap faces at X ", [for (c = lc_ys) lc_face(c)]));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
+if (z_top > max_above) echo(str("ZEBCASE WARNING: top ", z_top, " above the PCB top, over the ", max_above, " mm envelope"));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
 echo(str("ZEBCASE top skin ", z_top - z_ceil, logo_mode != "none" ? str(", ", z_top - z_ceil - logo_depth, " under the logo (",
          logo_mode, ", ", logo_w, " mm wide)") : ""));
@@ -756,6 +760,8 @@ module ghost_rs232() {
                 -leg_py - leg_boss_wall - bs_clr - 0.01, leg_py + leg_boss_wall + bs_clr + 0.01, -10, 0);   // + the board's fore-aft play
     }
     gcol("black") box(hdr_x0, hdr_x0 + 2.54, hdr_y0, hdr_y1, 0, hdr_h);
+    // parts near the rear edge (resistors): nothing may press on the PCB top here
+    gcol("orangered", 0.3) box(-board_w / 2, board_w / 2, y_pcb1 - pcb_rear_keepout, y_pcb1, 0, split_z);
 }
 
 // Dupont housing on the header and the wire-bend zone above it, across to the XIAO's -X edge, up to the ceiling
