@@ -2,7 +2,8 @@
 """Print bounding box, volume and triangle count of STL files (ASCII or binary).
 
 With --components, also list connected pieces (by shared vertices) with their bbox and volume,
-which is how the interference checks locate overlaps.
+which is how the interference checks locate overlaps. With --hits, print only "hit <volumes>" or "none", counting
+pieces of at least 0.01 mm3 that are thicker than 0.005 mm in every axis (zero-thickness contact faces are not hits).
 """
 import struct
 import sys
@@ -62,9 +63,23 @@ def components(tris):
     return list(groups.values())
 
 
+def hits(tris):
+    out = []
+    for g in components(tris):
+        lo, hi = bbox(g)
+        v = abs(vol(g))
+        if v >= 0.01 and min(h - l for l, h in zip(lo, hi)) > 0.005:
+            out.append(v)
+    return out
+
+
 def main():
     for path in [a for a in sys.argv[1:] if not a.startswith('--')]:
         tris = read_stl(path)
+        if '--hits' in sys.argv:
+            h = sorted(hits(tris), reverse=True) if tris else []
+            print('hit ' + ' '.join(f'{v:.2f}' for v in h) if h else 'none')
+            continue
         if not tris:
             print(f'{path}: EMPTY')
             continue
