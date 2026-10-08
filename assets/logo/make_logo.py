@@ -6,6 +6,11 @@ radiating from its top edge. Everything is on a 64 x 64 grid, with the main edge
 on pixel boundaries at 16 px. The mark itself spans 56 units, so at the 22 mm deboss width one unit is 0.39 mm
 and the 0.8 mm minimum stroke/gap for a 0.4 mm nozzle is 2.0 units.
 
+zebserial-mark-lid.svg is a bolder, simpler variant for the 3D-printed lid (two-colour inlay or deboss): two wide
+stripes, two constant-width arcs with round caps, and every corner rounded, so that at the lid's logo_w (30 mm,
+about 0.54 mm per unit) every stroke and gap is at least 1.2 mm (three 0.4 mm lines). enclosure/build.sh checks that
+with part="check_logo".
+
 Usage: python3 make_logo.py [font.ttf]
 After changing the mark, update LOGO_D in firmware/main/web.c and, if the outline moved, logo_svg_w / logo_svg_c in
 enclosure/zebserial_case.scad (the imported bounding box, which OpenSCAD reports for import() of the deboss SVG).
@@ -34,6 +39,16 @@ BANDS = [(8.0, 16.0), (20.0, 28.0)]
 END_T = 5.5
 HALF_ANGLE = math.radians(52)
 
+# Lid variant (units as above): every stroke and gap at least LID_MIN units, every corner rounded by >= LID_R
+LID_MIN = 2.4                                   # 1.2 mm at 0.5 mm per unit (logo_w 28); more at 30 mm
+LID_R = 1.5                                     # stripe corner fillet (0.6 mm opening radius needs >= 1.2 units)
+LID_STRIPES = [(-8.0, 6.0), (8.0, 6.0)]         # (x offset of the centre at mid height, width)
+LID_SLANT = 5.0
+LID_INSET = 5.0                                 # stripes inset from the shell's top and bottom edges
+LID_C = (32, 36)                                # arc centre
+LID_ARCS = [13.0, 23.0]                         # arc centre-line radii
+LID_ARC_T = 6.0                                 # arc thickness (round caps of radius LID_ARC_T / 2)
+LID_HALF_ANGLE = math.radians(38)               # caps stay LID_ARC_T / 2 clear of the shell's top edge
 
 
 def f(v):
@@ -88,6 +103,52 @@ def stripe(xc, wt, wb):
     return f"M{pt((xt - wt / 2, y0))}L{pt((xb - wb / 2, y1))}L{pt((xb + wb / 2, y1))}L{pt((xt + wt / 2, y0))}Z"
 
 
+def rounded_poly_any(pts, r):
+    """Closed path for a convex polygon in either direction, every corner filleted at radius r."""
+    n = len(pts)
+    out = []
+    for i in range(n):
+        p0, p1, p2 = pts[i - 1], pts[i], pts[(i + 1) % n]
+        a = (p0[0] - p1[0], p0[1] - p1[1])
+        b = (p2[0] - p1[0], p2[1] - p1[1])
+        la, lb = math.hypot(*a), math.hypot(*b)
+        a, b = (a[0] / la, a[1] / la), (b[0] / lb, b[1] / lb)
+        theta = math.acos(a[0] * b[0] + a[1] * b[1])
+        d = r / math.tan(theta / 2)
+        t0 = (p1[0] + a[0] * d, p1[1] + a[1] * d)
+        t1 = (p1[0] + b[0] * d, p1[1] + b[1] * d)
+        turn = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0])
+        out.append(("L" if out else "M") + pt(t0))
+        out.append(f"A{f(r)} {f(r)} 0 0 {1 if turn > 0 else 0} {pt(t1)}")
+    return "".join(out) + "Z"
+
+
+def lid_stripe(xc, w):
+    y0, y1 = TRAP_TOP + LID_INSET, TRAP_BOT - LID_INSET
+    xt, xb = 32 + xc + LID_SLANT / 2, 32 + xc - LID_SLANT / 2
+    # anticlockwise on screen: a hole under the nonzero rule too
+    return rounded_poly_any([(xt - w / 2, y0), (xb - w / 2, y1), (xb + w / 2, y1), (xt + w / 2, y0)], LID_R)
+
+
+def lid_arc(rc):
+    """Constant-width arc about LID_C with round caps, clockwise on screen."""
+    h = LID_ARC_T / 2
+    s, c = math.sin(LID_HALF_ANGLE), math.cos(LID_HALF_ANGLE)
+    ro, ri = rc + h, rc - h
+    P = lambda r, sx: (LID_C[0] + sx * r * s, LID_C[1] - r * c)
+    return (f"M{pt(P(ro, -1))}A{f(ro)} {f(ro)} 0 0 1 {pt(P(ro, 1))}A{f(h)} {f(h)} 0 0 1 {pt(P(ri, 1))}"
+            f"A{f(ri)} {f(ri)} 0 0 0 {pt(P(ri, -1))}A{f(h)} {f(h)} 0 0 1 {pt(P(ro, -1))}Z")
+
+
+def lid_mark_path():
+    # the arcs' caps must clear the shell top by at least LID_MIN
+    for rc in LID_ARCS:
+        assert LID_C[1] - rc * math.cos(LID_HALF_ANGLE) + LID_ARC_T / 2 <= TRAP_TOP - LID_MIN
+    assert LID_ARCS[1] - LID_ARCS[0] - LID_ARC_T >= LID_MIN and LID_ARC_T >= LID_MIN
+    return (rounded_poly(TRAP, TRAP_R) + "".join(lid_stripe(*s) for s in LID_STRIPES)
+            + "".join(lid_arc(r) for r in LID_ARCS))
+
+
 def mark_path():
     return rounded_poly(TRAP, TRAP_R) + "".join(stripe(*s) for s in STRIPES) + "".join(band(*b) for b in BANDS)
 
@@ -123,6 +184,11 @@ def main():
               f'<path fill="#000" fill-rule="evenodd" d="{d}"/></svg>\n')
     with open(os.path.join(HERE, "zebserial-mark-deboss.svg"), "w") as fh:
         fh.write(deboss)
+    # Lid inlay / deboss variant (same coordinate convention as the deboss file)
+    lid = (f'<svg xmlns="http://www.w3.org/2000/svg" width="64mm" height="64mm" viewBox="0 0 64 64">'
+           f'<path fill="#000" fill-rule="evenodd" d="{lid_mark_path()}"/></svg>\n')
+    with open(os.path.join(HERE, "zebserial-mark-lid.svg"), "w") as fh:
+        fh.write(lid)
     words, x1 = wordmark(font, 76, 46, 28)
     w = math.ceil(x1 + 2)
     full = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} 64" fill="currentColor">'
