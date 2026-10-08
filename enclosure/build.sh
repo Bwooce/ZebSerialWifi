@@ -21,13 +21,24 @@ run $IMG --camera=0,18,6,60,0,25,140 -D 'part="assembly"' -o renders/assembly_fr
 run $IMG --camera=0,18,6,60,0,205,140 -D 'part="assembly"' -o renders/assembly_rear.png
 run $IMG --camera=0,18,14,60,0,25,180 -D 'part="exploded"' -o renders/exploded.png
 run $IMG --camera=0,18,14,60,0,205,180 -D 'part="exploded"' -D show_ghosts=false -o renders/exploded_case_only.png
-# sections: x=0 plane through the XIAO length and DB9 body, seen from +X
+# front: flange flush with the case front, D-shell out, retention lips over the flange margins
+run $IMG --camera=0,0,6,82,0,12,95 -D 'part="assembly"' -o renders/front_flush.png
+run $IMG --camera=0,0,6,90,0,0,105 --projection=o -D 'part="assembly"' -o renders/front_elevation.png
+# sections: x=0 plane through the XIAO length, the DB9 body, both lips, the strut and the pads, seen from +X
 run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_xiao_length.png
-# y planes across the XIAO through each side clamp (defaults: +X clamp Y 12.6..19.6, -X clamp Y 20.9..29.2), from the front
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=15 -D section_t=2 -o renders/section_xiao_clamp_plusx.png
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=24.5 -D section_t=2 -o renders/section_xiao_clamp_minusx.png
-# y plane through the board-lock leg-tail pockets (Y 4.6, leg_pocket_on), seen from the front
-run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="y"' -D section_pos=3.6 -D section_t=2 -o renders/section_leg_pockets.png
+# close-up of the same plane at the front: lips, flange slot, lid front wall
+run $IMG --camera=0,2,5,90,0,90,65 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_lips.png
+# x plane through the backstop rib and the rear of the board (X -3), seen from +X
+run $IMG --camera=0,24,0,90,0,90,50 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=-3 -o renders/section_backstop.png
+# y planes across the XIAO: +X guide + shield pad (Y 15..17), -X guide + shield pad (Y 23.5..25.5), USB pad (Y 28..30)
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=15 -D section_t=2 -o renders/section_xiao_guide_plusx.png
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=23.5 -D section_t=2 -o renders/section_xiao_guide_minusx.png
+run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=28 -D section_t=2 -o renders/section_usb_pad.png
+# rear: the USB-C opening (radiused relief, stadium slot, tongue cradle)
+run $IMG --camera=0,34,12,75,0,195,70 -D 'part="assembly"' -o renders/rear_usb.png
+run $IMG --camera=0,36,12,90,0,180,60 --projection=o -D 'part="assembly"' -D show_ghosts=false -o renders/rear_usb_case_only.png
+# y plane through the board-lock leg-tail pockets (Y 8.9), seen from the front
+run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="y"' -D section_pos=7.9 -D section_t=2 -o renders/section_leg_pockets.png
 # x plane through the +X leg-tail pocket (X 12.5), seen from +X
 run $IMG --camera=0,14,2,90,0,90,90 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="x"' -D section_pos=13.5 -D section_t=2 -o renders/section_leg_pocket_length.png
 # lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
@@ -46,15 +57,16 @@ run $IMG --camera=0,0,0,55,0,205,130 --autocenter --viewall -D 'part="lid"' -o r
 echo "== interference: volume of ghost/tray, ghost/lid and tray/lid overlaps"
 echo "   (zero-volume faces are designed contacts, e.g. flange on the case front, board on the ledges)"
 TMP=$(mktemp -d)
-for c in check_tray check_lid check_traylid; do
-  if run "$@" -D "part=\"$c\"" -o "$TMP/$c.stl" > "$TMP/$c.log" 2>&1 && [ -s "$TMP/$c.stl" ]; then
-    python3 -I stlinfo.py "$TMP/$c.stl" | sed "s|$TMP/||"
+for c in check_tray check_lid check_traylid check_lid_path; do
+  fn=""; [ $c = check_lid_path ] && fn='$fn=16'   # the swept check takes about 2 min at the default $fn
+  if run ${fn:+-D "$fn"} "$@" -D "part=\"$c\"" -o "$TMP/$c.stl" > "$TMP/$c.log" 2>&1 && [ -s "$TMP/$c.stl" ]; then
+    echo "$(python3 -I stlinfo.py "$TMP/$c.stl" | sed "s|$TMP/||")  ->  $(python3 -I stlinfo.py --hits "$TMP/$c.stl")"
   else
     echo "$c: empty"
   fi
 done
 echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped"
-echo "   expected: board clip fingers 1.0 and hooks, XIAO clip hooks/lips, lid snap hooks, logo skin 1.1"
+echo "   expected: lid snap hooks, lead-in tips, logo skin 1.1 (see README)"
 for p in tray lid; do
   run "$@" -D "part=\"${p}_inplace\"" -o "$TMP/${p}_inplace.stl" > /dev/null 2>&1
   python3 wallprobe.py --summary "$TMP/${p}_inplace.stl" | sed "s|$TMP/||"

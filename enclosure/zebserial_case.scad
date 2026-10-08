@@ -5,7 +5,8 @@
 // Coordinate frame (assembly):
 //   X  across the case (left/right when looking down with the DB9 towards you is -X/+X ... see README)
 //      +X is the side of the XIAO 5V/GND column, -X is the header / D0..D6 column side.
-//   Y  0 at the DB9 flange FRONT face, +Y towards the rear (USB-C end).
+//   Y  0 at the DB9 flange FRONT face = case front face (flush), +Y towards the rear (USB-C end).
+//      The flange sits in the front opening; its BACK face (Y fl_t) bears on the lid front wall.
 //   Z  0 at the RS232 PCB TOP surface, +Z up.
 //
 // Usage:
@@ -13,6 +14,7 @@
 //   openscad -D 'part="lid"'  -D show_ghosts=false -o out/lid.stl  zebserial_case.scad
 //   part = "tray" | "lid" (print orientation), "assembly" | "exploded" (with optional ghosts),
 //          "check_tray" | "check_lid" | "check_traylid" (interference volumes, should be empty),
+//          "check_lid_path" (lid material directly below a part: what the lid would hit closing straight down),
 //          "ghosts" (ghost models only), "tray_inplace" | "lid_inplace" (assembly coordinates, for wallprobe.py).
 
 /* [View] */
@@ -28,6 +30,8 @@ explode = 25;
 ghost_offset = [0, 0, 0];
 ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes / legs in Y
 ghost_lug_dx = 0;        // positive control: moves only the ghost legs in X
+ghost_board_dy = 0;      // positive control: moves the RS232 board + DB9 ghosts (with their legs) in Y
+ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO +X edge, clear when closed
 
 /* [Measured by the user (calipers)] */
 board_w = 31.5;          // RS232 board width
@@ -92,7 +96,8 @@ step_w = -1;             // -1 = body_w
 // Lugs: plastic each side of the body, 3.4 high, out to the full PCB width, with a vertical screw hole
 lug_h = 3.4;             // measured
 lug_end = 12.0;          // measured: flange FRONT face to the lug rear faces
-lug_hole_y = 4.6;        // measured: hole centre behind the flange front face
+lug_hole_y = 4.6;        // measured: screw-hole centre behind the flange front face (ghost of the hole only)
+leg_y = 8.9;             // measured on the print: board-lock leg tails (spikes under the PCB) behind the flange front face
 lug_hole_x = 12.45;      // measured: leg centres about 24.9 apart (approximate, so the pockets keep +-1 mm extra in X)
 lug_hole_d = 2.5;        // only used by the (off) pins
 lug_hole_depth = 3.4;    // ghost only
@@ -104,11 +109,27 @@ leg_pocket_on = true;
 leg_tail_l = 3.0;        // measured: tail protrusion below the RS232 PCB (the tip reaches the floor top)
 leg_w = 3.1;             // measured: tail diameter (round) or size across X
 leg_t = 0;               // tail size along Y; 0 = round tail of diameter leg_w (measured: round)
-leg_clr = 0.3;           // pocket clearance per side
-leg_slot_x = 1.0;        // extra slot length either side in X: lug_hole_x is not measured, so an X error up to
-                         // about 1 mm cannot jam the board; Y (fore-aft, the direction that matters) stays at leg_clr
+leg_clr = 0.3;           // pocket clearance per side in X (plus leg_slot_x)
+leg_clr_y = 0.6;         // pocket clearance per side in Y: loose, a secondary lock; the flange lips are the datum
+leg_slot_x = 1.0;        // extra slot length either side in X: lug_hole_x is only approximate, so an X error up to
+                         // about 1 mm cannot jam the board
 leg_leadin = 0.6;        // 45 degree lead-in at the pocket mouth
 front_wall_t = 3.2;      // lid front wall depth behind the flange when the pins are off
+fl_clr_z = 0.3;          // flange top to the lid flange-slot ceiling
+fw_lead = 0.5;           // 45 degree lead-in on the lid front wall bottom edge: steers the flange forward as the lid closes
+// Retention lips in front of the flange (top from the lid, bottom from the tray): they hold the flange (and the
+// loose shield) against the lid front wall without reaching the D-shell or the printer's jackposts at X +-12.5.
+lip_x = 8.0;             // lips span |X| <= lip_x
+lip_proud = 1.3;         // lip outer face in front of the case front face (Y 0); 1.2 of plastic over lip_gap
+lip_gap = 0.1;           // lip back face to the flange front face (fore-aft play of the board)
+lip_reach = 1.0;         // lip overlap on the flange margin, from the flange top / bottom edge
+lip_ds_clr = 1.0;        // minimum lip clearance to the D-shell outline (top z 10.45, bottom z 2.05)
+lip_root = 1.0;          // straight lip face beyond the flange slot / PCB before the 45 degree root chamfer
+lip_lead = 0.3;          // 45 degree lead-in on the lip back edge (board drops in, lid closes)
+// RS232 board backstop: tray rib behind the PCB rear edge
+bs_clr = 0.25;           // PCB rear edge to the rib
+bs_t = 1.6;
+bs_above = 1.0;          // rib top above the PCB top (level with the PCB top across the +X 5V/GND wire zone)
 pin_d = 2.2;
 pin_flat = 1.6;          // pin width across X (flats), so an X error in the hole position cannot jam the lid
 pin_engage = 1.5;        // pin length inside the hole
@@ -133,6 +154,7 @@ usb_clr = 0.2;
 usb_recess_w = 12.0;     // plug overmould relief
 usb_recess_h = 7.0;
 usb_recess_d = 1.6;      // depth of the relief behind the receptacle mouth
+usb_recess_r = 2.5;      // relief corner radius
 usb_mouth_inset = 0.0;   // receptacle mouth to relief floor (0 = flush, plug pushes on the case)
 
 /* [Exterior style: faceted pincushion] */
@@ -158,7 +180,7 @@ logo_file = "../assets/logo/zebserial-mark-deboss.svg";   // from assets/logo/ma
 logo_svg_w = 52.76;      // mark width in that file
 logo_svg_c = [32, 30];   // mark centre once imported (OpenSCAD flips the SVG Y axis)
 
-/* [Clips] */
+/* [Clips and XIAO capture] */
 // Lid-to-tray snaps (on both side walls)
 lc_w = 6.0;              // finger width
 lc_t = 1.4;              // finger thickness
@@ -168,33 +190,34 @@ lc_above = 4.0;          // finger free length above the split (slots into the l
 lc_below = 5.0;          // finger length below the split (keeps the catch windows above the leg-tail bosses)
 lc_side_gap = 0.5;       // slot width either side of the finger in the lid wall
 lc_pry = 0.9;            // gap under the finger tip for a screwdriver (keeps min_wall above the bottom chamfer)
-lc_front_y = 7.0;        // first lid clip centre (Y); forward, so the board clips can sit just behind the lugs
+lc_front_y = 7.0;        // first lid clip centre (Y)
 lc_rear_from_back = 4.2; // second lid clip centre, distance from the interior rear face
-// RS232 board side clips in the tray (Y centres)
-bc_y_left = [13.9];      // just behind the lugs (Y 12.0) and in front of the header (Y 15.6)
-bc_y_right = [13.9, 20.5];
-bc_w = 3.5;
-bc_side_gap = 0.5;       // slot either side of the finger (Y)
-bc_t = 1.0;
-bc_gap = 0.8;
-bc_hook = 0.5;
+// (the flexing RS232 board side clips were removed: rigid lid pressers hold the board down)
 ledge_w = 1.2;           // board support ledge, from the wall inner face
-ledge_front_skip = 7.0;  // keep the ledge clear of DB9 board-lock pegs (and of the first board clip slot)
+ledge_front_skip = 7.0;  // ledges start at least this far behind the PCB front edge, and behind the leg-tail bosses
 // Lid pressers that hold the RS232 board down at the edges (Y centres)
-press_y_left = [];       // no room on -X: lugs to Y 12.0, clip at 13.9, header from 15.6
-press_y_right = [17.0, 24.0];
+press_y_left = [13.8];   // between the lugs (to Y 12.0) and the header (from Y 15.6)
+press_y_right = [13.8, 17.0, 24.0];
 press_w = 2.0;
-press_reach = 1.2;       // over the board edge (from the wall inner face)
-// XIAO side clamps hanging from the lid: [side (-1 / +1), d0, d1] along the unused-pad stretches.
+press_reach = 1.4;       // presser inner face from the wall inner face (1.2 over the board edge)
+press_wall_clr = 0.2;    // presser to the tray wall below the split
+press_root = 1.5;        // presser root: grows out of the lid wall over this height above the split, 45 degree top
+// XIAO capture, all rigid: below on the DB9 body (front) and the tray tongue (rear); above, lid pads on the RF shield
+// and the USB-C shell; sides, lid guide walls; fore-aft, the front stop strut and the lid rear wall.
+// Side guide walls hanging from the lid: [side (-1 / +1), d0, d1] along the unused-pad stretches.
 // -X: D0-D3 (clear of the -X button at d < 1.9 and of D4/D5); +X: D9-D7 (clear of 5V/GND).
-xclamps = [[-1, 2.2, 10.5], [1, 11.8, 18.8]];
-xrest = [-1, 17.4, 19.0];      // extra -X clamp on D6, added when the XIAO overlaps the DB9 body by < front_rest_min
-front_rest_min = 2.0;
-clamp_t = 1.2;           // flexing finger thickness
-clamp_ledge = 1.0;       // ledge under the PCB edge (0.8 mm of it under the PCB)
-clamp_lip = 1.0;         // lip over the PCB edge
-clamp_gap = 0.1;         // ledge below / lip above the PCB: the DB9 body and the tongue are the datums
-tongue_gap = 0.05;       // tray tongue top to the USB shell bottom (rear support)
+xguides = [[-1, 2.2, 10.5], [1, 11.8, 18.8]];
+front_rest_min = 2.0;    // the XIAO must lie at least this far on the DB9 body (it is the only front support)
+guide_t = 1.6;           // guide wall thickness
+guide_clr = 0.2;         // guide inner face to the XIAO PCB edge
+guide_below = 0.6;       // guide tip below the XIAO underside
+guide_lead = 0.8;        // 45 degree lead-in at the guide tip (captures a 0.8 mm X error as the lid closes)
+xpad_gap = 0.1;          // lid pads to the RF shield top and the USB-C shell top
+xpad_inset = 0.5;        // pads inset from the shield / shell outline
+xpad_wall = 1.6;         // the shield pad is a rectangular ring of this wall
+tongue_gap = 0.05;       // tray tongue cradle to the USB shell bottom (rear support)
+tongue_side_clr = 0.3;   // cradle to the shell's rounded ends in X: the guides, not the cradle, locate the XIAO in X
+tongue_tip = 0.5;        // minimum width of the tongue's top edges beside the cradle
 // Front stop strut (X centres), bearing on the XIAO front PCB edge in the gap between the U.FL
 // socket (X -5.6..-3.0) and the ceramic antenna (X 0.5..5.7)
 stop_x = [-1.25];
@@ -202,12 +225,14 @@ stop_w = 3.0;
 stop_t = 1.6;            // depth of the part of the strut that can reach below the XIAO PCB (behind the body)
 stop_tip_min = 0.8;
 stop_z_clr = 0.1;        // strut bottom above the DB9 body top where the XIAO rests on the body
+stop_lead = 0.4;         // 45 degree lead-in on the strut's bottom rear edge (pushes a misplaced XIAO back)
 
 $fn = 48;
 eps = 0.01;
 
 // ---------------------------------------------------------------- derived
-y_fb = fl_t;                         // flange back face = case front face
+y_cf = 0;                            // case front face, flush with the flange front face
+y_fb = fl_t;                         // flange back face = lid front wall bearing face
 y_pcb0 = pcb_front_y < 0 ? fl_t : pcb_front_y;   // RS232 PCB front edge
 y_pcb1 = y_pcb0 + board_d;           // RS232 PCB rear edge
 yx0 = xiao_front_y >= 0 ? xiao_front_y : body_end - xiao_rest;   // XIAO PCB front (antenna) edge
@@ -226,7 +251,7 @@ y_mouth = yx1 + usb_over;
 usb_cz = zx1 + usb_h / 2;
 x_in = board_w / 2 + pcb_clr;
 x_out = x_in + side_t;               // outermost X (at the corner ends of the side faces)
-y_in0 = y_fb;
+y_in0 = y_cf;
 y_in1 = max(y_pcb1, yx1) + pcb_clr;
 y_rear_face = max(y_mouth + usb_mouth_inset + usb_recess_d, y_in1 + wall);   // rear face at its mid-span
 rear_sag = sag_frac * 2 * x_out;
@@ -238,6 +263,12 @@ z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
             usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2));
 z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
+z_fl_top = fl_bot + fl_h;
+z_slot_top = z_fl_top + fl_clr_z;    // lid flange-slot ceiling; the lid front face fills to Y 0 above it
+ds_top = hole_z + ds_h / 2;          // D-shell outline
+ds_bot = hole_z - ds_h / 2;
+lip_t_bot = z_fl_top - lip_reach;    // top lip bottom
+lip_b_top = fl_bot + lip_reach;      // bottom lip top
 y_fw1 = lug_pin_on ? lug_hole_y + max(lug_hole_d, pin_boss_d) / 2 + min_wall   // lid front wall rear face (holds the pins)
                    : y_fb + front_wall_t;
 body_cut_x = body_w / 2 + pcb_clr;
@@ -245,23 +276,25 @@ usb_slot_w = usb_w + 2 * usb_clr;
 hdr_x0 = -board_w / 2 + hdr_edge;
 hdr_relief = hdr_edge >= pcb_clr ? 0 : pcb_clr - hdr_edge + 0.2;   // wall relief only if the header overhangs
 hdr_y1 = y_pcb1 - hdr_rear;
-skin_y1 = max(y_fb, y_pcb0) + 1.2;   // front skin under the PCB front edge
+skin_y1 = max(y_cf, y_pcb0) + 1.2;   // front skin under the PCB front edge
 leg_tip = -pcb_t - leg_tail_l;       // bottom of the board-lock leg tails
 leg_pocket_bot = leg_tip - leg_clr;
 leg_px = leg_w / 2 + leg_clr + leg_slot_x;           // pocket half sizes (slotted in X)
-leg_py = (leg_t == 0 ? leg_w : leg_t) / 2 + leg_clr;
+leg_py = (leg_t == 0 ? leg_w : leg_t) / 2 + leg_clr_y;
 leg_boss_top = -pcb_t - 0.2;
 leg_boss_wall = min_wall + leg_leadin;   // so the wall is still min_wall where the lead-in starts
+// side ledges start behind the leg-tail bosses: the pocket lead-ins would leave slivers of a ledge over them
+ledge_y0 = max(y_pcb0 + ledge_front_skip, leg_pocket_on ? leg_y + leg_py + leg_boss_wall : 0);
 hdr_y0 = hdr_y1 - hdr_pins * 2.54;
 lc_ys = [lc_front_y, y_in1 - lc_rear_from_back];
 pocket = lc_t + lc_gap;
 
 // ---- exterior outline (plan), CCW seen from above
-side_sag = sag_frac * (y_out1 - y_fb);
+side_sag = sag_frac * (y_out1 - y_cf);
 function side_mid(a, b, sg) = sg <= 0 ? [] :
     let(d = b - a, n = [-d[1], d[0]] / norm(d), t1 = (1 - facet_flat) / 2, t2 = (1 + facet_flat) / 2)
     facet_flat > 0 ? [a + d * t1 + n * sg, a + d * t2 + n * sg] : [a + d * 0.5 + n * sg];
-function outline() = let(X = x_out, c = corner_chamfer, y0 = y_fb, Y1 = y_out1,
+function outline() = let(X = x_out, c = corner_chamfer, y0 = y_cf, Y1 = y_out1,
         fl = [-X + c, y0], fr = [X - c, y0], r0 = [X, y0 + c], r1 = [X, Y1 - c],
         rr = [X - c, Y1], rl = [-X + c, Y1], l1 = [-X, Y1 - c], l0 = [-X, y0 + c])
     concat([fl], side_mid(fl, fr, front_sag), [fr, r0], side_mid(r0, r1, side_sag), [r1, rr],
@@ -273,22 +306,26 @@ function _isect(l1, l2) = let(p = l1[0], r = l1[1], q = l2[0], v = l2[1],
 function offset_poly(P, d) = let(n = len(P))
     [for (i = [0 : n - 1]) _isect(_line(P[(i - 1 + n) % n], P[i], d), _line(P[i], P[(i + 1) % n], d))];
 // right-hand side face X at a given Y (the left side is its mirror image)
-function surf_x(y) = let(a = y_fb + corner_chamfer, b = y_out1 - corner_chamfer, t = (y - a) / (b - a),
+function surf_x(y) = let(a = y_cf + corner_chamfer, b = y_out1 - corner_chamfer, t = (y - a) / (b - a),
         t1 = (1 - facet_flat) / 2, t2 = (1 + facet_flat) / 2,
         sg = (t <= 0 || t >= 1) ? 0 : t < t1 ? side_sag * t / t1 : t > t2 ? side_sag * (1 - t) / (1 - t2) : side_sag)
     x_out - sg;
 // lowest X of the side face over a Y span: the flat that the snap finger and pocket are cut from
-function face_x(y0, y1) = let(a = y_fb + corner_chamfer, b = y_out1 - corner_chamfer,
+function face_x(y0, y1) = let(a = y_cf + corner_chamfer, b = y_out1 - corner_chamfer,
         f0 = a + (b - a) * (1 - facet_flat) / 2, f1 = a + (b - a) * (1 + facet_flat) / 2)
     min(surf_x(y0), surf_x(y1), (y0 < f1 && y1 > f0) ? x_out - side_sag : 1e9);
 function lc_face(c) = face_x(c - lc_w / 2 - clip_clr - lc_side_gap, c + lc_w / 2 + clip_clr + lc_side_gap);
 
 function pad_y(i) = yx1 - xiao_pad1 - (i - 1) * xiao_pitch;
-// true if a board clip slot of half-width `half` at Y would leave less than min_wall to a lid clip pocket
-function lc_hit(y, half) = max([for (c = lc_ys) (abs(y - c) < half + lc_w / 2 + clip_clr + min_wall) ? 1 : 0]) == 1;
-bc_half = bc_w / 2 + bc_side_gap;
+// USB-C shell cross-section (stadium) and the tongue top: the tongue rises beside the cradle to where its edges
+// are still tongue_tip wide
+usb_a = usb_w / 2 - usb_h / 2;       // half length of the shell's flat top and bottom
+tongue_w = usb_slot_w / 2 - clip_clr / 2;
+tongue_r = usb_h / 2 + tongue_gap;
+tongue_top = let(dx = tongue_w - tongue_tip - usb_a - tongue_side_clr)
+    dx >= tongue_r ? zx1 - tongue_gap : max(zx1 - tongue_gap, usb_cz - sqrt(tongue_r * tongue_r - dx * dx));
 
-echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_fb, " Z ", z_top - z_bot,
+echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_cf, " Z ", z_top - z_bot,
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
 echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front sag ", front_sag,
          ", corner chamfer ", corner_chamfer, ", corner facet ", corner_facet, ", edge chamfer ", edge_chamfer,
@@ -307,32 +344,38 @@ if (d5_front < y_body1 + pcb_clr)
 else echo(str("ZEBCASE wire zone: D4/D5 underside joints start ", d5_front - y_body1, " mm behind the DB9 body"));
 echo(lug_pin_on ? str("ZEBCASE ANTI-SLIDE: lid pins (", pin_d, " x ", pin_flat, " flatted) in the lug holes at Y ", lug_hole_y,
                       ", X +-", lug_hx, " (hole ", lug_hole_d, ")")
-     : leg_pocket_on ? str("ZEBCASE ANTI-SLIDE: tray pockets around the board-lock leg tails at Y ", lug_hole_y, ", X +-", lug_hx,
-                           " (tail ", leg_w, " x ", leg_t == 0 ? "round" : leg_t, ", ", leg_tail_l, " below the PCB) lock the board fore-aft")
+     : leg_pocket_on ? str("ZEBCASE ANTI-SLIDE: lips + lid front wall hold the flange (play ", lip_gap, "); loose tray pockets around the leg tails at Y ",
+                           leg_y, ", X +-", lug_hx, " (tail ", leg_w, " x ", leg_t == 0 ? "round" : leg_t, ", ", leg_tail_l,
+                           " below the PCB) are a secondary lock")
      : "ZEBCASE ANTI-SLIDE: friction only (lug pins off, leg pockets off)");
 if (lug_pin_on && pin_d > lug_hole_d - 0.2) echo("ZEBCASE WARNING: pin_d is too big for lug_hole_d");
-if (leg_pocket_on) echo(str("ZEBCASE leg pockets: floor under the pocket ", leg_pocket_bot - z_bot, " mm (minimum 0.8)"));
+if (leg_pocket_on) echo(str("ZEBCASE leg pockets at Y ", leg_y, ": +-", leg_clr_y, " in Y, +-", leg_clr + leg_slot_x,
+                            " in X; floor under the pocket ", leg_pocket_bot - z_bot, " mm (minimum 0.8)"));
 if (leg_pocket_on && lc_tip - 0.2 < leg_boss_top + 0.3)
     echo("ZEBCASE WARNING: a snap catch window comes down beside the leg-tail bosses");
 if (leg_pocket_on && leg_pocket_bot < z_bot + 0.8)
     echo(str("ZEBCASE WARNING: the leg-tail pocket bottom (z ", leg_pocket_bot, ") comes within 0.8 mm of the tray floor bottom"));
-echo(str("ZEBCASE SUPPORT front: ", front_on_body ? str("rests on the DB9 body top, overlap ", body_overlap, " mm (body is the active front support; no lid rest)")
-         : str(body_overlap > 0 ? str("only ", body_overlap, " mm on the DB9 body, so ") : "not on the DB9 body, so ",
-               "the lid adds a front rest (-X clamp on D6) beside the front of the +X clamp"),
-         "; rear: tray tongue ", tongue_gap, " mm under the USB shell; sides: clamps ", xclamps));
+echo(str("ZEBCASE SUPPORT XIAO: below on the DB9 body (overlap ", body_overlap, ") and the tongue (gap ", tongue_gap,
+         ", top edges at z ", tongue_top, "); above, lid pads ", xpad_gap, " over the shield and the USB shell; sides, guides ",
+         xguides, " at ", guide_clr, "; front strut, rear lid wall"));
+if (!front_on_body) echo(str("ZEBCASE WARNING: the XIAO lies only ", body_overlap, " mm on the DB9 body (needs ", front_rest_min,
+                             "): its front end has no support from below"));
+echo(str("ZEBCASE LIPS: |X| <= ", lip_x, ", ", lip_proud, " proud of Y 0, gap ", lip_gap, "; top lip z ", lip_t_bot, " (D-shell top ",
+         ds_top, "), bottom lip to z ", lip_b_top, " (D-shell bottom ", ds_bot, ")"));
+if (lip_t_bot < ds_top + lip_ds_clr || lip_b_top > ds_bot - lip_ds_clr)
+    echo("ZEBCASE WARNING: a flange lip comes within lip_ds_clr of the D-shell");
+if (lip_x > fl_hole_pitch / 2 - 3.5) echo("ZEBCASE WARNING: the lips reach the jackpost area at the flange holes");
+echo(str("ZEBCASE BACKSTOP: rib at Y ", y_pcb1 + bs_clr, "..", y_pcb1 + bs_clr + bs_t, " to z ", bs_above));
 for (x = stop_x) let(b = stop_bottom(x))
-    echo(str("ZEBCASE SUPPORT front stop at X ", x, ": bears on ", zx1 - max(b, zx0), " of ", xiao_pcb_t,
-             " mm of the PCB edge", b < zx0 ? " (full edge)" : " (stops above the body top)"));
-for (y = bc_y_left)  if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: left board clip at Y ", y, " dropped (lid clip pocket)"));
-for (y = bc_y_right) if (lc_hit(y, bc_half)) echo(str("ZEBCASE NOTE: right board clip at Y ", y, " dropped (lid clip pocket)"));
-// clamps must stay 1.27 + 0.4 mm (half a pad plus the solder blob) away from every used pad
-for (c = concat(xclamps, [xrest])) {
+    echo(str("ZEBCASE SUPPORT front stop at X ", x, ": bears on ", zx1 - max(b + stop_lead, zx0), " of ", xiao_pcb_t,
+             " mm of the PCB edge above its ", stop_lead, " lead-in", b < zx0 ? "" : " (the strut stops above the body top)"));
+// guides must stay 1.27 + 0.4 mm (half a pad plus the solder blob) away from every used pad
+for (c = xguides) {
     used = c[0] < 0 ? used_pads_left : used_pads_right;
     for (u = used) let(dp = xiao_pad1 + (u - 1) * xiao_pitch)
         if (dp > c[1] - 1.67 && dp < c[2] + 1.67)
-            echo(str("ZEBCASE WARNING: XIAO clamp ", c, " is over or next to used pad ", u));
+            echo(str("ZEBCASE WARNING: XIAO guide ", c, " is over or next to used pad ", u));
 }
-echo(str("ZEBCASE clamp finger strain ", clamp_strain(z_ceil) * 100, " %"));
 
 // ---------------------------------------------------------------- helpers
 module box(x0, x1, y0, y1, z0, z1) {
@@ -342,6 +385,18 @@ module mirror_x_both() { children(); mirror([1, 0, 0]) children(); }
 // Polygon in the XZ plane extruded along Y from y0 to y1.
 module xz_prism(pts, y0, y1) {
     translate([0, y1, 0]) rotate([90, 0, 0]) linear_extrude(y1 - y0) polygon(pts);
+}
+// 2D children in the XZ plane extruded along Y from y0 to y1.
+module xz_extrude(y0, y1) {
+    translate([0, y1, 0]) rotate([90, 0, 0]) linear_extrude(y1 - y0) children();
+}
+// Polygon in the YZ plane ([y, z] points) extruded along X from x0 to x1.
+module yz_prism(pts, x0, x1) {
+    translate([x0, 0, 0]) rotate([90, 0, 90]) linear_extrude(x1 - x0) polygon(pts);
+}
+// USB-C shell cross-section (XZ), grown by c
+module usb_stadium(c) {
+    hull() for (s = [-1, 1]) translate([s * usb_a, usb_cz]) circle(r = usb_h / 2 + c);
 }
 
 // Faceted pincushion exterior: concave plan outline with corner chamfers, extruded with
@@ -360,7 +415,7 @@ module outer_solid() {
         polyhedron(pts, faces, convexity = 4);
         if (corner_facet > 0)
             for (sx = [-1, 1], cy = [0, 1], cz = [0, 1]) {
-                B = [sx * x_out, cy ? y_out1 : y_fb, cz ? z_top : z_bot];
+                B = [sx * x_out, cy ? y_out1 : y_cf, cz ? z_top : z_bot];
                 d = [-sx, cy ? -1 : 1, cz ? -1 : 1];            // inward along each axis
                 // tetrahedron: the facet triangle plus an apex well outside the corner
                 hull() polyhedron([B - d * 5, B + [d[0] * corner_facet, 0, 0], B + [0, d[1] * corner_facet, 0],
@@ -372,7 +427,7 @@ module outer_solid() {
 // shadow-line groove on the lid just above the seam, interrupted at the snap fingers
 module reveal_cut() {
     difference() {
-        box(-x_out - 5, x_out + 5, y_fb - 5, y_out1 + 5, split_z - 1, split_z + reveal_h);
+        box(-x_out - 5, x_out + 5, y_cf - 5, y_out1 + 5, split_z - 1, split_z + reveal_h);
         translate([0, 0, split_z - 2]) linear_extrude(reveal_h + 3) polygon(offset_poly(outline(), reveal_d));
         for (c = lc_ys) mirror_x_both()
             box(x_in, x_out + 6, c - lc_w / 2, c + lc_w / 2, split_z - 2, split_z + 2);   // groove runs into the side slots: no webs
@@ -380,66 +435,73 @@ module reveal_cut() {
 }
 
 // ---------------------------------------------------------------- tray
-module tray() intersection() {
+module tray() union() {
+  intersection() {
   outer_solid();
   union() {
     difference() {
         union() {
             difference() {
-                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_fb - 1, y_out1 + 1, z_bot - 1, split_z); }
+                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_cf - 1, y_out1 + 1, z_bot - 1, split_z); }
                 box(-x_in, x_in, y_in0 - 1, y_in1, z_floor, split_z + 1);
             }
-            // front skin under the PCB, supports the PCB front edge
-            box(-x_in, x_in, y_fb, skin_y1, z_floor - eps, -pcb_t);
+            // front skin under the PCB, supports the PCB front edge (flush with the case front)
+            box(-x_in, x_in, y_cf, skin_y1, z_floor - eps, -pcb_t);
             // small gusset in the floor / front skin corner: keeps min_wall square to the bottom front chamfer
             fg = max(0, edge_chamfer + min_wall * sqrt(2) - floor_t - 1.2);
             if (fg > 0) translate([x_in, 0, 0]) rotate([0, -90, 0]) linear_extrude(2 * x_in)
                 polygon([[z_floor - eps, skin_y1 - eps], [z_floor - eps, skin_y1 + fg], [z_floor + fg, skin_y1 - eps]]);
             // side ledges
-            mirror_x_both() box(x_in - ledge_w, x_in + eps, y_pcb0 + ledge_front_skip, y_pcb1 - 0.5, z_floor - eps, -pcb_t);
+            mirror_x_both() box(x_in - ledge_w, x_in + eps, ledge_y0, y_pcb1 - 0.5, z_floor - eps, -pcb_t);
             // bosses around the board-lock leg tails
             // (the tails only reach the floor top, so the walls that lock them have to stand up around them)
             if (leg_pocket_on) mirror_x_both()
                 box(lug_hx - leg_px - leg_boss_wall, min(lug_hx + leg_px + leg_boss_wall, x_in + 0.5),
-                    lug_hole_y - leg_py - leg_boss_wall, lug_hole_y + leg_py + leg_boss_wall, z_floor - eps, leg_boss_top);
-            // rear tongue that fills the lid USB slot under the receptacle
-            box(-usb_slot_w / 2 + clip_clr / 2, usb_slot_w / 2 - clip_clr / 2, y_in1, y_out1, split_z - eps, zx1 - tongue_gap);
+                    leg_y - leg_py - leg_boss_wall, leg_y + leg_py + leg_boss_wall, z_floor - eps, leg_boss_top);
+            usb_tongue();
         }
         // leg-tail pockets with a 45 degree lead-in so the board drops in
-        if (leg_pocket_on) mirror_x_both() translate([lug_hx, lug_hole_y, 0]) leg_pocket();
+        if (leg_pocket_on) mirror_x_both() translate([lug_hx, leg_y, 0]) leg_pocket();
         // ledge relief at the header pins (header side is -X)
         box(-x_in, -x_in + ledge_w + 0.1, hdr_y0 - 1, hdr_y1 + 1, z_floor, -pcb_t + 0.1);
         // header body relief in the wall (only when the header overhangs the PCB edge)
         if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, split_z + 1);
         // lid clip pockets and catch recesses
         for (c = lc_ys) mirror_x_both() lid_clip_tray_cut(c);
-        // board clip slots
-        for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip_cut(y);
-        for (y = bc_y_right) if (!lc_hit(y, bc_half)) board_clip_cut(y);
-        // no ledge stubs shorter than 2 mm between neighbouring clip cuts
-        for (side = [[-1, bc_y_left], [1, bc_y_right]]) let(ys = side[1])
-            for (i = [0 : len(ys) - 2]) let(a = ys[i] + bc_half + 0.5, b = ys[i + 1] - bc_half - 0.5)
-                if (b > a && b - a < 2) mirror([side[0] < 0 ? 1 : 0, 0, 0])
-                    box(x_in - ledge_w - 0.1, x_in, a - eps, b + eps, z_floor, -pcb_t + 0.1);
         usb_recess_cut();
+        // the tongue ends square under the relief: its rounded corners would leave knife-edge wedges on the tongue
+        box(-tongue_w - 1, tongue_w + 1, y_mouth + usb_mouth_inset, y_out1 + 1, usb_cz - usb_recess_h / 2, split_z + 20);
     }
-    for (y = bc_y_left)  if (!lc_hit(y, bc_half)) mirror([1, 0, 0]) board_clip(y);
-    for (y = bc_y_right) if (!lc_hit(y, bc_half)) board_clip(y);
+    // board backstop: rigid rib across the floor behind the PCB rear edge
+    difference() {
+        box(-x_in - eps, x_in + eps, y_pcb1 + bs_clr, y_pcb1 + bs_clr + bs_t, z_floor - eps, bs_above);
+        box(wz_pad_x[0] - 0.3, wz_pad_x[1] + 0.3, y_pcb1, y_pcb1 + bs_clr + bs_t + 1, 0, bs_above + 1);
+    }
   }
+  }
+  bottom_lip();
 }
 
-module board_clip_cut(y) {
-    box(x_in - eps, x_in + bc_t + bc_gap, y - bc_half, y + bc_half, z_floor, split_z + 1);
-    // ledge must not tie the finger to the floor
-    box(x_in - ledge_w - 0.1, x_in, y - bc_half - 0.5, y + bc_half + 0.5, z_floor, -pcb_t + 0.1);   // no ledge slivers
+// Rear tongue that fills the lid USB slot under the receptacle, with a cradle under the shell's rounded ends
+module usb_tongue() difference() {
+    box(-tongue_w, tongue_w, y_in1, y_out1, split_z - eps, tongue_top);
+    xz_extrude(y_in1 - 1, y_out1 + 1) hull() for (s = [-1, 1]) translate([s * tongue_side_clr, 0]) usb_stadium(tongue_gap);
 }
-module board_clip(y) {
-    h0 = 0.15;                    // catch face above the PCB top
-    top = h0 + bc_hook + 0.4;
-    box(x_in, x_in + bc_t, y - bc_w / 2, y + bc_w / 2, z_bot, top);
-    xz_prism([[x_in + eps, h0], [x_in - bc_hook, h0], [x_in - bc_hook, h0 + 0.2],
-              [x_in, h0 + 0.2 + bc_hook], [x_in, top], [x_in + eps, top]],
-             y - bc_w / 2, y + bc_w / 2);
+
+// Bottom retention lip, in front of the PCB front edge and the flange bottom margin; it grows from the tray front
+// face below the PCB, with a 45 degree root chamfer underneath (tray prints floor down)
+module bottom_lip() {
+    zr = -pcb_t - lip_root;           // bottom of the straight outer face
+    yz_prism([[eps, zr - lip_proud], [-lip_proud, zr], [-lip_proud, lip_b_top], [-lip_gap - lip_lead, lip_b_top],
+              [-lip_gap, lip_b_top - lip_lead], [-lip_gap, -pcb_t], [eps, -pcb_t]], -lip_x, lip_x);
+}
+
+// Top retention lip from the lid, in front of the flange top margin. The lid prints top down, so the 45 degree
+// chamfer above the lip (in assembly) is what carries it in print.
+module top_lip() {
+    zr = z_slot_top + lip_root;
+    yz_prism([[-lip_gap, lip_t_bot + lip_lead], [-lip_gap - lip_lead, lip_t_bot], [-lip_proud, lip_t_bot],
+              [-lip_proud, zr], [eps, zr + lip_proud], [eps, z_slot_top], [-lip_gap, z_slot_top]], -lip_x, lip_x);
 }
 
 // lid-clip geometry, right side (+X); mirrored for the left
@@ -473,48 +535,63 @@ module lid_clip_finger(c) {
 }
 
 module usb_recess_cut() {
-    box(-usb_recess_w / 2, usb_recess_w / 2, y_mouth + usb_mouth_inset, y_out1 + 1,
-        usb_cz - usb_recess_h / 2, usb_cz + usb_recess_h / 2);
+    r = min(usb_recess_r, usb_recess_h / 2 - 0.01);
+    xz_extrude(y_mouth + usb_mouth_inset, y_out1 + 1) translate([0, usb_cz])
+        offset(r = r) square([usb_recess_w - 2 * r, usb_recess_h - 2 * r], center = true);
 }
 
 // ---------------------------------------------------------------- lid
-module lid() intersection() {
-  outer_solid();
+module lid() union() {
+  intersection() {
+    outer_solid();
     difference() {
         union() {
             difference() {
-                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_fb - 1, y_out1 + 1, split_z, z_top + 1); }
+                intersection() { outer_solid(); box(-x_out - 1, x_out + 1, y_cf - 1, y_out1 + 1, split_z, z_top + 1); }
                 box(-x_in, x_in, y_in0 - 1, y_in1, split_z - 1, z_ceil);
                 for (c = lc_ys) mirror_x_both() lid_clip_lid_cut(c);
             }
-            // front wall above the split
-            box(-x_in - eps, x_in + eps, y_fb, y_fw1, split_z, z_top - eps);
+            // front wall: behind the flange it is the bearing face (Y fl_t); above the flange slot it fills to Y 0
+            difference() {
+                box(-x_in - eps, x_in + eps, y_fb, y_fw1, split_z, z_top - eps);
+                // lead-in on the bottom front edge
+                yz_prism([[y_fb - 1, split_z - 1], [y_fb + fw_lead + 1, split_z - 1], [y_fb - 1, split_z + fw_lead + 1]],
+                         -x_in - 1, x_in + 1);
+            }
+            box(-x_in - eps, x_in + eps, y_cf, y_fb + eps, z_slot_top, z_top - eps);
             if (lug_pin_on) mirror_x_both() lug_pin();
             // board pressers
             for (y = press_y_left)  mirror([1, 0, 0]) presser(y);
             for (y = press_y_right) presser(y);
-            // XIAO C-clips and front stops
-            for (c = xclamps) xiao_clamp(c[0], c[1], c[2]);
-            if (!front_on_body) xiao_clamp(xrest[0], xrest[1], xrest[2]);
+            // XIAO capture: guides, pads, front stop
+            for (c = xguides) xiao_guide(c[0], c[1], c[2]);
+            xiao_pads();
             for (x = stop_x) front_stop(x);
             for (c = lc_ys) mirror_x_both() lid_clip_finger(c);
+            if (ctl_undercut) box(xiao_w / 2 - 1, xiao_w / 2 + guide_clr + eps, 14, 16, zx0 - 1.5, zx0 - 0.5);
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
         // header relief (only when the header overhangs the PCB edge)
         if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, hdr_h + 1);
-        // USB-C slot, open to the rim so the receptacle drops in; the tray tongue fills below it
-        box(-usb_slot_w / 2, usb_slot_w / 2, y_in1 - 1, y_out1 + 1, split_z - 1, zx1 + usb_h + usb_clr);
+        // USB-C slot: the shell's stadium, open down to the rim so the closing lid passes over the receptacle;
+        // the tray tongue fills below it
+        xz_extrude(y_in1 - eps, y_out1 + 1) hull() {
+            usb_stadium(usb_clr);
+            translate([-usb_slot_w / 2, split_z - 1]) square([usb_slot_w, usb_cz - split_z + 1]);
+        }
         usb_recess_cut();
         if (show_logo) logo_cut();
         if (seam_reveal) reveal_cut();
     }
+  }
+  top_lip();
 }
 
 // Seen from above, +Y (away from the DB9) is up, so the mark needs no rotation or mirroring.
 module logo_cut() {
-    translate([0, (y_fb + y_rear_face) / 2, z_top - logo_depth])
+    translate([0, (y_cf + y_rear_face) / 2, z_top - logo_depth])
         linear_extrude(logo_depth + 1) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
 }
 
@@ -550,33 +627,40 @@ module leg_pocket() {
     }
 }
 
+// Rib from the lid side wall down to 0.1 above the board edge. Below the split it stands press_wall_clr off the tray
+// wall; above the split it is rooted 0.5 into the lid wall, with a 45 degree top so it prints top down.
 module presser(y) {
-    box(x_in - press_reach, x_in, y - press_w / 2, y + press_w / 2, 0.1, split_z + eps);
+    xi = x_in - press_reach;
+    box(xi, x_in - press_wall_clr, y - press_w / 2, y + press_w / 2, 0.1, split_z + eps);
+    xz_prism([[xi, split_z], [x_in + 0.5, split_z], [x_in + 0.5, split_z + press_root + press_reach + 0.5],
+              [x_in, split_z + press_root + press_reach], [xi, split_z + press_root]], y - press_w / 2, y + press_w / 2);
 }
 
-// Side clamp: a finger hanging from the ceiling with a ledge under the XIAO PCB edge and a lip over it,
-// running along one unused-pad stretch (d0..d1 from the USB end). It flexes outwards as the XIAO is
-// pressed in (lid upside down), then the PCB sits between ledge and lip.
-module xiao_clamp(s, d0, d1) {
-    xe = xiao_w / 2 + pcb_clr;          // finger inner face
-    // where the XIAO lies on the DB9 body the body carries it: the clamp starts behind the body
-    over_body = xe - clamp_ledge < body_w / 2 + pcb_clr;
+// Side guide: a rigid wall hanging from the ceiling beside the XIAO PCB edge along one unused-pad stretch
+// (d0..d1 from the USB end), guide_clr from the edge, with a 45 degree lead-in at the tip so the closing lid
+// steers the XIAO into place in X. It does not hold the PCB vertically (the pads and the body / tongue do).
+module xiao_guide(s, d0, d1) {
+    xe = xiao_w / 2 + guide_clr;        // inner face
+    over_body = xe < body_w / 2 + pcb_clr;
     y0 = over_body ? max(yx1 - d1, y_body1 + pcb_clr) : yx1 - d1;
     y1 = yx1 - d0;
-    z_ledge = zx0 - clamp_gap;          // ledge top
-    z_tip = z_ledge - clamp_ledge - 0.4;
-    z_lip = zx1 + clamp_gap;
-    if (y1 - y0 >= min_wall) mirror([s < 0 ? 1 : 0, 0, 0]) {
-        box(xe, xe + clamp_t, y0, y1, z_tip, z_ceil + eps);
-        // ledge, 45 degree lead-in facing the incoming board
-        xz_prism([[xe + eps, z_tip], [xe, z_tip], [xe - clamp_ledge, z_tip + clamp_ledge],
-                  [xe - clamp_ledge, z_ledge], [xe + eps, z_ledge]], y0, y1);
-        // lip, 45 degree top so it prints upside down
-        xz_prism([[xe + eps, z_lip], [xe - clamp_lip, z_lip], [xe - clamp_lip, z_lip + 0.3],
-                  [xe, z_lip + 0.3 + clamp_lip], [xe + eps, z_lip + 0.3 + clamp_lip]], y0, y1);
-    }
+    z_tip = zx0 - guide_below;
+    if (y1 - y0 >= min_wall) mirror([s < 0 ? 1 : 0, 0, 0])
+        xz_prism([[xe, z_ceil + eps], [xe, z_tip + guide_lead], [xe + guide_lead, z_tip], [xe + guide_t, z_tip],
+                  [xe + guide_t, z_ceil + eps]], y0, y1);
 }
-function clamp_strain(z_root) = 1.5 * clamp_t * (clamp_ledge - pcb_clr) / pow(z_root - (zx0 - clamp_gap - clamp_ledge - 0.4), 2);
+
+// Rigid pads from the ceiling: a ring on the RF shield top and a block on the USB-C shell's flat top, xpad_gap
+// above them. They hold the XIAO down onto the DB9 body and the tongue.
+module xiao_pads() {
+    sy0 = yx1 - shield_d1 + xpad_inset;  sy1 = yx1 - shield_d0 - xpad_inset;
+    sx = shield_w / 2 - xpad_inset;
+    difference() {
+        box(-sx, sx, sy0, sy1, zx1 + shield_h + xpad_gap, z_ceil + eps);
+        box(-sx + xpad_wall, sx - xpad_wall, sy0 + xpad_wall, sy1 - xpad_wall, zx1, z_ceil);
+    }
+    box(-usb_a, usb_a, y_mouth - usb_l + xpad_inset, y_in1 + eps, zx1 + usb_h + xpad_gap, z_ceil + eps);
+}
 
 // strut bottom: on the body top + stop_z_clr where the XIAO front end lies over the body, else below the PCB
 function stop_over_body(x) = (yx0 - pcb_clr - stop_t < y_body1 + pcb_clr) && abs(x) - stop_w / 2 < body_w / 2;
@@ -585,8 +669,15 @@ function stop_bottom(x) = let(y1 = yx0 - pcb_clr, tip0 = max(y1 - stop_t, y_body
 module front_stop(x) {
     y1 = yx0 - pcb_clr;                         // bearing face on the XIAO PCB edge
     tip0 = max(y1 - stop_t, y_body1 + pcb_clr); // behind the body the tip can reach below the PCB
-    box(x - stop_w / 2, x + stop_w / 2, y_fw1 - eps, y1, body_h + stop_z_clr, z_ceil + eps);
-    if (y1 - tip0 >= stop_tip_min) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);
+    zb = (y1 - tip0 >= stop_tip_min) ? zx0 - 0.6 : body_h + stop_z_clr;
+    difference() {
+        union() {
+            box(x - stop_w / 2, x + stop_w / 2, y_fw1 - eps, y1, body_h + stop_z_clr, z_ceil + eps);
+            if (y1 - tip0 >= stop_tip_min) box(x - stop_w / 2, x + stop_w / 2, tip0, y1, zx0 - 0.6, z_ceil + eps);
+        }
+        // lead-in on the bottom rear edge
+        yz_prism([[y1 - stop_lead - 1, zb - 1], [y1 + 1, zb - 1], [y1 + 1, zb + stop_lead + 1]], x - stop_w, x + stop_w);
+    }
 }
 
 // ---------------------------------------------------------------- ghosts
@@ -616,7 +707,7 @@ module ghost_db9() {
             translate([lug_hx, lug_hole_y + ghost_lug_dy, lug_h - lug_hole_depth - eps]) cylinder(d = lug_hole_d, h = lug_hole_depth + 1);
     }
     // board-lock legs through the lugs and the PCB, with their tails below the board
-    if (!lug_pin_on) gcol("silver") mirror_x_both() translate([lug_hx + ghost_lug_dx, lug_hole_y + ghost_lug_dy, 0])
+    if (!lug_pin_on) gcol("silver") mirror_x_both() translate([lug_hx + ghost_lug_dx, leg_y + ghost_lug_dy, 0])
         if (leg_t == 0) translate([0, 0, leg_tip]) cylinder(d = leg_w, h = lug_h - leg_tip, $fn = 24);
         else box(-leg_w / 2, leg_w / 2, -leg_t / 2, leg_t / 2, leg_tip, lug_h);
     gcol("dimgray") {
@@ -631,8 +722,9 @@ module ghost_rs232() {
     // (with the leg pockets on, the zone is cut back around the legs: no other pins are assumed within the bosses)
     gcol("red", 0.4) difference() {
         box(-board_w / 2 + 1.25, board_w / 2 - 1.25, max(y_pcb0, y_fb) + 1.25, y_pcb1 - 1.25, -pcb_t - 2.5, -pcb_t);
-        if (leg_pocket_on) mirror_x_both() translate([lug_hx, lug_hole_y, 0])
-            box(-leg_px - leg_boss_wall - 0.01, leg_px + leg_boss_wall + 0.01, -leg_py - leg_boss_wall - 0.01, leg_py + leg_boss_wall + 0.01, -10, 0);
+        if (leg_pocket_on) mirror_x_both() translate([lug_hx, leg_y, 0])
+            box(-leg_px - leg_boss_wall - 0.01, leg_px + leg_boss_wall + 0.01,
+                -leg_py - leg_boss_wall - bs_clr - 0.01, leg_py + leg_boss_wall + bs_clr + 0.01, -10, 0);   // + the board's fore-aft play
     }
     gcol("black") box(hdr_x0, hdr_x0 + 2.54, hdr_y0, hdr_y1, 0, hdr_h);
 }
@@ -641,7 +733,7 @@ module ghost_xiao() {
     translate(ghost_offset) {
         gcol("#202020") box(-xiao_w / 2, xiao_w / 2, yx0, yx1, zx0, zx1);
         gcol("whitesmoke") box(-shield_w / 2, shield_w / 2, yx1 - shield_d1, yx1 - shield_d0, zx1, zx1 + shield_h);
-        gcol("lightgray") box(-usb_w / 2, usb_w / 2, y_mouth - usb_l, y_mouth, zx1, zx1 + usb_h);
+        gcol("lightgray") xz_extrude(y_mouth - usb_l, y_mouth) usb_stadium(0);
         gcol("ivory") box(ant_x[0], ant_x[1], yx1 - ant_d[1], yx1 - ant_d[0], zx1, zx1 + 1.1);   // ceramic antenna
         gcol("gold") box(ufl_x[0], ufl_x[1], yx1 - ufl_d[1], yx1 - ufl_d[0], zx1, zx1 + ufl_h);  // U.FL + plug
         gcol("dimgray") mirror_x_both() box(btn_x[0], btn_x[1], yx1 - btn_d[1], yx1 - btn_d[0], zx1, zx1 + 0.6);
@@ -678,20 +770,20 @@ module ghost_wires() {
 }
 
 // Keep-out volumes for the four wires and their joints (the user's requirement): no case feature may enter them
+wz_pad_x = [6.0, 11.5];              // |X| span of the zones under the XIAO's used pads
 module wire_zones() {
     yl0 = pad_y(max(used_pads_left)) - joint_half;  yl1 = pad_y(min(used_pads_left)) + joint_half;
     yr0 = pad_y(max(used_pads_right)) - joint_half; yr1 = pad_y(min(used_pads_right)) + joint_half;
     gcol("magenta", 0.25) {
-        box(-11.5, -6.0, yl0, yl1, 0.3, zx0 + eps);                    // under the -X D4/D5 pads
-        box(6.0, 11.5, yr0, yr1, 0.3, zx0 + eps);                      // under the +X 5V/GND pads
+        box(-wz_pad_x[1], -wz_pad_x[0], yl0, yl1, 0.3, zx0 + eps);     // under the -X D4/D5 pads
+        box(wz_pad_x[0], wz_pad_x[1], yr0, yr1, 0.3, zx0 + eps);       // under the +X 5V/GND pads
         box(-15.6, -11.0, yl0, hdr_y1, hdr_h, zx1 + 2);                // header top to the D4/D5 pads
         box(-11.5, 11.5, max(yr0, hdr_y0), min(yr1, hdr_y1), 3, 8);    // header across under the XIAO to 5V/GND
     }
 }
 
 module ghosts() {
-    ghost_db9();
-    ghost_rs232();
+    translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); }
     ghost_xiao();
     ghost_wires();
     wire_zones();
@@ -709,14 +801,25 @@ if (part == "tray") {
     tray_c(); lid_c(); if (show_ghosts) ghosts();
 } else if (part == "exploded") {
     tray_c();
-    if (show_ghosts) { ghost_db9(); ghost_rs232(); }
-    translate([0, 0, explode]) { lid_c(); if (show_ghosts) ghost_xiao(); }   // wires omitted when exploded
+    if (show_ghosts) { ghost_db9(); ghost_rs232(); ghost_xiao(); }
+    translate([0, 0, explode]) lid_c();   // the XIAO now lies in the tray before the lid closes; wires omitted
 } else if (part == "ghosts") {
     ghosts();
 } else if (part == "check_tray") {
     intersection() { tray(); ghosts(); }
 } else if (part == "check_lid") {
     intersection() { lid(); ghosts(); }
+} else if (part == "check_lid_path") {
+    // The lid closes straight down over the parts already in the tray, so it collides on the way if any lid
+    // material lies directly below a part: sweep the parts 30 mm downwards and intersect with the closed lid.
+    // (Wires and wire zones are left out: the wires are flexible and the zones are checked by check_lid.)
+    intersection() {
+        lid();
+        minkowski() {
+            union() { translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); } ghost_xiao(); }
+            translate([0, 0, -30]) cube([0.001, 0.001, 30]);
+        }
+    }
 } else if (part == "check_traylid") {
     intersection() { tray(); lid(); }
 } else if (part == "tray_inplace") {                               // assembly coordinates, for wallprobe.py
