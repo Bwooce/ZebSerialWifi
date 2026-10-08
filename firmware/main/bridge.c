@@ -27,7 +27,10 @@ static const char *TAG = "bridge";
 #define KEEPALIVE_INTVL_S 5
 #define KEEPALIVE_COUNT 3
 
+/* Written only by the bridge task; the web server copies it under s_stats_mux (64-bit fields tear otherwise) */
 static bridge_stats_t s_stats;
+static portMUX_TYPE s_stats_mux = portMUX_INITIALIZER_UNLOCKED;
+#define STATS_UPDATE(stmt) do { taskENTER_CRITICAL(&s_stats_mux); stmt; taskEXIT_CRITICAL(&s_stats_mux); } while (0)
 
 static int64_t now_ms(void)
 {
@@ -42,7 +45,7 @@ static bool pump_from_printer(int sock, TickType_t wait)
     if (n <= 0) {
         return true;
     }
-    s_stats.bytes_from_printer += (uint64_t)n;
+    STATS_UPDATE(s_stats.bytes_from_printer += (uint64_t)n);
     board_led_activity();
     return send(sock, buf, n, 0) == n;
 }
@@ -71,7 +74,7 @@ static bool write_all(int sock, const uint8_t *data, size_t n)
         if (w > 0) {
             data += w;
             n -= (size_t)w;
-            s_stats.bytes_to_printer += (uint64_t)w;
+            STATS_UPDATE(s_stats.bytes_to_printer += (uint64_t)w);
             last_progress = now_ms();
             board_led_activity();
         } else {
@@ -119,7 +122,7 @@ static void serve(int sock)
             last_activity = now_ms();
             if (!write_all(sock, buf, (size_t)n)) {
                 ESP_LOGW(TAG, "client gone or printer stalled too long, discarding the rest of the job");
-                s_stats.aborted++;
+                STATS_UPDATE(s_stats.aborted++);
                 printer_link_abort_tx();
                 return;
             }
@@ -148,7 +151,7 @@ static void serve(int sock)
     while (!printer_link_tx_idle()) {
         if (now_ms() - drain_start > STALL_LIMIT_MS || !client_alive(sock)) {
             ESP_LOGW(TAG, "job not drained to the printer and client gone or limit reached, discarding");
-            s_stats.aborted++;
+            STATS_UPDATE(s_stats.aborted++);
             printer_link_abort_tx();
             return;
         }
@@ -189,20 +192,21 @@ static void listen_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
+        char client_ip[sizeof(s_stats.client_ip)];
         if (peer.ss_family == AF_INET) {
-            inet_ntop(AF_INET, &((struct sockaddr_in *)&peer)->sin_addr, s_stats.client_ip,
-                      sizeof(s_stats.client_ip));
+            inet_ntop(AF_INET, &((struct sockaddr_in *)&peer)->sin_addr, client_ip, sizeof(client_ip));
         } else {
-            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&peer)->sin6_addr, s_stats.client_ip,
-                      sizeof(s_stats.client_ip));
+            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&peer)->sin6_addr, client_ip, sizeof(client_ip));
         }
+        STATS_UPDATE(memcpy(s_stats.client_ip, client_ip, sizeof(client_ip)));
         if (!printer_link_acquire(pdMS_TO_TICKS(ACQUIRE_WAIT_MS))) {
             ESP_LOGW(TAG, "printer link busy, rejecting %s", s_stats.client_ip);
             close(sock);
             continue;
         }
-        s_stats.sessions++;
-        s_stats.active = true;
+        /* late replies to the link task's probes must not reach this client */
+        printer_link_discard_input();
+        STATS_UPDATE(s_stats.sessions++; s_stats.active = true);
         uint64_t in0 = s_stats.bytes_to_printer;
         uint64_t out0 = s_stats.bytes_from_printer;
         int64_t t0 = now_ms();
@@ -210,7 +214,7 @@ static void listen_task(void *arg)
         serve(sock);
         shutdown(sock, SHUT_RDWR);
         close(sock);
-        s_stats.active = false;
+        STATS_UPDATE(s_stats.active = false);
         printer_link_release();
         ESP_LOGI(TAG, "client %s done: %llu bytes to printer, %llu back, %lld ms", s_stats.client_ip,
                  (unsigned long long)(s_stats.bytes_to_printer - in0),
@@ -225,5 +229,7 @@ void bridge_start(void)
 
 void bridge_get_stats(bridge_stats_t *out)
 {
+    taskENTER_CRITICAL(&s_stats_mux);
     *out = s_stats;
+    taskEXIT_CRITICAL(&s_stats_mux);
 }

@@ -151,6 +151,26 @@ bool zpl_hs_parse(const uint8_t *buf, size_t len, zpl_hs_t *out)
 
 bool zpl_sgd_value(const uint8_t *buf, size_t len, char *out, size_t out_len)
 {
+    /*
+     * Skip lines that start with '!': they are our own getvar command coming
+     * back (a loopback plug or an echoing device), not a printer reply.
+     */
+    size_t start = 0;
+    for (;;) {
+        while (start < len && (buf[start] == '\r' || buf[start] == '\n' || buf[start] == ' ')) {
+            start++;
+        }
+        if (start >= len || buf[start] != '!') {
+            break;
+        }
+        const uint8_t *nl = memchr(buf + start, '\n', len - start);
+        if (nl == NULL) {
+            return false;
+        }
+        start = (size_t)(nl - buf) + 1;
+    }
+    buf += start;
+    len -= start;
     const uint8_t *open = memchr(buf, '"', len);
     if (open == NULL) {
         return false;

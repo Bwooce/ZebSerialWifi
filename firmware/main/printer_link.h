@@ -33,6 +33,8 @@ void printer_link_start(void);
 
 /* Exclusive access for the bridge. Detection and polling never run while held. */
 bool printer_link_acquire(TickType_t wait);
+/* Drop anything still in the receive buffer (late replies to our own probes). Caller holds the link. */
+void printer_link_discard_input(void);
 void printer_link_release(void);
 
 /* Queue up to n bytes for the printer, waiting up to `wait` for buffer space. Returns bytes queued. */

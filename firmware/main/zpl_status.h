@@ -27,7 +27,10 @@ typedef struct {
  */
 bool zpl_hs_parse(const uint8_t *buf, size_t len, zpl_hs_t *out);
 
-/* Copy the first "..." quoted value of an SGD getvar reply into out. */
+/*
+ * Copy the first "..." quoted value of an SGD getvar reply into out. Lines
+ * starting with '!' (an echo of the command itself) are skipped.
+ */
 bool zpl_sgd_value(const uint8_t *buf, size_t len, char *out, size_t out_len);
 
 #define ZPL_BAUD_MAX_CANDIDATES 6

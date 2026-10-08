@@ -145,10 +145,30 @@ static const struct {
     {"D6", 16}, {"D7", 17}, {"D8", 19}, {"D9", 20}, {"D10", 18},
 };
 
+/*
+ * Probe one pin while the other is pulled up. If the other pin is T1IN, the
+ * pull-up holds the RS232 line at mark, so with a loopback plug (or anything
+ * else echoing) R1OUT still idles high instead of following a floating input.
+ */
+static pin_state_t probe_pin_other_high(int gpio, int other)
+{
+    gpio_config_t up = {
+        .pin_bit_mask = 1ULL << other,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    gpio_config(&up);
+    esp_rom_delay_us(1000);
+    pin_state_t s = probe_pin(gpio);
+    gpio_reset_pin(other);
+    return s;
+}
+
 bool board_detect_uart_pins(int *tx, int *rx)
 {
-    pin_state_t a = probe_pin(GPIO_UART_A);
-    pin_state_t b = probe_pin(GPIO_UART_B);
+    pin_state_t a = probe_pin_other_high(GPIO_UART_A, GPIO_UART_B);
+    pin_state_t b = probe_pin_other_high(GPIO_UART_B, GPIO_UART_A);
     ESP_LOGI(TAG, "D4/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B, pin_state_name(b));
 
     /* MAX3232 R1OUT idles high (RS232 input open or at mark); T1IN is an undriven input */

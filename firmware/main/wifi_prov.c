@@ -134,6 +134,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         wifi_event_sta_disconnected_t *d = data;
         if (s_state == WIFI_ST_CONNECTED) {
             ESP_LOGW(TAG, "disconnected, reason %d", d->reason);
+            esp_timer_stop(s_fallback_timer);
             esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
         }
         s_state = s_ap_active ? WIFI_ST_AP : WIFI_ST_CONNECTING;

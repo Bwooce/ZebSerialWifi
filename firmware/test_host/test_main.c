@@ -116,6 +116,17 @@ static void test_sgd_value(void)
     /* value longer than output buffer is rejected, not truncated */
     char small[4];
     CHECK(!zpl_sgd_value((const uint8_t *)r, strlen(r), small, sizeof(small)));
+
+    /* loopback: our own command echoed back is not a reply */
+    const char *echo = "! U1 getvar \"device.languages\"\r\n";
+    CHECK(!zpl_sgd_value((const uint8_t *)echo, strlen(echo), v, sizeof(v)));
+    const char *echo_partial = "! U1 getvar \"comm.handshake\"";
+    CHECK(!zpl_sgd_value((const uint8_t *)echo_partial, strlen(echo_partial), v, sizeof(v)));
+
+    /* echo followed by a real reply: the reply wins */
+    const char *echo_reply = "! U1 getvar \"comm.handshake\"\r\n\"xon/xoff\"";
+    CHECK(zpl_sgd_value((const uint8_t *)echo_reply, strlen(echo_reply), v, sizeof(v)));
+    CHECK(strcmp(v, "xon/xoff") == 0);
 }
 
 static void test_url_decode(void)

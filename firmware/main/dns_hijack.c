@@ -32,9 +32,8 @@ static size_t qname_len(const uint8_t *p, size_t max)
     return 0;
 }
 
-static void dns_task(void *arg)
+static void serve(void)
 {
-    (void)arg;
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
@@ -46,8 +45,7 @@ static void dns_task(void *arg)
         if (sock >= 0) {
             close(sock);
         }
-        s_task = NULL;
-        vTaskDelete(NULL);
+        vTaskDelay(pdMS_TO_TICKS(1000));  /* retried by the caller while still running */
         return;
     }
     struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
@@ -87,17 +85,32 @@ static void dns_task(void *arg)
         sendto(sock, buf, len, 0, (struct sockaddr *)&from, flen);
     }
     close(sock);
-    s_task = NULL;
-    vTaskDelete(NULL);
+}
+
+/*
+ * The task lives for good: it serves while s_run is set and sleeps between a
+ * stop and the next start, so a quick stop/start can never leave it gone.
+ */
+static void dns_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        if (s_run) {
+            serve();
+        } else {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        }
+    }
 }
 
 void dns_hijack_start(void)
 {
-    s_run = true;  /* also keeps a task that is still running from a recent stop */
-    if (s_task != NULL) {
-        return;
+    s_run = true;
+    if (s_task == NULL) {
+        xTaskCreate(dns_task, "dns_hijack", 3072, NULL, 4, &s_task);
+    } else {
+        xTaskNotifyGive(s_task);
     }
-    xTaskCreate(dns_task, "dns_hijack", 3072, NULL, 4, &s_task);
 }
 
 void dns_hijack_stop(void)

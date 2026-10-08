@@ -41,11 +41,27 @@ static bool s_hs_valid;
 static zpl_hs_t s_hs;
 static int64_t s_hs_time_us;
 static char s_handshake[16];
+/* 64-bit counters are two words on this core: update and read them under s_count_mux */
+static portMUX_TYPE s_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_tx_bytes;
 static uint64_t s_rx_bytes;
 static volatile bool s_redetect;
 static bool s_raise_tried;
 static volatile uint32_t s_target_baud = 115200;
+
+static void count_tx(size_t n)
+{
+    taskENTER_CRITICAL(&s_count_mux);
+    s_tx_bytes += n;
+    taskEXIT_CRITICAL(&s_count_mux);
+}
+
+static void count_rx(size_t n)
+{
+    taskENTER_CRITICAL(&s_count_mux);
+    s_rx_bytes += n;
+    taskEXIT_CRITICAL(&s_count_mux);
+}
 
 static esp_err_t uart_setup(uint32_t baud)
 {
@@ -79,7 +95,7 @@ static void send_str(const char *s)
 {
     size_t n = strlen(s);
     uart_write_bytes(PORT, s, n);
-    s_tx_bytes += n;
+    count_tx(n);
 }
 
 /* Collect printer output for up to timeout_ms, stopping early once `done` says so. */
@@ -91,7 +107,7 @@ static size_t collect(uint8_t *buf, size_t cap, uint32_t timeout_ms, bool (*done
         int n = uart_read_bytes(PORT, buf + len, cap - len, pdMS_TO_TICKS(20));
         if (n > 0) {
             len += (size_t)n;
-            s_rx_bytes += (uint64_t)n;
+            count_rx((size_t)n);
             if (done != NULL && done(buf, len)) {
                 break;
             }
@@ -144,6 +160,11 @@ static bool sgd_get(const char *name, char *out, size_t out_len)
     uart_flush_input(PORT);
     send_str(cmd);
     size_t len = collect(buf, sizeof(buf), PROBE_TIMEOUT_MS, sgd_done);
+    size_t cmd_len = strlen(cmd) - 2;  /* without the CR LF */
+    if (len >= cmd_len && memcmp(buf, cmd, cmd_len) == 0) {
+        ESP_LOGW(TAG, "the serial line echoes our commands back at %lu baud: loopback plug, not a printer",
+                 (unsigned long)s_baud);
+    }
     return zpl_sgd_value(buf, len, out, out_len);
 }
 
@@ -340,6 +361,11 @@ bool printer_link_acquire(TickType_t wait)
     return xSemaphoreTake(s_lock, wait) == pdTRUE;
 }
 
+void printer_link_discard_input(void)
+{
+    uart_flush_input(PORT);
+}
+
 void printer_link_release(void)
 {
     xSemaphoreGive(s_lock);
@@ -355,7 +381,7 @@ int printer_link_write(const uint8_t *data, size_t n, TickType_t wait)
             size_t chunk = n < free_sz ? n : free_sz;
             int w = uart_write_bytes(PORT, data, chunk);
             if (w > 0) {
-                s_tx_bytes += (uint64_t)w;
+                count_tx((size_t)w);
             }
             return w;
         }
@@ -370,7 +396,7 @@ int printer_link_read(uint8_t *data, size_t n, TickType_t wait)
 {
     int r = uart_read_bytes(PORT, data, n, wait);
     if (r > 0) {
-        s_rx_bytes += (uint64_t)r;
+        count_rx((size_t)r);
     }
     return r < 0 ? 0 : r;
 }
@@ -396,8 +422,10 @@ void printer_link_get_status(printer_status_t *out)
     out->hs = s_hs;
     out->hs_age_ms = s_hs_time_us < 0 ? -1 : (esp_timer_get_time() - s_hs_time_us) / 1000;
     strlcpy(out->handshake, s_handshake, sizeof(out->handshake));
+    taskENTER_CRITICAL(&s_count_mux);
     out->tx_bytes = s_tx_bytes;
     out->rx_bytes = s_rx_bytes;
+    taskEXIT_CRITICAL(&s_count_mux);
     out->tx_gpio = s_tx_gpio;
     out->rx_gpio = s_rx_gpio;
     out->target_baud = s_target_baud;

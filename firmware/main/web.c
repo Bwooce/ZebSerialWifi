@@ -258,8 +258,12 @@ static esp_err_t status_get(httpd_req_t *req)
     }
     strlcat(ip6_json, "]", sizeof(ip6_json));
 
-    char json[1600];
-    snprintf(json, sizeof(json),
+    const size_t json_cap = 2048;
+    char *json = malloc(json_cap);
+    if (json == NULL) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+    }
+    int json_len = snprintf(json, json_cap,
              "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"hostname\":\"%s\",\"static_ip\":%s,"
              "\"ip6\":%s},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
@@ -281,9 +285,16 @@ static esp_err_t status_get(httpd_req_t *req)
              (unsigned long)b.aborted, (unsigned long long)b.bytes_to_printer,
              (unsigned long long)b.bytes_from_printer, (long long)(esp_timer_get_time() / 1000000), app->version,
              app->date, app->time);
+    if (json_len < 0 || (size_t)json_len >= json_cap) {
+        free(json);
+        ESP_LOGE(TAG, "status JSON needs %d bytes, buffer is %u", json_len, (unsigned)json_cap);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "status too long");
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    return httpd_resp_sendstr(req, json);
+    esp_err_t err = httpd_resp_send(req, json, json_len);
+    free(json);
+    return err;
 }
 
 static esp_err_t redirect_home(httpd_req_t *req);
