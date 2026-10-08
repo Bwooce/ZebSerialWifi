@@ -58,7 +58,18 @@ ctl "xiao -X 0.3 (guide)"          check_lid     hit  -D 'ghost_offset=[-0.3,0,0
 ctl "xiao fwd 0.3 (strut)"         check_lid     hit  -D 'ghost_offset=[0,-0.3,0]'
 ctl "xiao back 0.3 (rear wall)"    check_lid     hit  -D 'ghost_offset=[0,0.3,0]'
 # wire keep-out: a guide pushed into the D4/D5 zone
-ctl "-X guide at d 13..17 (wires)" check_lid     hit  -D 'xguides=[[-1,13,17],[1,11.8,18.8]]'
+ctl "-X guide at d 13..17 (wires)" check_lid     hit  -D dupont_on=false -D 'xguides=[[-1,13,17],[1,11.8,18.8]]'
+# Dupont housing + wire-bend zone (keep-out), moved 1 mm: + X and down stay clear; the rest show what they meet
+ctl "dupont +X 1"                  check_lid      none -D 'ghost_dupont_d=[1,0,0]'
+ctl "dupont down 1"                check_lid      none -D 'ghost_dupont_d=[0,0,-1]'
+ctl "dupont -X 1 (side wall)"      check_lid      hit  -D 'ghost_dupont_d=[-1,0,0]'
+ctl "dupont -Y 1 (-X presser)"     check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
+ctl "dupont +Y 1 (-X guide)"       check_lid      hit  -D 'ghost_dupont_d=[0,1,0]'
+ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
+ctl "-X guide untrimmed (zone)"    check_lid      hit  -D dupont_clr=-20
+# logo: every stroke and gap >= logo_min at logo_w 30; the same mark at 20 mm breaks it (0.6 mm corner fillets)
+ctl "logo at 30 mm"                check_logo     none
+ctl "logo at 20 mm"                check_logo     hit  -D logo_w=20
 
 rm -rf "$TMP"
 echo "controls: $fails failed"

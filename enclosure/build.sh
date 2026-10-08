@@ -6,13 +6,17 @@ cd "$(dirname "$0")"
 OSC=${OPENSCAD:-/opt/homebrew/bin/openscad}
 SCAD=zebserial_case.scad
 mkdir -p out renders
-rm -f out/tray.stl out/lid.stl renders/*.png
+rm -f out/*.stl renders/*.png
 
 run() { "$OSC" --backend=manifold "$@" "$SCAD"; }
 
 echo "== STL export"
 run -D 'part="tray"' -D show_ghosts=false -o out/tray.stl
 run -D 'part="lid"' -D show_ghosts=false -o out/lid.stl
+run -D 'part="logo"' -o out/logo.stl     # two-colour inlay, aligned with lid.stl (logo_mode="inlay")
+# fit coupons: the front coupon_y1 of each part, single colour, in print orientation
+run -D 'part="coupon_tray"' -o out/coupon_tray.stl
+run -D 'part="coupon_lid"' -o out/coupon_lid.stl
 
 echo "== renders"
 IMG="--imgsize=1400,1050 --colorscheme=Tomorrow --render"
@@ -41,8 +45,9 @@ run $IMG --camera=0,36,12,90,0,180,60 --projection=o -D 'part="assembly"' -D sho
 run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="y"' -D section_pos=7.9 -D section_t=2 -o renders/section_leg_pockets.png
 # x plane through the +X leg-tail pocket (X 12.5), seen from +X
 run $IMG --camera=0,14,2,90,0,90,90 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="x"' -D section_pos=13.5 -D section_t=2 -o renders/section_leg_pocket_length.png
-# lid top with the logo deboss, DB9 at the bottom edge (how the logo reads)
-run $IMG --camera=0,15,8,35,0,0,125 -D 'part="assembly"' -o renders/lid_top_logo.png
+# lid top with the logo inlay, DB9 at the bottom edge (how the logo reads), and the single-colour deboss fallback
+run $IMG --camera=0,17,8,0,0,0,105 --projection=o -D 'part="assembly"' -o renders/lid_top_logo.png
+run $IMG --camera=0,17,8,25,0,0,115 -D 'part="assembly"' -D 'logo_mode="deboss"' -D show_ghosts=false -o renders/lid_top_logo_deboss.png
 # sections through each lid snap finger (front pair at Y 7, rear pair at Y 27.5 by default), seen from the front
 run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=6 -D section_t=2 -o renders/section_snap_front.png
 run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=26.4 -D section_t=2 -o renders/section_snap_rear.png
@@ -65,6 +70,9 @@ for c in check_tray check_lid check_traylid check_lid_path; do
     echo "$c: empty"
   fi
 done
+echo "== logo: strokes and gaps under logo_min (part=check_logo), must be none"
+run "$@" -D 'part="check_logo"' -o "$TMP/check_logo.stl" > "$TMP/check_logo.log" 2>&1 || true
+if [ -s "$TMP/check_logo.stl" ]; then echo "check_logo: $(python3 -I stlinfo.py --hits "$TMP/check_logo.stl")"; else echo "check_logo: none"; fi
 echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped"
 echo "   expected: lid snap hooks, lead-in tips, logo skin 1.1 (see README)"
 for p in tray lid; do
@@ -72,4 +80,4 @@ for p in tray lid; do
   python3 wallprobe.py --summary "$TMP/${p}_inplace.stl" | sed "s|$TMP/||"
 done
 rm -rf "$TMP"
-python3 -I stlinfo.py out/tray.stl out/lid.stl
+python3 -I stlinfo.py out/tray.stl out/lid.stl out/logo.stl out/coupon_tray.stl out/coupon_lid.stl

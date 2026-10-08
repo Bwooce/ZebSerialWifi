@@ -14,6 +14,8 @@
 //   openscad -D 'part="lid"'  -D show_ghosts=false -o out/lid.stl  zebserial_case.scad
 //   part = "tray" | "lid" (print orientation), "assembly" | "exploded" (with optional ghosts),
 //          "check_tray" | "check_lid" | "check_traylid" (interference volumes, should be empty),
+//          "coupon_tray" | "coupon_lid" (front fit coupons, print orientation),
+//          "logo" (two-colour inlay body, lid print orientation), "check_logo" (strokes / gaps under logo_min),
 //          "check_lid_path" (lid material directly below a part: what the lid would hit closing straight down),
 //          "ghosts" (ghost models only), "tray_inplace" | "lid_inplace" (assembly coordinates, for wallprobe.py).
 
@@ -31,6 +33,8 @@ ghost_offset = [0, 0, 0];
 ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes / legs in Y
 ghost_lug_dx = 0;        // positive control: moves only the ghost legs in X
 ghost_board_dy = 0;      // positive control: moves the RS232 board + DB9 ghosts (with their legs) in Y
+coupon_y1 = 14.5;        // fit coupons (part="coupon_tray" / "coupon_lid") keep Y < coupon_y1: flange recess, lips,
+                         // bearing wall, leg pockets, front snaps, front pressers; stops short of the shield pad (14.65)
 ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO +X edge, clear when closed
 
 /* [Measured by the user (calipers)] */
@@ -138,6 +142,12 @@ pin_boss_d = 4.0;        // boss around the pin root, down to 0.2 above the lug 
 /* [RS232 header, guesses from photos] */
 hdr_pins = 4;
 hdr_h = 8.5;             // female header height above the PCB
+// Dupont housing plugged onto the 4-pin header, and the space its wires need to bend over towards the XIAO pads
+dupont_on = true;
+dupont_top = 14.5;       // housing top above the PCB top: 2.5 header base + 12 housing (to be measured)
+dupont_bend_h = 4.0;     // wire-bend space above the housing: about 3 mm bend radius plus the wire
+dupont_clr = 0.5;        // extra clearance in Y where lid features are trimmed for the zone
+ghost_dupont_d = [0, 0, 0];   // positive control: moves the Dupont housing and bend zone
 hdr_edge = 0.3;          // header body outer edge inset from the -X PCB edge (negative = overhangs)
 hdr_rear = 0.2;          // header body end inset from the PCB rear edge
 
@@ -173,12 +183,15 @@ min_wall = 1.2;          // checked by wallprobe.py, not just assumed
 
 /* [Logo] */
 // Debossed into the lid top, centred; reads upright seen from above with the DB9 at the bottom edge.
-show_logo = true;
-logo_w = 22.0;           // mark width
-logo_depth = 0.5;
-logo_file = "../assets/logo/zebserial-mark-deboss.svg";   // from assets/logo/make_logo.py, 1 unit = 1 mm
+// "inlay": flush two-colour inlay (part="logo" -> out/logo.stl, cut from the lid with no clearance; load both STLs
+// in the slicer as one object with two parts). "deboss": single-colour fallback. "none": plain top.
+logo_mode = "inlay";
+logo_w = 30.0;           // mark width (the lid top flat leaves about 1.5 mm to its edges at 30)
+logo_depth = 0.6;        // inlay thickness / deboss depth: 3 layers at 0.2
+logo_file = "../assets/logo/zebserial-mark-lid.svg";      // bold lid variant from assets/logo/make_logo.py, 1 unit = 1 mm
 logo_svg_w = 52.76;      // mark width in that file
-logo_svg_c = [32, 30];   // mark centre once imported (OpenSCAD flips the SVG Y axis)
+logo_svg_c = [32, 29.0]; // mark centre once imported (OpenSCAD flips the SVG Y axis)
+logo_min = 1.2;          // every stroke and gap at least this (three 0.4 mm lines); part="check_logo" checks it
 
 /* [Clips and XIAO capture] */
 // Lid-to-tray snaps (on both side walls)
@@ -260,7 +273,8 @@ z_floor = -pcb_t - below_clear;
 z_bot = z_floor - floor_t;
 // The top also has to clear the USB overmould relief by min_wall measured square to the 45 degree top chamfer.
 z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
-            usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2));
+            usb_cz + usb_recess_h / 2 + edge_chamfer + min_wall * sqrt(2),
+            dupont_on ? dupont_top + dupont_bend_h + ceil_t : 0);   // ceiling above the Dupont wire bends
 z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
 z_fl_top = fl_bot + fl_h;
@@ -332,8 +346,10 @@ echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front
          ", snap faces at X ", [for (c = lc_ys) lc_face(c)]));
 echo(str("ZEBCASE XIAO Y ", yx0, "..", yx1, " underside z ", zx0, ", lid clips at Y ", lc_ys));
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
-echo(str("ZEBCASE top skin ", z_top - z_ceil, show_logo ? str(", ", z_top - z_ceil - logo_depth, " under the logo") : ""));
-assert(!show_logo || z_top - z_ceil - logo_depth >= 1.0, "logo deboss leaves less than 1 mm of top skin");
+echo(str("ZEBCASE top skin ", z_top - z_ceil, logo_mode != "none" ? str(", ", z_top - z_ceil - logo_depth, " under the logo (",
+         logo_mode, ", ", logo_w, " mm wide)") : ""));
+assert(logo_mode == "none" || z_top - z_ceil - logo_depth >= 1.0 - 1e-6, "logo leaves less than 1 mm of top skin");
+assert(logo_mode == "none" || logo_mode == "inlay" || logo_mode == "deboss", "logo_mode must be inlay, deboss or none");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
 echo(str("ZEBCASE XIAO front Y ", yx0, ", rear Y ", yx1, ", overhang ", xiao_overhang, " past the RS232 PCB; on the body ",
          body_overlap, " mm; strut depth ", yx0 - pcb_clr - y_fw1, " mm"));
@@ -370,6 +386,10 @@ for (x = stop_x) let(b = stop_bottom(x))
     echo(str("ZEBCASE SUPPORT front stop at X ", x, ": bears on ", zx1 - max(b + stop_lead, zx0), " of ", xiao_pcb_t,
              " mm of the PCB edge above its ", stop_lead, " lead-in", b < zx0 ? "" : " (the strut stops above the body top)"));
 // guides must stay 1.27 + 0.4 mm (half a pad plus the solder blob) away from every used pad
+for (c = xguides) echo(str("ZEBCASE guide ", c[0] < 0 ? "-X" : "+X", " d ", c[1], "..", c[2], ": Y segments ",
+                           guide_segments(c[0], c[1], c[2]), " (d ", [for (g = guide_segments(c[0], c[1], c[2])) [yx1 - g[1], yx1 - g[0]]], ")"));
+if (dupont_on) echo(str("ZEBCASE DUPONT: housing X ", hdr_x0, "..", hdr_x0 + 2.54, " Y ", hdr_y0, "..", hdr_y1, " to z ", dupont_top,
+                        "; wire-bend zone to the XIAO edge (X ", -xiao_w / 2, ") from z ", dupont_top, " to the ceiling at ", z_ceil));
 for (c = xguides) {
     used = c[0] < 0 ? used_pads_left : used_pads_right;
     for (u = used) let(dp = xiao_pad1 + (u - 1) * xiao_pitch)
@@ -541,7 +561,7 @@ module usb_recess_cut() {
 }
 
 // ---------------------------------------------------------------- lid
-module lid() union() {
+module lid(logo = logo_mode) union() {
   intersection() {
     outer_solid();
     difference() {
@@ -582,7 +602,7 @@ module lid() union() {
             translate([-usb_slot_w / 2, split_z - 1]) square([usb_slot_w, usb_cz - split_z + 1]);
         }
         usb_recess_cut();
-        if (show_logo) logo_cut();
+        if (logo != "none") logo_body(1);        // inlay pocket or deboss
         if (seam_reveal) reveal_cut();
     }
   }
@@ -590,9 +610,12 @@ module lid() union() {
 }
 
 // Seen from above, +Y (away from the DB9) is up, so the mark needs no rotation or mirroring.
-module logo_cut() {
-    translate([0, (y_cf + y_rear_face) / 2, z_top - logo_depth])
-        linear_extrude(logo_depth + 1) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
+module logo_2d() {
+    translate([0, (y_cf + y_rear_face) / 2]) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
+}
+// The inlay body (extra = 0), or the same body extended `extra` above the top as the lid cut: no clearance
+module logo_body(extra = 0) {
+    translate([0, 0, z_top - logo_depth]) linear_extrude(logo_depth + extra) logo_2d();
 }
 
 // Pin hanging from the lid front wall into a lug screw hole, flatted on the X sides; a short boss
@@ -642,13 +665,19 @@ module presser(y) {
 module xiao_guide(s, d0, d1) {
     xe = xiao_w / 2 + guide_clr;        // inner face
     over_body = xe < body_w / 2 + pcb_clr;
-    y0 = over_body ? max(yx1 - d1, y_body1 + pcb_clr) : yx1 - d1;
-    y1 = yx1 - d0;
-    z_tip = zx0 - guide_below;
-    if (y1 - y0 >= min_wall) mirror([s < 0 ? 1 : 0, 0, 0])
-        xz_prism([[xe, z_ceil + eps], [xe, z_tip + guide_lead], [xe + guide_lead, z_tip], [xe + guide_t, z_tip],
-                  [xe + guide_t, z_ceil + eps]], y0, y1);
+    for (seg = guide_segments(s, d0, d1)) let(y0 = seg[0], y1 = seg[1], z_tip = zx0 - guide_below)
+        if (y1 - y0 >= min_wall) mirror([s < 0 ? 1 : 0, 0, 0])
+            xz_prism([[xe, z_ceil + eps], [xe, z_tip + guide_lead], [xe + guide_lead, z_tip], [xe + guide_t, z_tip],
+                      [xe + guide_t, z_ceil + eps]], y0, y1);
 }
+// Y spans of a guide: behind the DB9 body where the XIAO lies on it, and with the -X Dupont wire zone cut out
+function guide_segments(s, d0, d1) =
+    let(xe = xiao_w / 2 + guide_clr,
+        y0 = (xe < body_w / 2 + pcb_clr) ? max(yx1 - d1, y_body1 + pcb_clr) : yx1 - d1, y1 = yx1 - d0,
+        c0 = hdr_y0 - dupont_clr, c1 = hdr_y1 + dupont_clr,
+        cut = dupont_on && s < 0 && y0 < c1 && y1 > c0,
+        segs = cut ? [[y0, min(y1, c0)], [max(y0, c1), y1]] : [[y0, y1]])
+    [for (g = segs) if (g[1] - g[0] >= min_wall) g];
 
 // Rigid pads from the ceiling: a ring on the RF shield top and a block on the USB-C shell's flat top, xpad_gap
 // above them. They hold the XIAO down onto the DB9 body and the tongue.
@@ -729,6 +758,12 @@ module ghost_rs232() {
     gcol("black") box(hdr_x0, hdr_x0 + 2.54, hdr_y0, hdr_y1, 0, hdr_h);
 }
 
+// Dupont housing on the header and the wire-bend zone above it, across to the XIAO's -X edge, up to the ceiling
+module ghost_dupont() if (dupont_on) translate(ghost_dupont_d) {
+    gcol("dimgray") box(hdr_x0, hdr_x0 + 2.54, hdr_y0, hdr_y1, 0, dupont_top);
+    gcol("cyan", 0.3) box(hdr_x0, -xiao_w / 2, hdr_y0, hdr_y1, dupont_top, z_ceil - eps);
+}
+
 module ghost_xiao() {
     translate(ghost_offset) {
         gcol("#202020") box(-xiao_w / 2, xiao_w / 2, yx0, yx1, zx0, zx1);
@@ -754,16 +789,17 @@ module wire(pts) {
 module ghost_wires() {
     hx = hdr_x0 + 1.27;
     function hy(i) = hdr_y1 - 1.27 - i * 2.54;
+    T = dupont_on ? dupont_top : hdr_h;   // wires leave the top of the Dupont housing (or the header)
     gcol("limegreen") translate(ghost_offset * 0) {
         // header pins 0,1 -> 5V/GND (under the XIAO to the +X side), 2,3 -> D4/D5
         for (k = [0, 1]) {
             py = pad_y(used_pads_right[k]);
-            wire([[hx, hy(k), hdr_h], [hx + 1, hy(k), hdr_h + 0.8], [hx + 2.5, py, 6.5],
-                  [xiao_w / 2 + 3, py, 6.5], [xiao_w / 2 + 2.2, py, zx1 + 1.2], [xiao_w / 2 - 0.4, py, zx1 + 0.8]]);
+            wire([[hx, hy(k), T], [hx + 1.2, hy(k), T + 1.6], [hx + 2.8, hy(k), T], [hx + 3, hy(k), 8],
+                  [hx + 3, py, 6.5], [xiao_w / 2 + 3, py, 6.5], [xiao_w / 2 + 2.2, py, zx1 + 1.2], [xiao_w / 2 - 0.4, py, zx1 + 0.8]]);
         }
         for (k = [0, 1]) {
             py = pad_y(used_pads_left[k]);
-            wire([[hx, hy(k + 2), hdr_h], [hx + 0.5, hy(k + 2), zx1 + 1.5], [-xiao_w / 2 - 2.5, py, zx1 + 1.8],
+            wire([[hx, hy(k + 2), T], [hx + 1.2, hy(k + 2), T + 1.6], [-xiao_w / 2 - 2.5, py, zx1 + 1.8],
                   [-xiao_w / 2 + 0.4, py, zx1 + 0.8]]);
         }
     }
@@ -785,18 +821,34 @@ module wire_zones() {
 module ghosts() {
     translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); }
     ghost_xiao();
+    ghost_dupont();
     ghost_wires();
     wire_zones();
 }
 
 // ---------------------------------------------------------------- output
 module tray_c() color("steelblue") sec() tray();
-module lid_c()  color("orange") sec() lid();
+module lid_c()  { color("orange") sec() lid(); if (logo_mode == "inlay") color("white") sec() logo_body(); }
 
 if (part == "tray") {
     translate([0, 0, -z_bot]) tray();                              // floor on the bed
 } else if (part == "lid") {
     translate([0, 0, z_top]) rotate([180, 0, 0]) lid();            // top on the bed
+} else if (part == "coupon_tray") {
+    translate([0, 0, -z_bot]) intersection() { tray(); box(-50, 50, -50, coupon_y1, -50, 50); }
+} else if (part == "coupon_lid") {
+    translate([0, 0, z_top]) rotate([180, 0, 0]) intersection() { lid(logo = "none"); box(-50, 50, -50, coupon_y1, -50, 50); }
+} else if (part == "logo") {
+    translate([0, 0, z_top]) rotate([180, 0, 0]) logo_body();      // inlay, same transform as the lid STL
+} else if (part == "check_logo") {
+    // strokes thinner than logo_min (or corners sharper than logo_min / 2) survive "shape minus its opening";
+    // gaps narrower than logo_min survive "closing minus shape". Both must be empty.
+    r = logo_min / 2;
+    linear_extrude(1) {
+        // fine facets everywhere, or the import's 48-gon arcs leave 0.01 mm slivers against the offsets
+        difference() { logo_2d($fn = 96); offset(r = r, $fn = 96) offset(r = -r, $fn = 96) logo_2d($fn = 96); }
+        difference() { offset(r = -r, $fn = 96) offset(r = r, $fn = 96) logo_2d($fn = 96); logo_2d($fn = 96); }
+    }
 } else if (part == "assembly") {
     tray_c(); lid_c(); if (show_ghosts) ghosts();
 } else if (part == "exploded") {
@@ -816,7 +868,7 @@ if (part == "tray") {
     intersection() {
         lid();
         minkowski() {
-            union() { translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); } ghost_xiao(); }
+            union() { translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); } ghost_xiao(); ghost_dupont(); }
             translate([0, 0, -30]) cube([0.001, 0.001, 30]);
         }
     }
