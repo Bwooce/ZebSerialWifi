@@ -9,7 +9,8 @@ flange and the loose shield. The two parts snap together, with no screws.
 |------|------|
 | `zebserial_case.scad` | The model. All dimensions are top-level parameters, grouped as *measured*, *XIAO (Seeed KiCad/STEP)*, *DB9 (manufacturer drawings)*, *header guesses*, *print/tolerance*, *style* and *clips and XIAO capture*. |
 | `reference/` | Not in git (gitignored): the manufacturer drawings and the Seeed XIAO ESP32-C6 KiCad PCB and STEP the dimensions come from. |
-| `out/tray.stl`, `out/lid.stl` | Print-ready, already in print orientation. |
+| `out/tray.stl`, `out/lid.stl`, `out/logo.stl` | Print-ready, already in print orientation. `logo.stl` is the two-colour logo inlay, in the same coordinates as `lid.stl`. |
+| `out/coupon_tray.stl`, `out/coupon_lid.stl` | Fit coupons: the front 14.5 mm of each part, single colour, for a quick test of the DB9 fit. |
 | `renders/*.png` | Assembly, exploded, front, rear, sections, exterior style (`style_*.png`) and print-orientation views. |
 | `build.sh` | Regenerates the STLs and renders, then runs the interference checks and the wall probe. Extra `-D` overrides apply to the checks, for example `./build.sh -D xiao_rest=1.5`. |
 | `controls.sh` | Positive and negative controls for the interference checks (moves the ghosts and says what must and must not hit). Exits non-zero on any failure. |
@@ -39,8 +40,7 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
   - Tray: floor on the bed (open side up).
   - Lid: top skin on the bed (open side up).
 - **Overhangs:** a probe of the oriented STLs for down-facing faces steeper than 45° off the bed finds only: the
-  tray's four catch-window tops (6.6 mm bridges), the lid's snap-hook catch faces (0.75 mm), the logo deboss ceiling
-  (short bridges in the first layers) and two 1.2 mm² bits of the USB relief's rounded corners beside the slot. These
+  tray's four catch-window tops (6.6 mm bridges), the lid's snap-hook catch faces (0.75 mm) and two 1.2 mm² bits of the USB relief's rounded corners beside the slot. These
   are fine in PETG. Everything else is vertical, at 45°, or opens upwards in print orientation:
   - The perimeter chamfers on the bed side of each part are 45°.
   - The top of each snap catch window in the tray is a 6.6 mm bridge.
@@ -51,10 +51,15 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
     lead-ins are 45°.
   - The USB slot opens to the lid rim, and its rounded end is a cradle in print orientation. The tongue cradle and
     the leg-tail pockets open upwards.
-- **Size:** 39.9 × 35.4 × 26.1 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
-  1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 19.9 mm above the RS232
-  board, against a 25 mm limit.
-- **Material:** 5.5 cm³ for the tray and 8.6 cm³ for the lid, roughly 18 g of PETG at 100 %, less with infill.
+- **Logo (two colours):** load `lid.stl` and `logo.stl` together and accept "load as one object with multiple
+  parts" (Bambu Studio), so they stay aligned; give the logo part the second filament. The inlay is the first three
+  0.2 mm layers on the bed, flush with the lid top. For a single-colour print set `logo_mode = "deboss"` (0.6 mm deep)
+  or `"none"` and rebuild.
+- **Size:** 39.9 × 35.4 × 26.3 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
+  1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 20.1 mm above the RS232
+  board, against a 25 mm limit (the Dupont wire-bend space sets it; see below).
+- **Material:** 5.5 cm³ for the tray, 8.5 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 18 g of PETG at
+  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 3.84 cm³ (lid), about 7.5 g together.
 
 ## Exterior style: faceted pincushion
 
@@ -78,7 +83,7 @@ The tray and the lid are both cut from one `outer_solid()`, so the seam lines up
 Deliberate departures from the reference:
 
 - **Flat top and bottom.** The reference's top and bottom are concave too. Here they are flat:
-  - The lid prints top down and carries the logo deboss.
+  - The lid prints top down and carries the logo inlay.
   - The tray prints floor down.
   - A flat bed face prints cleanly and needs no support.
 - **Flat front face** (`front_sag = 0`): the flange sits flush in it, and a concave front would leave a visible gap
@@ -93,8 +98,8 @@ What the style changed underneath:
   - Side walls are 4.0 mm at the corner ends (`side_t`), so that the deepest point of the bow keeps about 3.3 mm.
   - The rear wall is 0.8 mm thicker at its ends, so that the USB relief keeps its 1.6 mm depth at the middle of the
     concave rear face. The relief floor is still flush with the receptacle mouth.
-- **Height:** the lid top is set so the 45° top chamfer leaves 1.2 mm over the USB overmould relief. That puts it 19.9 mm
-  above the board. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the antenna still has only a thin
+- **Height:** the lid top is set so the 45° top chamfer leaves 1.2 mm over the USB overmould relief. That alone would put it 19.95 mm
+  above the board; the Dupont wire-bend space now raises it to 20.1 mm. The top skin over the XIAO stays a single 1.6 mm `ceil_t`, so the antenna still has only a thin
   skin over it.
 - **Snap fingers:** every snap dimension is measured from `lc_face()`, the lowest point of the bowed side face over that
   clip.
@@ -227,7 +232,8 @@ with small gaps:
 - **Sides:** rigid guide walls hanging from the lid along the unused-pad stretches (where the clamps were), 1.6 mm
   thick, 0.2 mm (`guide_clr`) from the PCB edge, down to 0.6 mm below the PCB underside, with a 0.8 mm 45° lead-in at
   the tip (`guide_lead`), so the closing lid steers a XIAO that is up to 0.8 mm off in X into place.
-  - −X: d 2.2–10.5 (D0–D3), clear of the −X button and of the D4/D5 wires.
+  - −X: only d 2.2–5.16 (Y 26.3–29.26) remains of the d 2.2–10.5 stretch (D0–D3). The rest is cut out for the Dupont
+    plug's wire-bend zone (header Y 15.64–25.8, plus 0.5 mm, `dupont_clr`); the model echoes the remaining segments.
   - +X: d 11.8–18.8 (D9–D7), clear of the 5V/GND wires; it starts just behind the DB9 body (Y 12.7).
   - The model warns if a guide comes within a pad and a half of a used pad.
 - **Front:** the stop strut at X −1.25 (3 mm wide, in the gap between the U.FL socket and the ceramic antenna), 0.2 mm
@@ -283,15 +289,55 @@ The green ghost wires show one feasible route, and the interference check confir
   layer lines, the same weakness that broke the XIAO clamps and the board clips. They are thicker (1.4 mm) and
   longer (9 mm), at 1.6 % strain, but open and close them gently and expect them to be the first thing to crack.
 
+### Dupont plug on the RS232 header
+
+A Dupont housing is plugged onto the RS232 board's 4-pin header (−X edge, Y 15.64–25.8), and its wires bend over to
+the XIAO pads. Revision 2's −X XIAO guide sat right where they bend. The model now carries a keep-out (cyan/grey
+ghost, `ghost_dupont()`), and the interference checks fail if any case feature enters it:
+
+- **Housing:** 10.16 × 2.54 mm on the header, up to `dupont_top` = 14.5 mm above the PCB top (2.5 mm header base +
+  12 mm housing; to be measured).
+- **Wire-bend zone:** above the housing up to the ceiling, across in +X to the XIAO's −X edge (X −8.89), over the
+  header's length. The ceiling is kept at least `dupont_bend_h` = 4.0 mm above the housing (about 3 mm bend radius
+  plus the wire), which raised the top by 0.15 mm to 20.1 mm above the board. A taller housing raises the top
+  automatically, up to `dupont_top` 19.4 within the 25 mm envelope.
+- The −X guide is cut back to d 2.2–5.16 (see XIAO). The ghost wires now leave the top of the housing.
+- **Moved 1 mm** (`ghost_dupont_d`): +X and down stay clear. −X meets the side walls (the housing is 0.5 mm from the
+  wall), −Y meets the −X board presser (0.84 mm away), +Y meets the remaining −X guide segment, and up meets the
+  ceiling (the zone runs to it by definition).
+- `renders/section_xiao_guide_minusx.png` cuts through the housing and the zone.
+
 ### Logo
 
-- **Deboss:** the ZebSerial mark (`assets/logo/zebserial-mark-deboss.svg`) is cut 0.5 mm (`logo_depth`) into the lid's
-  outer top face, centred, 22 mm wide (`logo_w`). `show_logo = false` leaves the top plain.
+- **Mark:** `assets/logo/zebserial-mark-lid.svg`, a bolder, simpler variant from `make_logo.py` for the lid: the
+  D-shell with two wide stripes (instead of three tapered ones) and two constant-width WiFi arcs with round caps, every
+  corner rounded. The web and marketing SVGs are unchanged.
+- **Size:** 30 mm wide (`logo_w`), about 28 mm tall, centred on the lid top with about 1.5 mm to the edges of the top
+  flat. At this size every stroke and gap is at least 1.2 mm (three 0.4 mm lines, `logo_min`). `part="check_logo"`
+  checks it: what is thinner than `logo_min` survives "shape minus its opening", and narrower gaps survive "closing
+  minus shape"; both are empty. The same mark at 20 mm fails (its 1.5-unit corner fillets fall under 0.6 mm), and
+  passes at 22 mm.
+- **Why:** the first print's 22 mm deboss had 0.8 mm features and sharp corners as gaps in the first layers on the
+  bed, which strung badly and did not read.
+- **Two-colour inlay (default, `logo_mode = "inlay"`):** `part="logo"` exports the logo body, `logo_depth` 0.6 mm
+  thick, in lid print orientation and lid coordinates (`out/logo.stl`). The same body is cut from the lid with no
+  clearance: the lid's volume drops by exactly the inlay's 0.280 cm³, and the two do not overlap.
+- **Single-colour fallback:** `logo_mode = "deboss"` cuts the same bold mark 0.6 mm deep; `"none"` leaves the top plain.
 - **Orientation:** the mark reads upright when you look down on the assembled case with the DB9 at the bottom edge,
-  nearest you. The WiFi arcs point towards the USB-C end. `renders/lid_top_logo.png` shows this view.
-- **Skin:** the top skin is 1.6 mm (`ceil_t`), so 1.1 mm remains under the 0.5 mm deboss. The model asserts at least
-  1.0 mm. Nothing inside the lid comes above the ceiling, so the deboss cannot meet a pad or strut.
-- **Printing:** the lid prints top down, so the deboss is in the first 0.5 mm of layers and needs no support.
+  nearest you. The WiFi arcs point towards the USB-C end. `renders/lid_top_logo.png` (inlay, white) and
+  `lid_top_logo_deboss.png` show it.
+- **Skin:** the top skin is 1.6 mm (`ceil_t`), so 1.0 mm of lid remains under the 0.6 mm logo. The model asserts at
+  least 1.0 mm. Nothing inside the lid comes above the ceiling.
+
+### Fit coupons
+
+`part="coupon_tray"` and `part="coupon_lid"` (`out/coupon_tray.stl`, `out/coupon_lid.stl`) are the front of each part,
+cut flat at `coupon_y1` = 14.5 mm, in normal print orientation. They contain the flange recess, both lips, the lid
+front wall that the flange bears on, the leg-tail pockets at Y 8.9, the front pair of lid snaps (Y 7), the front
+pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 7.5 g of PETG. The lid
+coupon has no logo (single colour). The cut stops at 14.5 rather than 15 because the shield pad ring starts at
+Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.961 cm³, lid coupon 3.839 cm³. Both are single
+pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in them.
 
 ## Assembly order
 
@@ -299,7 +345,8 @@ The green ghost wires show one feasible route, and the interference check confir
    the bottom lip. The leg tails drop into their pockets, the PCB lands on the front skin and the ledges, and its rear
    edge comes down in front of the backstop rib. The D-shell passes over the bottom lip (1.05 mm clear at the end).
 2. **XIAO onto the board.** The wires are short and soldered, so keep it tethered:
-   1. Fold the wires: D4/D5 along the −X side, 5V/GND under the XIAO to +X.
+   1. Plug the Dupont housing onto the header if it is not on yet. Fold the wires: they bend over the housing
+      towards +X; D4/D5 go to their pads on the −X side, 5V/GND down beside the XIAO and under it to +X.
    2. Lay the XIAO's antenna end 2 mm onto the DB9 body top and its USB-C shell into the tongue cradle, with the PCB
       rear edge just in front of the tongue.
 3. **Close.** Lower the lid straight down:
@@ -328,7 +375,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the PCB on the front skin and the ledges
 - the lid rim on the tray rim
 
-**Controls** (`./controls.sh`, 32 lines, all must pass; about 25 s). Each moves one ghost and states whether a check must find
+**Controls** (`./controls.sh`, 41 lines, all must pass; about 80 s). Each moves one ghost and states whether a check must find
 real overlap (any piece of at least 0.01 mm³) or none:
 
 | Moved | Check | Result |
@@ -348,7 +395,11 @@ real overlap (any piece of at least 0.01 mm³) or none:
 | XIAO ±X 0.15 | tray, lid | none |
 | XIAO ±X 0.3 | lid | hits a guide (and the USB slot side) |
 | XIAO forward 0.3 / back 0.3 | lid | hits the strut / the rear wall |
-| a −X guide at d 13–17 | lid | hits the D4/D5 wire zone |
+| a −X guide at d 13–17, Dupont off | lid | hits the D4/D5 wire zone |
+| Dupont keep-out +X 1 / down 1 | lid | none |
+| Dupont keep-out −X 1 / −Y 1 / +Y 1 / up 1 | lid | hits the side wall / −X presser / −X guide / ceiling |
+| −X guide not trimmed (`dupont_clr=-20`) | lid | hits the Dupont zone |
+| logo at 30 mm / 20 mm | `check_logo` | none / hits |
 | test block 0.5 under the XIAO edge (`ctl_undercut`) | lid / lid path | none / hits (2.0 mm³) |
 
 Moving the board also moves the red pin-zone ghost against the leg-tail bosses; its cut-out allows the board's
@@ -363,7 +414,7 @@ runs `wallprobe.py`, which casts a ray inwards from sample points on every face 
 What remains is deliberate:
 
 - the lid snap hooks (0.84 and 1.02 mm)
-- the 1.1 mm skin under the logo deboss (and 1.2 mm readings beside it)
+- the 1.0 mm skin under the logo pocket (the inlay fills it in the two-colour print)
 - the tongue's top edges beside the USB cradle (0.93–0.95 mm; they taper to the 0.5 mm `tongue_tip` at the top). They
   only round the opening and carry nothing: the shell rests on the cradle bottom, 0.35 mm off these edges.
 - 1.19 mm at the front bottom floor: the floor / front skin gusset, 1.2 mm by construction square to the 45° chamfer
@@ -379,6 +430,8 @@ The probe casts rays along face normals, so it does not measure distance square 
 
 ## Fit-check list (measure before printing)
 
+- **Dupont housing height:** `dupont_top` (14.5 mm above the PCB top, header base included) is an estimate. Measure
+  it with the plug on; the case top follows it.
 - **Leg tails at Y 8.9 — to the tail centre or to its front edge?** `leg_y` is the tail centre. The user reported
   the spikes "recessed 8.9 mm from the front"; if that was measured to the tail's near (front) edge, the centre is
   8.9 + 1.55 = 10.45 and `leg_y` must change. The pockets allow only ±0.6 mm in Y (and ±1.3 mm in X), so a
