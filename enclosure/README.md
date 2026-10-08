@@ -38,9 +38,10 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
 - **Orientation:** the STLs are already oriented.
   - Tray: floor on the bed (open side up).
   - Lid: top skin on the bed (open side up).
-- **Overhangs:** the steepest unsupported features are the flat catch faces of the snap hooks, at 0.5–0.75 mm, and
-  the 1.6 mm deep floor of the USB plug relief in the lid (as before). These are fine in PETG. Everything else is
-  vertical, at 45°, a short bridge, or opens upwards in print orientation:
+- **Overhangs:** a probe of the oriented STLs for down-facing faces steeper than 45° off the bed finds only: the
+  tray's four catch-window tops (6.6 mm bridges), the lid's snap-hook catch faces (0.75 mm), the logo deboss ceiling
+  (short bridges in the first layers) and two 1.2 mm² bits of the USB relief's rounded corners beside the slot. These
+  are fine in PETG. Everything else is vertical, at 45°, or opens upwards in print orientation:
   - The perimeter chamfers on the bed side of each part are 45°.
   - The top of each snap catch window in the tray is a 6.6 mm bridge.
   - The top flange lip on the lid hangs from a 45° chamfer (the lid prints upside down, so the chamfer is under
@@ -110,9 +111,12 @@ The first print (commit 731d0fb, PETG Basic) was test-fitted. The board-lock leg
 lug screw-hole position (`lug_hole_y` 4.6), but the leg tails (the spikes under the PCB) are really 8.9 mm behind the
 flange front. The ghost legs used the same parameter, so the interference check could not see the error. With the
 board pushed 4.3 mm forward so the spikes drop into the pockets, the model reproduces what the user saw: the flange
-stands about 3.9 mm in front of the case, the tray below it is open at the front while the lid front wall wraps the
-top of the DB9 body, and the XIAO front end no longer lies on the DB9 body (its 10.5 mm front edge is 2.3 mm behind
-the moved body end at 8.2), so the side clamps carried it alone. This revision:
+stands 4.3 mm in front of the case front face, the tray below it is open at the front while the lid front wall wraps
+the top of the DB9 body, and the XIAO front end no longer lies on the DB9 body (its front edge at Y 10.5 is 2.3 mm
+behind the moved body end at 8.2), so the side clamps carried it alone. The displacement does not explain the side
+clips: in the displaced model they still reach the PCB edge (the −X hook ends level with the header's outer face,
+and the rear +X clip overhangs the moved PCB's rear corner by 0.55 mm). They were simply small (0.5 mm hooks on 1.0 mm
+fingers) and bent across the layer lines. This revision:
 
 - puts the flange flush in the case front and holds it with lips and the lid front wall;
 - gives the spikes their own parameter (`leg_y` 8.9) and makes their pockets loose;
@@ -375,7 +379,13 @@ The probe casts rays along face normals, so it does not measure distance square 
 
 ## Fit-check list (measure before printing)
 
-- **Leg tails at Y 8.9:** `leg_y`, measured on the print. The pockets allow ±0.6 mm in Y and ±1.3 mm in X.
+- **Leg tails at Y 8.9 — to the tail centre or to its front edge?** `leg_y` is the tail centre. The user reported
+  the spikes "recessed 8.9 mm from the front"; if that was measured to the tail's near (front) edge, the centre is
+  8.9 + 1.55 = 10.45 and `leg_y` must change. The pockets allow only ±0.6 mm in Y (and ±1.3 mm in X), so a
+  1.55 mm reference error would jam the board, the same kind of error that broke revision 1.
+- **Board-top parts under the pressers:** the revision 1 pressers barely existed, so the test fit never checked their
+  footprints. Check there are no parts within 1.2 mm of the RS232 board edge at Y 12.8–14.8 on both sides and at
+  Y 16–18 and 23–25 on +X.
 - **Flange and D-shell:** 30.8 × 12.5 × 0.38 flange, bottom level with the PCB top; D-shell outline 2.05–10.45 above
   the PCB top. The lips assume these (1.05 mm clear of the D-shell top and bottom). If the D-shell is taller, reduce
   `lip_reach`.
