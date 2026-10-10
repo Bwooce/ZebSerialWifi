@@ -84,7 +84,11 @@ static esp_err_t uart_setup(uint32_t baud)
     ESP_RETURN_ON_ERROR(uart_param_config(PORT, &cfg), TAG, "param config");
     ESP_RETURN_ON_ERROR(uart_set_pin(PORT, s_tx_gpio, s_rx_gpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG,
                         "set pin");
-    gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY);  /* RX idles at mark if the module is unpowered */
+    /*
+     * RX pull-up: idles at mark if the module is unpowered, and is what pulls RX
+     * high behind a Schottky level-shift diode (module at 5 V, cathode to its TXD).
+     */
+    gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY);
     ESP_RETURN_ON_ERROR(uart_set_rx_full_threshold(PORT, RX_FULL_THRESH), TAG, "rx thresh");
     ESP_RETURN_ON_ERROR(uart_set_sw_flow_ctrl(PORT, !s_echo, XON_THRESH, XOFF_THRESH), TAG, "sw flow ctrl");
     return ESP_OK;
@@ -472,6 +476,8 @@ esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio)
     if (err == ESP_OK) {
         s_tx_gpio = tx_gpio;
         s_rx_gpio = rx_gpio;
+        /* same as uart_setup: needed behind a level-shift diode, which only ever pulls RX low */
+        gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY);
         uart_flush_input(PORT);
         ESP_LOGI(TAG, "UART moved to TX=GPIO%d RX=GPIO%d", tx_gpio, rx_gpio);
     }
