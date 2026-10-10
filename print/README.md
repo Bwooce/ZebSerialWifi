@@ -1,12 +1,12 @@
 # Print project (Bambu Lab H2D)
 
-- `zebserial_case.3mf`: the tray and the lid on one plate, already sliced (enclosure commit 2fb69d1). It takes
-  about 1 h 22 min and uses 20.4 g of PETG for the case plus 0.4 g for the logo. The logo is a second part of the lid
+- `zebserial_case.3mf`: the tray and the lid on one plate, already sliced (enclosure commit f92c209). It takes
+  about 1 h 25 min and uses 20.5 g of PETG for the case plus 0.4 g for the logo. The logo is a second part of the lid
   object on filament 2, so it prints as a flush two-colour inlay in the lid's first layers. Filament 1 is the case
   colour and filament 2 the logo colour (white by default); change the colours in Bambu Studio to suit the spools
   loaded.
 - `zebserial_coupon.3mf`: a single-colour fit test of the front 14.5 mm of both parts: the flange recess, lips,
-  bearing wall, spike pockets and front snaps. It takes about 43 min and uses 8.3 g, because the lid coupon is full
+  bearing wall, spike pockets and front snaps. It takes about 44 min and uses 8.5 g, because the lid coupon is full
   height.
 
 Open a file in Bambu Studio and print, or re-slice after changing anything.
