@@ -149,13 +149,17 @@ static void serve(int sock)
     /* let the queued job reach the printer, then pass back any final replies */
     int64_t drain_start = now_ms();
     while (!printer_link_tx_idle()) {
-        if (now_ms() - drain_start > STALL_LIMIT_MS || !client_alive(sock)) {
-            ESP_LOGW(TAG, "job not drained to the printer and client gone or limit reached, discarding");
+        if (now_ms() - drain_start > STALL_LIMIT_MS) {
+            ESP_LOGW(TAG, "job not drained to the printer: stall limit reached, discarding");
             STATS_UPDATE(s_stats.aborted++);
             printer_link_abort_tx();
             return;
         }
-        pump_from_printer(sock, pdMS_TO_TICKS(50));
+        if (client_alive(sock)) {
+            pump_from_printer(sock, pdMS_TO_TICKS(50));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
     }
     int64_t tail_start = now_ms();
     while (now_ms() - tail_start < 300) {

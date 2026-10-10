@@ -47,6 +47,13 @@ static uint64_t s_tx_bytes;
 static uint64_t s_rx_bytes;
 static volatile bool s_redetect;
 static bool s_raise_tried;
+/*
+ * Set when the line echoes our own commands (a loopback plug). XON/XOFF is
+ * then switched off: with the line looped, an XOFF we send comes straight
+ * back and pauses our own transmitter for good. A real printer never echoes,
+ * so it always gets flow control, detected or not.
+ */
+static volatile bool s_echo;
 static volatile uint32_t s_target_baud = 115200;
 
 static void count_tx(size_t n)
@@ -77,8 +84,9 @@ static esp_err_t uart_setup(uint32_t baud)
     ESP_RETURN_ON_ERROR(uart_param_config(PORT, &cfg), TAG, "param config");
     ESP_RETURN_ON_ERROR(uart_set_pin(PORT, s_tx_gpio, s_rx_gpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG,
                         "set pin");
+    gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY);  /* RX idles at mark if the module is unpowered */
     ESP_RETURN_ON_ERROR(uart_set_rx_full_threshold(PORT, RX_FULL_THRESH), TAG, "rx thresh");
-    ESP_RETURN_ON_ERROR(uart_set_sw_flow_ctrl(PORT, true, XON_THRESH, XOFF_THRESH), TAG, "sw flow ctrl");
+    ESP_RETURN_ON_ERROR(uart_set_sw_flow_ctrl(PORT, !s_echo, XON_THRESH, XOFF_THRESH), TAG, "sw flow ctrl");
     return ESP_OK;
 }
 
@@ -162,8 +170,12 @@ static bool sgd_get(const char *name, char *out, size_t out_len)
     size_t len = collect(buf, sizeof(buf), PROBE_TIMEOUT_MS, sgd_done);
     size_t cmd_len = strlen(cmd) - 2;  /* without the CR LF */
     if (len >= cmd_len && memcmp(buf, cmd, cmd_len) == 0) {
-        ESP_LOGW(TAG, "the serial line echoes our commands back at %lu baud: loopback plug, not a printer",
-                 (unsigned long)s_baud);
+        if (!s_echo) {
+            ESP_LOGW(TAG, "the serial line echoes our commands back at %lu baud: loopback plug, not a printer; "
+                          "XON/XOFF off until a printer answers", (unsigned long)s_baud);
+            s_echo = true;
+            uart_set_sw_flow_ctrl(PORT, false, XON_THRESH, XOFF_THRESH);
+        }
     }
     return zpl_sgd_value(buf, len, out, out_len);
 }
@@ -300,6 +312,10 @@ static bool detect(void)
         return false;
     }
     s_detected = true;
+    if (s_echo) {
+        s_echo = false;
+        uart_set_sw_flow_ctrl(PORT, true, XON_THRESH, XOFF_THRESH);
+    }
     settings_set_baud(s_baud);
     return true;
 }

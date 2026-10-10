@@ -165,11 +165,66 @@ static pin_state_t probe_pin_other_high(int gpio, int other)
     return s;
 }
 
+/*
+ * Drive one pin and watch the other: with a loopback plug, D-sub TX and RX
+ * are joined, so RX follows TX through the MAX3232. Only ever called for
+ * pins the passive probe found floating, so it never fights the MAX3232's
+ * R1OUT driver.
+ */
+static bool probe_drive_sense(int drive_pin, int sense_pin)
+{
+    gpio_config_t in_cfg = {
+        .pin_bit_mask = 1ULL << sense_pin,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+    };
+    gpio_config(&in_cfg);
+    gpio_config_t out_cfg = {
+        .pin_bit_mask = 1ULL << drive_pin,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    gpio_config(&out_cfg);
+
+    gpio_set_level(drive_pin, 1);  /* mark */
+    esp_rom_delay_us(5000);
+    int read_high = gpio_get_level(sense_pin);
+    gpio_set_level(drive_pin, 0);  /* space */
+    esp_rom_delay_us(5000);
+    int read_low = gpio_get_level(sense_pin);
+    gpio_set_level(drive_pin, 1);
+    esp_rom_delay_us(5000);
+
+    gpio_reset_pin(drive_pin);
+    gpio_reset_pin(sense_pin);
+    ESP_LOGI(TAG, "loopback test: drive GPIO%d, sense GPIO%d -> (1->%d, 0->%d)", drive_pin, sense_pin, read_high,
+             read_low);
+    return read_high == 1 && read_low == 0;
+}
+
 bool board_detect_uart_pins(int *tx, int *rx)
 {
     pin_state_t a = probe_pin_other_high(GPIO_UART_A, GPIO_UART_B);
     pin_state_t b = probe_pin_other_high(GPIO_UART_B, GPIO_UART_A);
-    ESP_LOGI(TAG, "D4/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B, pin_state_name(b));
+    ESP_LOGI(TAG, "passive probe: D4/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B,
+             pin_state_name(b));
+
+    /*
+     * Passive inconclusive and both pins floating (for example RX behind a
+     * level-shift diode with no pull-up): try a loopback plug in each direction.
+     */
+    if (a == PIN_FLOATING && b == PIN_FLOATING) {
+        bool b_to_a = probe_drive_sense(GPIO_UART_B, GPIO_UART_A);
+        bool a_to_b = probe_drive_sense(GPIO_UART_A, GPIO_UART_B);
+        if (b_to_a != a_to_b) {
+            *tx = b_to_a ? GPIO_UART_B : GPIO_UART_A;
+            *rx = b_to_a ? GPIO_UART_A : GPIO_UART_B;
+            ESP_LOGI(TAG, "UART pins detected by loopback: TX=GPIO%d RX=GPIO%d", *tx, *rx);
+            return true;
+        }
+    }
 
     /* MAX3232 R1OUT idles high (RS232 input open or at mark); T1IN is an undriven input */
     if (a == PIN_DRIVEN_HIGH && b != PIN_DRIVEN_HIGH) {
@@ -191,7 +246,7 @@ bool board_detect_uart_pins(int *tx, int *rx)
         }
         return false;
     }
-    ESP_LOGI(TAG, "UART pins detected: TX=GPIO%d RX=GPIO%d", *tx, *rx);
+    ESP_LOGI(TAG, "UART pins detected by passive idle: TX=GPIO%d RX=GPIO%d", *tx, *rx);
     return true;
 }
 

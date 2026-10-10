@@ -2,11 +2,15 @@ menu "ZebSerialWifi"
 
     config ZEB_UART_TX_GPIO
         int "Default UART TX GPIO (used when pin detection is inconclusive)"
-        default 22
+        default 23
+        help
+            D5. The bench unit's wiring, confirmed by pin detection: D5 to the module's TXD input (T1IN).
 
     config ZEB_UART_RX_GPIO
         int "Default UART RX GPIO (used when pin detection is inconclusive)"
-        default 23
+        default 22
+        help
+            D4, from the module's RXD output (R1OUT).
 
     config ZEB_EXTERNAL_ANTENNA
         bool "Use the U.FL external antenna instead of the ceramic antenna"
