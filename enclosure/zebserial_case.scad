@@ -44,7 +44,12 @@ pcb_front_y = 0;         // DB9 flange FRONT face to the RS232 PCB front edge: f
 below_clear = 3.0;       // clear space under the RS232 PCB for through-hole pins
 max_above = 25.0;        // maximum height envelope above the RS232 board
 pcb_t = 1.6;             // RS232 PCB thickness
-hw_face_to_end = 5.1;    // old note: flange front face to the back of the screw-hole hardware (used only as a cross-check)
+hw_face_to_end = 5.1;    // measured: flange front face to the back of the screw-hole hardware behind the flange
+// Screw-hole hardware behind the flange (the threaded inserts the jack-post nuts screw onto), on each hole axis
+// (X +-fl_hole_pitch / 2, z hole_z), from the flange back to hw_face_to_end. To be confirmed by the user.
+hw_d = 5.6;              // across corners (4-40 hex insert: 4.8 across flats, about 5.5 across corners)
+hw_sides = 0;            // 0 = round (envelope of any orientation), 6 = hex
+hw_clr = 0.3;            // pocket clearance around it
 // XIAO fore-aft position, chosen (the user can place it +-1.5 mm): flange FRONT face to the XIAO front (antenna)
 // PCB edge. The user wants exactly 2.0 mm of the XIAO resting on the DB9 body (more room for the wires under it),
 // so the front edge is 2.0 mm in front of the body end.
@@ -280,6 +285,7 @@ z_top = max(zx1 + xiao_top_clear + ceil_t, usb_cz + usb_recess_h / 2 + wall,
             dupont_on ? max(dupont_top + dupont_bend_h, dupont_ceiling_min) + ceil_t : 0);   // ceiling over the Dupont wires
 z_ceil = z_top - ceil_t;             // the top stays a single ceil_t skin over the XIAO antenna
 hole_z = fl_bot + fl_h / 2;
+hw_x = fl_hole_pitch / 2;            // screw-hole axes
 z_fl_top = fl_bot + fl_h;
 z_slot_top = z_fl_top + fl_clr_z;    // lid flange-slot ceiling; the lid front face fills to Y 0 above it
 ds_top = hole_z + ds_h / 2;          // D-shell outline
@@ -493,6 +499,7 @@ module tray() union() {
         // lid clip pockets and catch recesses
         for (c = lc_ys) mirror_x_both() lid_clip_tray_cut(c);
         usb_recess_cut();
+        hw_pocket(false);
         // the tongue ends square under the relief: its rounded corners would leave knife-edge wedges on the tongue
         box(-tongue_w - 1, tongue_w + 1, y_mouth + usb_mouth_inset, y_out1 + 1, usb_cz - usb_recess_h / 2, split_z + 20);
     }
@@ -558,6 +565,21 @@ module lid_clip_finger(c) {
               [xi - lc_hook, lc_hook_top], [xi + eps, lc_hook_top]], c - hw, c + hw);
 }
 
+// Pocket for the screw-hole hardware (both sides). In the lid (open = true) it is the hull of the hardware outline
+// grown by hw_clr and a rectangle from the DB9 body cut down to the rim: the lid closes straight down over the
+// hardware, and the hull runs up the body cut's side so no sliver is left between them.
+module hw_pocket(open) {
+    r = hw_d / 2 + hw_clr;
+    mirror_x_both() xz_extrude(y_fb - 1, hw_face_to_end + hw_clr)
+        if (open) hull() {
+            translate([hw_x, hole_z]) circle(r = r);
+            translate([body_cut_x - eps, split_z - 1]) square([hw_x + r - body_cut_x + eps, hole_z - split_z + 1]);
+            // inner edge up to the top of the body cut, so the wall above meets it at an obtuse corner, not a knife edge
+            translate([body_cut_x - eps, split_z - 1]) square([0.01, body_h + pcb_clr - split_z + 1]);
+        }
+        else translate([hw_x, hole_z]) circle(r = r);
+}
+
 module usb_recess_cut() {
     r = min(usb_recess_r, usb_recess_h / 2 - 0.01);
     xz_extrude(y_mouth + usb_mouth_inset, y_out1 + 1) translate([0, usb_cz])
@@ -596,6 +618,8 @@ module lid(logo = logo_mode) union() {
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
+        // screw-hole hardware behind the flange, open down to the rim so the lid closes over it
+        hw_pocket(true);
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
         // header relief (only when the header overhangs the PCB edge)
         if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, hdr_h + 1);
@@ -733,6 +757,9 @@ module ghost_db9() {
                 polygon([[-ds_w / 2, ds_h / 2], [ds_w / 2, ds_h / 2],
                          [ds_w / 2 - 1.5, -ds_h / 2], [-ds_w / 2 + 1.5, -ds_h / 2]]);
     }
+    // screw-hole hardware behind the flange
+    gcol("goldenrod") mirror_x_both() xz_extrude(fl_t, hw_face_to_end) translate([hw_x, hole_z])
+        if (hw_sides > 0) circle(d = hw_d, $fn = hw_sides); else circle(d = hw_d);
     // lugs either side of the body with their vertical screw holes
     gcol("dimgray") mirror_x_both() difference() {
         box(body_w / 2, board_w / 2, y_fb, lug_end, 0, lug_h);
