@@ -32,10 +32,10 @@ run $IMG --camera=0,0,6,90,0,0,105 --projection=o -D 'part="assembly"' -o render
 run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_xiao_length.png
 # close-up of the same plane at the front: lips, flange slot, lid front wall
 run $IMG --camera=0,2,5,90,0,90,65 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_lips.png
-# x plane through the +X screw-hole hardware axis (X 12.5) and its lid pocket, seen from +X
-run $IMG --camera=0,4,6,90,0,90,45 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=13 -D section_t=1 -o renders/section_hw.png
-# y plane just behind the flange (Y 0.5..2.5) through both hardware pockets, seen from the front
-run $IMG --camera=0,1,8,90,0,0,85 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=0.5 -D section_t=2 -o renders/section_hw_front.png
+# x plane at X 12 (through the flange plate beside the DB9 body), seen from +X: plate, lid front wall bearing on it
+run $IMG --camera=0,6,6,90,0,90,50 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=12.5 -D section_t=1 -o renders/section_plate.png
+# the lid alone from the front: the opening for the full flange plate
+run $IMG --camera=0,0,12,80,0,0,90 -D 'part="lid_inplace"' -o renders/lid_front.png
 # x plane through the backstop rib and the rear of the board (X -3), seen from +X
 run $IMG --camera=0,24,0,90,0,90,50 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=-3 -o renders/section_backstop.png
 # y planes across the XIAO: +X guide + shield pad (Y 15..17), -X guide + shield pad (Y 23.5..25.5), USB pad (Y 28..30)

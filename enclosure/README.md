@@ -20,7 +20,8 @@ flange and the loose shield. The two parts snap together, with no screws.
 ## Coordinates
 
 - **Y:** 0 is the DB9 flange front face, which is also the case front face (flush). +Y runs towards the rear (the
-  USB-C end). The flange back face (Y 0.38, `y_fb`) bears on the lid front wall. The RS232 PCB runs from Y 0 (flush
+  USB-C end). The connector's front plate keeps the full flange outline back to Y 5.1 (`fl_plate_d`), and its back face bears
+  on the lid front wall. The RS232 PCB runs from Y 0 (flush
   with the flange front) to Y 26.
 - **Z:** 0 is the RS232 PCB top surface.
 - **X:** looking down with the DB9 nearest you:
@@ -58,8 +59,8 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
 - **Size:** 39.9 × 35.4 × 31.2 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
   1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 25.0 mm above the RS232
   board, exactly the 25 mm limit (`max_above`): the Dupont wires' measured turning space sets it; see below.
-- **Material:** 5.5 cm³ for the tray, 11.1 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 22 g of PETG at
-  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 4.78 cm³ (lid), about 9 g together.
+- **Material:** 5.5 cm³ for the tray, 12.8 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 24 g of PETG at
+  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 6.43 cm³ (lid), about 10.5 g together.
 
 ## Exterior style: faceted pincushion
 
@@ -145,22 +146,20 @@ fingers) and bent across the layer lines. This revision:
 - **Flush front.** The case front face is at Y 0, flush with the flange front face. The flange sits in the front
   opening between the side walls (0.55 mm each side). Above the flange (from z 12.8, `fl_clr_z` 0.3 above it) the
   lid front face fills forward to Y 0. Below the flange the PCB front edge is flush with the tray front skin and floor.
-- **Screw-hole hardware behind the flange.** Behind each flange screw hole (X ±12.5, z 6.25) sits the threaded
-  hardware the jack-post nuts screw onto, from the flange back to Y 5.1 (`hw_face_to_end`, the user's first
-  measurement). Revision 2 did not model it, and the lid front wall ran straight through it. It is now a ghost (a
-  round envelope `hw_d` 5.6 across, which covers a 4-40 hex insert, 4.8 across flats; `hw_sides = 6` models a hex),
-  included in every check. The lid has a pocket around each one with `hw_clr` 0.3, open down to the rim so the lid
-  closes straight over it, and run up the side of the DB9 body cut so no sliver is left. The pockets end at z 9.65.
-  The hardware reaches z 3.45, below the split, but the tray has no material there; the tray gets the same pocket
-  for safety. Diameter, shape and depth are to be confirmed by the user and are parameters.
-  `section_hw.png` (through the +X hole axis) and `section_hw_front.png` (just behind the flange) show it.
-- **Rear bearing face.** The lid front wall behind the flange (from Y 0.38, 3.2 mm deep) is what the flange back
-  bears on. With the hardware pockets cut, 73 mm² of it remains (126 mm² without them): the full-width strip
-  above the DB9 body and the sides above the pockets, all on the flange's upper margin (z 7.3–12.5), opposite the top
-  lip. That is ample for plug forces of tens of newtons, so the lid still bears on the flange back, not on the
-  back of the hardware (whose depth is less certain). It takes the USB plug insertion force (plug → XIAO → front strut → lid front wall → flange). Its bottom
-  front edge has a 0.5 mm 45° lead-in (`fw_lead`), so a board sitting slightly back is pushed forward onto the lips as
-  the lid closes.
+- **Flange plate.** The connector's front plate (the steel flange plus the plastic behind it) keeps the full flange
+  outline, 30.8 × 12.5, from the flange front back to Y 5.1 (`fl_plate_d`, the user's first measurement: "the back of
+  the flange plate screw holes is 5.1 mm from the front flat face"). Revision 2 modelled only 0.38 mm of steel, so the
+  lid front wall (Y 0.38–3.58, cut only for the 17.2 mm DB9 body) ran through the plate: the user saw the tray open
+  for the whole flange but the lid open only around the D-shell body. The plate is now a ghost in every check
+  (`ghost_plate_d` moves it for controls).
+- **Front opening and rear bearing face.** The lid is now open across the full interior width (0.55 mm each side of
+  the flange, like the tray) from the rim up to z 12.8 (`fl_clr_z` 0.3 above the flange) and back to Y 5.1. Its front
+  wall sits behind the plate, Y 5.1–8.3 (`front_wall_t` 3.2), and that face is what the plate back bears on, with no
+  gap: about 139 mm² in all, beside the DB9 body on both sides and across its top. It takes the USB plug insertion force (plug → XIAO →
+  front strut → lid front wall → plate). The strut is now 2.0 mm long (Y 8.3–10.3). Above the opening the lid face
+  fills forward to Y 0, flush with the flange, and carries the top lip as before. The front wall's bottom front edge has a
+  0.5 mm 45° lead-in (`fw_lead`), so a board sitting slightly back is pushed forward onto the lips as the lid closes.
+  `renders/lid_front.png` (lid alone, from the front) and `section_plate.png` (X 12) show it.
 - **Retention lips** (`lip_*`). Two lips stand in front of the flange:
   - **Top lip** (lid): over the flange's top margin, from z 11.5 to the flange top, then up the front face.
   - **Bottom lip** (tray): over the PCB front edge and the flange's bottom margin, up to z 1.0.
@@ -350,7 +349,7 @@ cut flat at `coupon_y1` = 14.5 mm, in normal print orientation. They contain the
 front wall that the flange bears on, the leg-tail pockets at Y 9.5, the front pair of lid snaps (Y 7), the front
 pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 9 g of PETG. The lid
 coupon has no logo (single colour). The cut stops at 14.5 rather than 15 because the shield pad ring starts at
-Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.957 cm³, lid coupon 4.784 cm³ (the lid coupon is now 26 mm tall). Both are single
+Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.957 cm³, lid coupon 6.433 cm³ (the lid coupon is now 26 mm tall). Both are single
 pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in them.
 
 ## Assembly order
@@ -385,7 +384,7 @@ pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in
 
 Each must have zero volume. Zero-thickness contact faces are designed contacts:
 
-- the flange back on the lid front wall (Y 0.38; it shows from z 4.5, above the front wall lead-in)
+- the flange plate back on the lid front wall (Y 5.1; it shows from z 4.5, above the front wall lead-in)
 - the PCB on the front skin and the ledges
 - the lid rim on the tray rim
 
@@ -414,8 +413,8 @@ real overlap (any piece of at least 0.01 mm³) or none:
 | Dupont keep-out −X 1 / −Y 1 / +Y 1 / up 1 | lid | hits the side wall / −X presser / −X guide / ceiling |
 | −X guide not trimmed (`dupont_clr=-20`) | lid | hits the Dupont zone |
 | +X presser back at Y 24 | lid | hits the rear-edge keep-out |
-| hardware pocket shrunk by 0.5 (`hw_clr` −0.2) | lid / lid path | hits both pockets |
-| hardware as a hex 5.6 across corners | lid | none |
+| flange plate 0.5 deeper (`ghost_plate_d` 5.6) | lid / lid path | hits the front wall (71 mm³) |
+| revision 2 lid (`fl_plate_d` 0.38) against the 5.1 plate | lid | hits (473 mm³): the reported fault |
 | logo at 30 mm / 20 mm | `check_logo` | none / hits |
 | test block 0.5 under the XIAO edge (`ctl_undercut`) | lid / lid path | none / hits (2.0 mm³) |
 
@@ -458,7 +457,8 @@ margins flat. Still open:
 - **Lips and the printer:** nothing on the printer side should stand within 1.3 mm of our flange over the middle
   16 mm (|X| ≤ 8) above and below the D-shell.
 - **USB-C shell:** 8.94 × 3.3 stadium, overhanging the XIAO PCB by 1.5 mm. The cradle and pads depend on it.
-- **Flange hardware:** diameter (or across-flats and hex), and the depth behind the flange front (5.1 mm assumed).
+- **Flange plate depth:** the full flange outline is assumed to run back to 5.1 mm behind the flange front
+  (`fl_plate_d`); the lid bears on that face.
 - **Step:** the user mentioned no step behind the flange, so `step_on = false`.
 
 ## Concerns to check before printing

@@ -67,10 +67,11 @@ ctl "dupont -Y 1 (-X presser)"     check_lid      hit  -D 'ghost_dupont_d=[0,-1,
 ctl "dupont +Y 1 (-X guide)"       check_lid      hit  -D 'ghost_dupont_d=[0,1,0]'
 ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
 ctl "-X guide untrimmed (zone)"    check_lid      hit  -D dupont_clr=-20
-# screw-hole hardware behind the flange: pocket hw_clr 0.3; shrunk by 0.5 it must hit; hex of the same size is clear
-ctl "hw pocket shrunk 0.5"         check_lid      hit  -D hw_clr=-0.2
-ctl "hw hex 5.6 across corners"    check_lid      none -D hw_sides=6
-ctl "hw pocket shrunk 0.5 (path)"  check_lid_path hit  -D '$fn=16' -D hw_clr=-0.2
+# flange plate (full flange outline to fl_plate_d 5.1): 0.5 deeper must hit the lid front wall; the revision 2 lid
+# (front wall from the steel flange back, fl_plate_d = fl_t) must hit the 5.1 plate: the fault the user reported
+ctl "plate 0.5 deeper"             check_lid      hit  -D ghost_plate_d=5.6
+ctl "plate 0.5 deeper (path)"      check_lid_path hit  -D '$fn=16' -D ghost_plate_d=5.6
+ctl "rev 2 lid vs the 5.1 plate"   check_lid      hit  -D fl_plate_d=0.38 -D ghost_plate_d=5.1
 # RS232 PCB rear-edge keep-out (resistors): a presser at Y 24 (the revision 2 position) must hit it
 ctl "+X presser at Y 24 (rear edge)" check_lid    hit  -D 'press_y_right=[13.8,17,24]'
 # logo: every stroke and gap >= logo_min at logo_w 30; the same mark at 20 mm breaks it (0.6 mm corner fillets)
