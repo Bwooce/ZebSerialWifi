@@ -10,12 +10,14 @@
 #include "printer_link.h"
 #include "sdkconfig.h"
 #include "settings.h"
+#include "wifi_prov.h"
 
 static const char *TAG = "bridge";
 
 #define CHUNK 1024
 #define BACKLOG 4
-#define ACQUIRE_WAIT_MS 15000
+/* A full detect cycle (baud scan, ^HH dump, ^SC and rescan) can hold the link for 20 s or more */
+#define ACQUIRE_WAIT_MS 60000
 /*
  * A printer out of paper or ribbon, or with the head up, holds XOFF until
  * someone fixes it, so a stall alone is no reason to drop the job. The job is
@@ -103,6 +105,8 @@ static void serve(int sock)
     const int64_t idle_limit = (int64_t)opt.idle_timeout_s * 1000;
     int64_t last_activity = now_ms();
     bool client_done = false;
+    /* set when we stop talking to the client (error, gone, or idle) but what it sent still has to drain */
+    bool hung_up = false;
 
     struct timeval tv = {.tv_sec = 0, .tv_usec = 50 * 1000};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -130,23 +134,32 @@ static void serve(int sock)
         } else if (n == 0) {
             client_done = true;  /* client finished sending (CUPS half-closes and waits for EOF) */
         } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            /* some spoolers reset the connection right after a complete job, so still drain it */
             ESP_LOGI(TAG, "recv error %d", errno);
-            return;
+            hung_up = true;
+            break;
         }
         uint64_t before = s_stats.bytes_from_printer;
         if (!pump_from_printer(sock, 0)) {
-            return;
+            hung_up = true;
+            break;
         }
         if (s_stats.bytes_from_printer != before) {
             last_activity = now_ms();
         }
         if (!client_done && now_ms() - last_activity > idle_limit) {
             ESP_LOGI(TAG, "client idle for %u s, closing", (unsigned)opt.idle_timeout_s);
-            return;
+            hung_up = true;
+            break;
         }
     }
 
-    /* let the queued job reach the printer, then pass back any final replies */
+    /*
+     * Let the queued job reach the printer, then pass back any final replies.
+     * Every exit except the write_all abort above comes through here, so the
+     * link is never released (and the baud never changed) with part of a job
+     * still queued.
+     */
     int64_t drain_start = now_ms();
     while (!printer_link_tx_idle()) {
         if (now_ms() - drain_start > STALL_LIMIT_MS) {
@@ -155,11 +168,18 @@ static void serve(int sock)
             printer_link_abort_tx();
             return;
         }
-        if (client_alive(sock)) {
-            pump_from_printer(sock, pdMS_TO_TICKS(50));
+        if (!hung_up && client_alive(sock)) {
+            if (!pump_from_printer(sock, pdMS_TO_TICKS(50))) {
+                hung_up = true;
+            }
         } else {
-            vTaskDelay(pdMS_TO_TICKS(50));
+            /* nobody to pass replies to: drop them so the RX ring cannot fill */
+            uint8_t junk[64];
+            printer_link_read(junk, sizeof(junk), pdMS_TO_TICKS(50));
         }
+    }
+    if (hung_up) {
+        return;
     }
     int64_t tail_start = now_ms();
     while (now_ms() - tail_start < 300) {
@@ -186,7 +206,9 @@ static void listen_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
-    ESP_LOGI(TAG, "listening on port %d", CONFIG_ZEB_TCP_PORT);
+    ESP_LOGI(TAG, "listening on port %d (stack: %u bytes never used)", CONFIG_ZEB_TCP_PORT,
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    bool stack_logged = false;
 
     for (;;) {
         struct sockaddr_storage peer;
@@ -201,6 +223,12 @@ static void listen_task(void *arg)
             inet_ntop(AF_INET, &((struct sockaddr_in *)&peer)->sin_addr, client_ip, sizeof(client_ip));
         } else {
             inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&peer)->sin6_addr, client_ip, sizeof(client_ip));
+        }
+        /* the setup AP is open to anyone in range, so it only ever serves the setup page */
+        if (wifi_prov_sock_on_ap(sock)) {
+            ESP_LOGW(TAG, "rejecting print connection from %s on the setup AP", client_ip);
+            close(sock);
+            continue;
         }
         STATS_UPDATE(memcpy(s_stats.client_ip, client_ip, sizeof(client_ip)));
         if (!printer_link_acquire(pdMS_TO_TICKS(ACQUIRE_WAIT_MS))) {
@@ -223,6 +251,10 @@ static void listen_task(void *arg)
         ESP_LOGI(TAG, "client %s done: %llu bytes to printer, %llu back, %lld ms", s_stats.client_ip,
                  (unsigned long long)(s_stats.bytes_to_printer - in0),
                  (unsigned long long)(s_stats.bytes_from_printer - out0), (long long)(now_ms() - t0));
+        if (!stack_logged) {
+            stack_logged = true;
+            ESP_LOGI(TAG, "stack: %u bytes never used after the first job", (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        }
     }
 }
 

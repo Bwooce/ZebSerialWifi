@@ -55,6 +55,8 @@ static bool s_raise_tried;
  */
 static volatile bool s_echo;
 static volatile uint32_t s_target_baud = 115200;
+/* TX ring free space right after driver install, i.e. what "empty" reads as (less than TX_BUF: item headers) */
+static size_t s_tx_free_empty;
 
 static void count_tx(size_t n)
 {
@@ -81,6 +83,7 @@ static esp_err_t uart_setup(uint32_t baud)
         .source_clk = UART_SCLK_DEFAULT,
     };
     ESP_RETURN_ON_ERROR(uart_driver_install(PORT, RX_BUF, TX_BUF, 0, NULL, 0), TAG, "driver install");
+    ESP_RETURN_ON_ERROR(uart_get_tx_buffer_free_size(PORT, &s_tx_free_empty), TAG, "tx free size");
     ESP_RETURN_ON_ERROR(uart_param_config(PORT, &cfg), TAG, "param config");
     ESP_RETURN_ON_ERROR(uart_set_pin(PORT, s_tx_gpio, s_rx_gpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG,
                         "set pin");
@@ -94,9 +97,22 @@ static esp_err_t uart_setup(uint32_t baud)
     return ESP_OK;
 }
 
+/*
+ * Change baud only once nothing is queued: bytes still in the TX ring or
+ * FIFO would go out at the new rate as garbage. If the queue does not drain
+ * (the printer holds XOFF), it is discarded instead.
+ */
 static void set_baud(uint32_t baud)
 {
-    uart_wait_tx_done(PORT, pdMS_TO_TICKS(2000));
+    int64_t deadline = esp_timer_get_time() + 2000 * 1000;
+    while (!printer_link_tx_idle() && esp_timer_get_time() < deadline) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (!printer_link_tx_idle()) {
+        ESP_LOGW(TAG, "TX still queued after 2 s at %lu baud, discarding it before moving to %lu",
+                 (unsigned long)s_baud, (unsigned long)baud);
+        printer_link_abort_tx();
+    }
     uart_set_baudrate(PORT, baud);
     s_baud = baud;
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -329,6 +345,7 @@ static void link_task(void *arg)
     (void)arg;
     int poll_fails = 0;
     int64_t next_us = 0;
+    bool stack_logged = false;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(200));
         int64_t now = esp_timer_get_time();
@@ -343,6 +360,20 @@ static void link_task(void *arg)
             detect();
             poll_fails = 0;
             next_us = now + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            if (!stack_logged) {
+                stack_logged = true;
+                ESP_LOGI(TAG, "stack: %u bytes never used after the first detect",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            }
+        } else if (!printer_link_tx_idle()) {
+            /*
+             * Earlier output is still queued, most likely behind an XOFF from
+             * a printer out of paper. A probe would queue behind it and its
+             * missing reply says nothing about the link, so skip this poll
+             * without counting it as a miss.
+             */
+            ESP_LOGD(TAG, "TX queued, skipping the ~HS poll");
+            next_us = now + (int64_t)SCAN_RETRY_MS * 1000;
         } else {
             if (probe_hs()) {
                 poll_fails = 0;
@@ -373,7 +404,7 @@ esp_err_t printer_link_init(int tx_gpio, int rx_gpio)
 
 void printer_link_start(void)
 {
-    xTaskCreate(link_task, "printer_link", 4096, NULL, 5, NULL);
+    xTaskCreate(link_task, "printer_link", 6144, NULL, 5, NULL);
 }
 
 bool printer_link_acquire(TickType_t wait)
@@ -423,6 +454,16 @@ int printer_link_read(uint8_t *data, size_t n, TickType_t wait)
 
 bool printer_link_tx_idle(void)
 {
+    /*
+     * uart_wait_tx_done only looks at the hardware FIFO, which can be empty
+     * between refills or while XOFF holds the rest in the driver's ring, so
+     * check the ring first. Nothing refills the ring from here, so ring empty
+     * then FIFO empty means all sent.
+     */
+    size_t free_sz = 0;
+    if (uart_get_tx_buffer_free_size(PORT, &free_sz) != ESP_OK || free_sz < s_tx_free_empty) {
+        return false;
+    }
     return uart_wait_tx_done(PORT, 0) == ESP_OK;
 }
 

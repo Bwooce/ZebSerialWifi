@@ -52,8 +52,12 @@ static void status_task(void *arg)
 {
     (void)arg;
     uint32_t held_ms = 0;
+    uint32_t ticks = 0;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_TICK_MS));
+        if (++ticks == 10000 / STATUS_TICK_MS) {
+            ESP_LOGI(TAG, "status stack: %u bytes never used after 10 s", (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        }
 
         printer_status_t p;
         printer_link_get_status(&p);
@@ -119,5 +123,5 @@ void app_main(void)
     bridge_start();
     printer_link_start();
 
-    xTaskCreate(status_task, "status", 3072, NULL, 3, NULL);
+    xTaskCreate(status_task, "status", 4096, NULL, 3, NULL);
 }
