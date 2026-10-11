@@ -34,6 +34,8 @@ ghost_lug_dy = 0;        // positive control: moves only the ghost lug holes / l
 ghost_lug_dx = 0;        // positive control: moves only the ghost legs in X
 ghost_plate_d = -1;      // positive control: plate ghost depth (-1 = fl_plate_d)
 ghost_board_dy = 0;      // positive control: moves the RS232 board + DB9 ghosts (with their legs) in Y
+ghost_board_dz = 0;      // positive control: moves only the RS232 board ghost (PCB, pin zone, header, rear keep-out) in Z
+ghost_lid_dz = 0;        // positive control: raises the lid in check_traylid (snap engagement with the lid held high)
 coupon_y1 = 14.5;        // fit coupons (part="coupon_tray" / "coupon_lid") keep Y < coupon_y1: flange recess, lips,
                          // bearing wall, leg pockets, front snaps, front pressers; stops short of the shield pad (14.65)
 ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO +X edge, clear when closed
@@ -192,7 +194,7 @@ min_wall = 1.2;          // checked by wallprobe.py, not just assumed
 // in the slicer as one object with two parts). "deboss": single-colour fallback. "none": plain top.
 logo_mode = "inlay";
 logo_w = 30.0;           // mark width (the lid top flat leaves about 1.5 mm to its edges at 30)
-logo_depth = 0.6;        // inlay thickness / deboss depth: 3 layers at 0.2
+logo_depth = 0.68;       // inlay thickness / deboss depth: the first 4 layers of the profile (0.2 first layer + 3 x 0.16)
 logo_file = "../assets/logo/zebserial-mark-lid.svg";      // bold lid variant from assets/logo/make_logo.py, 1 unit = 1 mm
 logo_svg_w = 52.76;      // mark width in that file
 logo_svg_c = [32, 29.0]; // mark centre once imported (OpenSCAD flips the SVG Y axis)
@@ -202,8 +204,10 @@ logo_min = 1.2;          // every stroke and gap at least this (three 0.4 mm lin
 // Lid-to-tray snaps (on both side walls)
 lc_w = 6.0;              // finger width
 lc_t = 1.4;              // finger thickness
-lc_gap = 0.15;           // finger to pocket floor
-lc_hook = 0.75;          // hook protrusion
+lc_gap = 0.15;           // finger to pocket floor (tray)
+lc_slot_back = 0.6;      // finger to the lid wall in the slot above the split: wide enough that PETG cannot weld it
+lc_hook = 0.6;           // hook protrusion (0.45 of it past the pocket floor = catch engagement and finger deflection)
+lc_win_up = 0.35;        // catch window top above the hook top: the snap still engages with the lid held this high
 lc_above = 4.0;          // finger free length above the split (slots into the lid wall)
 lc_below = 5.0;          // finger length below the split (keeps the catch windows above the leg-tail bosses)
 lc_side_gap = 0.5;       // slot width either side of the finger in the lid wall
@@ -213,6 +217,7 @@ lc_rear_from_back = 4.2; // second lid clip centre, distance from the interior r
 // (the flexing RS232 board side clips were removed: rigid lid pressers hold the board down)
 ledge_w = 1.2;           // board support ledge, from the wall inner face
 ledge_front_skip = 7.0;  // ledges start at least this far behind the PCB front edge, and behind the leg-tail bosses
+hdr_ledge_keep = 0.6;    // -X ledge strip kept from the wall inner face beside the header pins (0.4 of it under the PCB)
 // Lid pressers that hold the RS232 board down at the edges (Y centres)
 press_y_left = [13.8];   // between the lugs (to Y 12.0) and the header (from Y 15.6)
 press_y_right = [13.8, 17.0, 21.0];   // the last one ends 1 mm in front of the rear-edge keep-out
@@ -220,6 +225,7 @@ pcb_rear_keepout = 3.0;  // resistors near the RS232 PCB rear edge: nothing may 
 press_w = 2.0;
 press_reach = 1.4;       // presser inner face from the wall inner face (1.2 over the board edge)
 press_wall_clr = 0.2;    // presser to the tray wall below the split
+press_gap = 0.25;        // presser bottom above the RS232 PCB top
 press_root = 1.5;        // presser root: grows out of the lid wall over this height above the split, 45 degree top
 // XIAO capture, all rigid: below on the DB9 body (front) and the tray tongue (rear); above, lid pads on the RF shield
 // and the USB-C shell; sides, lid guide walls; fore-aft, the front stop strut and the lid rear wall.
@@ -231,7 +237,7 @@ guide_t = 1.6;           // guide wall thickness
 guide_clr = 0.2;         // guide inner face to the XIAO PCB edge
 guide_below = 0.6;       // guide tip below the XIAO underside
 guide_lead = 0.8;        // 45 degree lead-in at the guide tip (captures a 0.8 mm X error as the lid closes)
-xpad_gap = 0.1;          // lid pads to the RF shield top and the USB-C shell top
+xpad_gap = 0.25;         // lid pads to the RF shield top and the USB-C shell top
 xpad_inset = 0.5;        // pads inset from the shield / shell outline
 xpad_wall = 1.6;         // the shield pad is a rectangular ring of this wall
 tongue_gap = 0.05;       // tray tongue cradle to the USB shell bottom (rear support)
@@ -355,7 +361,9 @@ if (z_top > max_above) echo(str("ZEBCASE WARNING: top ", z_top, " above the PCB 
 assert(z_top <= max_above, "case taller than the 25 mm envelope above the board");
 echo(str("ZEBCASE top skin ", z_top - z_ceil, logo_mode != "none" ? str(", ", z_top - z_ceil - logo_depth, " under the logo (",
          logo_mode, ", ", logo_w, " mm wide)") : ""));
-assert(logo_mode == "none" || z_top - z_ceil - logo_depth >= 1.0 - 1e-6, "logo leaves less than 1 mm of top skin");
+// 0.9: the 1.6 skin (fixed by the 25 mm envelope and the Dupont ceiling) less the 0.68 inlay leaves 0.92, which the
+// 0.16 mm profile prints as 6 solid layers (top and bottom shells overlap across it)
+assert(logo_mode == "none" || z_top - z_ceil - logo_depth >= 0.9 - 1e-6, "logo leaves less than 0.9 mm of top skin");
 assert(logo_mode == "none" || logo_mode == "inlay" || logo_mode == "deboss", "logo_mode must be inlay, deboss or none");
 if (yx0 - pcb_clr < y_fw1) echo("ZEBCASE WARNING: XIAO front edge reaches into the lid front wall");
 echo(str("ZEBCASE XIAO front Y ", yx0, ", rear Y ", yx1, ", overhang ", xiao_overhang, " past the RS232 PCB; on the body ",
@@ -490,7 +498,8 @@ module tray() union() {
         // leg-tail pockets with a 45 degree lead-in so the board drops in
         if (leg_pocket_on) mirror_x_both() translate([lug_hx, leg_y, 0]) leg_pocket();
         // ledge relief at the header pins (header side is -X)
-        box(-x_in, -x_in + ledge_w + 0.1, hdr_y0 - 1, hdr_y1 + 1, z_floor, -pcb_t + 0.1);
+        // except a hdr_ledge_keep strip at the wall that still carries the PCB edge when the Dupont plug is pushed on
+        box(-x_in + hdr_ledge_keep, -x_in + ledge_w + 0.1, hdr_y0 - 1, hdr_y1 + 1, z_floor, -pcb_t + 0.1);
         // header body relief in the wall (only when the header overhangs the PCB edge)
         if (hdr_relief > 0) box(-x_in - hdr_relief, -x_in + eps, hdr_y0 - 0.5, hdr_y1 + 0.5, 0, split_z + 1);
         // lid clip pockets and catch recesses
@@ -542,14 +551,15 @@ module lid_clip_tray_cut(c) {
     box(xo - pocket, x_out + 1, c - hw, c + hw, lc_tip - lc_pry, split_z + 1);        // pocket + pry gap
     // catch window, through to the inside (below the board, beside the ledge): a blind recess
     // would leave less than min_wall behind it at mid-span
-    box(x_in, xo - pocket + eps, c - hw, c + hw, lc_tip - 0.2, lc_hook_top + 0.1);
+    box(x_in, xo - pocket + eps, c - hw, c + hw, lc_tip - 0.2, lc_hook_top + lc_win_up);
 }
 module lid_clip_lid_cut(c) {
     hw = lc_w / 2;
     xo = lc_face(c);
-    // slots either side and behind the finger, up into the lid wall
+    // slots either side and behind the finger, up into the lid wall; lc_slot_back behind it (not lc_gap) so the
+    // finger cannot weld to the wall and keeps its full free length
     difference() {
-        box(xo - pocket, x_out + 1, c - hw - lc_side_gap, c + hw + lc_side_gap, split_z - 1, split_z + lc_above);
+        box(xo - lc_t - lc_slot_back, x_out + 1, c - hw - lc_side_gap, c + hw + lc_side_gap, split_z - 1, split_z + lc_above);
         box(xo - lc_t, x_out + 1, c - hw, c + hw, split_z - 1, split_z + lc_above + 1);
     }
 }
@@ -658,11 +668,11 @@ module leg_pocket() {
     }
 }
 
-// Rib from the lid side wall down to 0.1 above the board edge. Below the split it stands press_wall_clr off the tray
+// Rib from the lid side wall down to press_gap above the board edge. Below the split it stands press_wall_clr off the tray
 // wall; above the split it is rooted 0.5 into the lid wall, with a 45 degree top so it prints top down.
 module presser(y) {
     xi = x_in - press_reach;
-    box(xi, x_in - press_wall_clr, y - press_w / 2, y + press_w / 2, 0.1, split_z + eps);
+    box(xi, x_in - press_wall_clr, y - press_w / 2, y + press_w / 2, press_gap, split_z + eps);
     xz_prism([[xi, split_z], [x_in + 0.5, split_z], [x_in + 0.5, split_z + press_root + press_reach + 0.5],
               [x_in, split_z + press_root + press_reach], [xi, split_z + press_root]], y - press_w / 2, y + press_w / 2);
 }
@@ -831,7 +841,7 @@ module wire_zones() {
 }
 
 module ghosts() {
-    translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); }
+    translate([0, ghost_board_dy, 0]) { ghost_db9(); translate([0, 0, ghost_board_dz]) ghost_rs232(); }
     ghost_xiao();
     ghost_dupont();
     ghost_wires();
@@ -880,12 +890,12 @@ if (part == "tray") {
     intersection() {
         lid();
         minkowski() {
-            union() { translate([0, ghost_board_dy, 0]) { ghost_db9(); ghost_rs232(); } ghost_xiao(); ghost_dupont(); }
+            union() { translate([0, ghost_board_dy, 0]) { ghost_db9(); translate([0, 0, ghost_board_dz]) ghost_rs232(); } ghost_xiao(); ghost_dupont(); }
             translate([0, 0, -30]) cube([0.001, 0.001, 30]);
         }
     }
 } else if (part == "check_traylid") {
-    intersection() { tray(); lid(); }
+    intersection() { tray(); translate([0, 0, ghost_lid_dz]) lid(); }
 } else if (part == "tray_inplace") {                               // assembly coordinates, for wallprobe.py
     tray();
 } else if (part == "lid_inplace") {

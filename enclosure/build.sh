@@ -65,23 +65,65 @@ run $IMG --camera=0,0,0,55,0,205,130 --autocenter --viewall -D 'part="lid"' -o r
 
 echo "== interference: volume of ghost/tray, ghost/lid and tray/lid overlaps"
 echo "   (zero-volume faces are designed contacts, e.g. flange on the case front, board on the ledges)"
+# Every gate below fails the build: an OpenSCAD error (ERROR / failed assert, or a non-zero exit that is not just an
+# empty result), a real overlap, a logo stroke or gap under logo_min, or a wall sliver not on the whitelist.
 TMP=$(mktemp -d)
+fails=0
+fail() { echo "FAIL: $*"; fails=$((fails + 1)); }
+# osc_ok LOG STATUS: true unless the run errored. "Current top level object is empty." alone (exit 1) is an empty
+# result, not an error.
+osc_ok() {
+  if grep -qE '^ERROR:|Assertion|Execution aborted' "$1"; then return 1; fi
+  [ "$2" -eq 0 ] || grep -q 'Current top level object is empty' "$1"
+}
 for c in check_tray check_lid check_traylid check_lid_path; do
   fn=""; [ $c = check_lid_path ] && fn='$fn=16'   # the swept check takes about 2 min at the default $fn
-  if run ${fn:+-D "$fn"} "$@" -D "part=\"$c\"" -o "$TMP/$c.stl" > "$TMP/$c.log" 2>&1 && [ -s "$TMP/$c.stl" ]; then
-    echo "$(python3 -I stlinfo.py "$TMP/$c.stl" | sed "s|$TMP/||")  ->  $(python3 -I stlinfo.py --hits "$TMP/$c.stl")"
+  rm -f "$TMP/$c.stl"
+  st=0; run ${fn:+-D "$fn"} "$@" -D "part=\"$c\"" -o "$TMP/$c.stl" > "$TMP/$c.log" 2>&1 || st=$?
+  if ! osc_ok "$TMP/$c.log" $st; then
+    fail "$c: openscad error (exit $st)"; grep -E '^ERROR:|Assertion' "$TMP/$c.log" | head -3
+  elif [ -s "$TMP/$c.stl" ]; then
+    hits=$(python3 -I stlinfo.py --hits "$TMP/$c.stl")
+    echo "$(python3 -I stlinfo.py "$TMP/$c.stl" | sed "s|$TMP/||")  ->  $hits"
+    case $hits in none*) ;; *) fail "$c: overlap" ;; esac
   else
-    echo "$c: empty"
+    echo "$c: empty  ->  none"
   fi
 done
 echo "== logo: strokes and gaps under logo_min (part=check_logo), must be none"
-run "$@" -D 'part="check_logo"' -o "$TMP/check_logo.stl" > "$TMP/check_logo.log" 2>&1 || true
-if [ -s "$TMP/check_logo.stl" ]; then echo "check_logo: $(python3 -I stlinfo.py --hits "$TMP/check_logo.stl")"; else echo "check_logo: none"; fi
-echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped"
-echo "   expected: lid snap hooks, lead-in tips, logo skin 1.1 (see README)"
+rm -f "$TMP/check_logo.stl"
+st=0; run "$@" -D 'part="check_logo"' -o "$TMP/check_logo.stl" > "$TMP/check_logo.log" 2>&1 || st=$?
+if ! osc_ok "$TMP/check_logo.log" $st; then
+  fail "check_logo: openscad error (exit $st)"; grep -E '^ERROR:|Assertion' "$TMP/check_logo.log" | head -3
+elif [ -s "$TMP/check_logo.stl" ]; then
+  hits=$(python3 -I stlinfo.py --hits "$TMP/check_logo.stl"); echo "check_logo: $hits"
+  case $hits in none*) ;; *) fail "check_logo: strokes or gaps under logo_min" ;; esac
+else
+  echo "check_logo: none"
+fi
+echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped; anything off the whitelist fails"
+# Whitelist (assembly coordinates, x0 x1 y0 y1 z0 z1 minimum), each one judged acceptable in the README:
+#  tray: the tongue's top edges beside the USB cradle (about 0.93): they taper to tongue_tip, only round the opening
+#        and carry nothing (the shell rests on the cradle bottom)
+#  tray: the floor / front skin gusset (1.19): 1.2 by construction square to the 45 degree bottom front chamfer
+#  lid:  the snap hooks (about 0.95 and 1.1): the hook profile itself, a 0.6 mm 45 degree bump on the finger
+#  lid:  the top skin under the logo pocket (0.92): the inlay fills the pocket in the two-colour print
+ALLOW_tray="--allow -6 6 30 34 10.5 12.5 0.9 --allow -17 17 0 14 -6.5 -1 1.18"
+ALLOW_lid="--allow 16 20.5 3 32 -1.5 1 0.9 --allow -20.5 -16 3 32 -1.5 1 0.9 --allow -16 16 2 34 23 25.1 0.9"
 for p in tray lid; do
-  run "$@" -D "part=\"${p}_inplace\"" -o "$TMP/${p}_inplace.stl" > /dev/null 2>&1
-  python3 wallprobe.py --summary "$TMP/${p}_inplace.stl" | sed "s|$TMP/||"
+  rm -f "$TMP/${p}_inplace.stl"
+  st=0; run "$@" -D "part=\"${p}_inplace\"" -o "$TMP/${p}_inplace.stl" > "$TMP/${p}_inplace.log" 2>&1 || st=$?
+  if ! osc_ok "$TMP/${p}_inplace.log" $st || [ ! -s "$TMP/${p}_inplace.stl" ]; then
+    fail "${p}_inplace: openscad error or empty (exit $st)"; grep -E '^ERROR:|Assertion' "$TMP/${p}_inplace.log" | head -3
+    continue
+  fi
+  eval "allow=\$ALLOW_$p"
+  # shellcheck disable=SC2086
+  st=0; python3 wallprobe.py --summary $allow "$TMP/${p}_inplace.stl" > "$TMP/${p}_wall.txt" 2>&1 || st=$?
+  sed "s|$TMP/||" "$TMP/${p}_wall.txt"
+  [ $st -eq 0 ] || fail "${p}: wall sliver(s) not on the whitelist (or wallprobe error, exit $st)"
 done
 rm -rf "$TMP"
 python3 -I stlinfo.py out/tray.stl out/lid.stl out/logo.stl out/coupon_tray.stl out/coupon_lid.stl
+if [ "$fails" -ne 0 ]; then echo "build: $fails gate(s) FAILED"; exit 1; fi
+echo "build: all gates passed"

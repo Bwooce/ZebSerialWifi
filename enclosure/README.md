@@ -32,7 +32,8 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
 
 ## Print settings (Bambu H2D, 0.4 mm nozzle, PETG)
 
-- **Layer height:** 0.2 mm.
+- **Layer height:** 0.16 mm, with a 0.2 mm first layer (`print/process_overrides.json`, on the 0.16 mm Balanced
+  Quality profile).
 - **Walls:** 4 (1.6 mm).
 - **Infill:** 25 % gyroid. Most of the part is walls anyway.
 - **Supports:** none.
@@ -41,7 +42,7 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
   - Tray: floor on the bed (open side up).
   - Lid: top skin on the bed (open side up).
 - **Overhangs:** a probe of the oriented STLs for down-facing faces steeper than 45° off the bed finds only: the
-  tray's four catch-window tops (6.6 mm bridges), the lid's snap-hook catch faces (0.75 mm) and two 1.2 mm² bits of the USB relief's rounded corners beside the slot. These
+  tray's four catch-window tops (6.6 mm bridges), the lid's snap-hook catch faces (0.6 mm) and two 1.2 mm² bits of the USB relief's rounded corners beside the slot. These
   are fine in PETG. Everything else is vertical, at 45°, or opens upwards in print orientation:
   - The perimeter chamfers on the bed side of each part are 45°.
   - The top of each snap catch window in the tray is a 6.6 mm bridge.
@@ -53,14 +54,15 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back; b
   - The USB slot opens to the lid rim, and its rounded end is a cradle in print orientation. The tongue cradle and
     the leg-tail pockets open upwards.
 - **Logo (two colours):** load `lid.stl` and `logo.stl` together and accept "load as one object with multiple
-  parts" (Bambu Studio), so they stay aligned; give the logo part the second filament. The inlay is the first three
-  0.2 mm layers on the bed, flush with the lid top. For a single-colour print set `logo_mode = "deboss"` (0.6 mm deep)
+  parts" (Bambu Studio), so they stay aligned; give the logo part the second filament. The inlay is the first four
+  layers on the bed (0.2 + 3 × 0.16 = 0.68 mm), flush with the lid top. For a single-colour print set
+  `logo_mode = "deboss"` (0.68 mm deep)
   or `"none"` and rebuild.
 - **Size:** 39.9 × 35.4 × 31.2 mm assembled (the case shell, from the front face at Y 0). The two flange lips stand
   1.3 mm proud of the front face over |X| ≤ 8, and the metal D-shell 6.0 mm. The top is 25.0 mm above the RS232
   board, exactly the 25 mm limit (`max_above`): the Dupont wires' measured turning space sets it; see below.
-- **Material:** 5.5 cm³ for the tray, 12.8 cm³ for the lid and 0.28 cm³ for the logo inlay, roughly 24 g of PETG at
-  100 %, less with infill. The fit coupons are 1.96 cm³ (tray) and 6.43 cm³ (lid), about 10.5 g together.
+- **Material:** 5.5 cm³ for the tray, 12.7 cm³ for the lid and 0.32 cm³ for the logo inlay, roughly 24 g of PETG at
+  100 %, less with infill. The fit coupons are 1.95 cm³ (tray) and 6.41 cm³ (lid), about 10.5 g together.
 
 ## Exterior style: faceted pincushion
 
@@ -192,7 +194,12 @@ fingers) and bent across the layer lines. This revision:
 
 - **Board:** 31.5 × 26.0 × 1.6 mm, measured.
 - **Support:** the board sits on a 1.2 mm front skin under its front edge and on 1.2 mm side ledges from Y 13.45.
-  On the −X side the ledges are relieved under the header pins. A 0.4 mm gusset fills the corner between the floor
+  On the −X side the ledge is relieved under the header pins, except a 0.6 mm strip against the wall
+  (`hdr_ledge_keep`, X −15.95 to −15.35) that runs its full length, so the board edge is still carried when the Dupont
+  plug is pushed on. 0.4 mm of that strip is under the PCB (the other 0.2 is the `pcb_clr` gap). The header pin
+  centres are at X −14.18 in the model (1.57 mm in from the PCB edge), so the strip ends 1.17 mm from a pin centre,
+  about 0.3 mm from the edge of a 1.7 mm pad, and stays outside the red pin-zone ghost (from X −14.5). The header
+  position is still a guess from photos: check that no solder fillet reaches within 0.4 mm of the −X PCB edge. A 0.4 mm gusset fills the corner between the floor
   and the front skin, keeping 1.2 mm square to the bottom front chamfer.
 - **Backstop** (`bs_*`): a rigid 1.6 mm rib across the tray floor, 0.25 mm behind the PCB rear edge (Y 26.25–27.85),
   rising to 1.0 mm above the PCB top. Across the +X 5V/GND wire zone (X 5.7–11.8) it stops level with the PCB top.
@@ -200,7 +207,7 @@ fingers) and bent across the layer lines. This revision:
   going back if it is pushed in the tray before the lid is on, and catches it if anything else gives.
 - **Side clips removed.** The flexing tray clips that caught the PCB edge (1.0 mm fingers grown along Z, bending
   across the layer lines) were removed, not enlarged. The board is held down by rigid lid pressers instead.
-- **Pressers:** ribs from the lid side walls come down to 0.1 mm above the board edge, covering 1.2 mm of it: −X at
+- **Pressers:** ribs from the lid side walls come down to 0.25 mm above the board edge (`press_gap`), covering 1.2 mm of it: −X at
   Y 13.8 (between the lugs, which end at Y 12.0, and the header, which starts at 15.6), +X at Y 13.8, 17 and 21 (moved from 24: nothing may press on the PCB top within 3 mm of its rear
   edge, `pcb_rear_keepout`, where the board has resistors; an orange keep-out ghost enforces it). Below
   the split they stand 0.2 mm off the tray wall; above it they are rooted in the lid wall with a 45° top.
@@ -236,7 +243,8 @@ with small gaps:
   stadium section, 0.05 mm under the shell bottom (`tongue_gap`) and 0.35 mm off the rounded ends
   (`tongue_side_clr` 0.3 + 0.05), so the guides, not the cradle, locate the XIAO in X. The tongue's front face is
   0.2 mm behind the PCB rear edge.
-- **Above:** two rigid pads from the lid ceiling, 0.1 mm (`xpad_gap`) above:
+- **Above:** two rigid pads from the lid ceiling, 0.25 mm (`xpad_gap`) above (the lid's USB slot, 0.2 mm (`usb_clr`)
+  above the shell's rear end, is now the first thing a rising XIAO meets: up 0.2 is clear, up 0.22 touches it):
   - the RF shield top: a 1.6 mm wall ring over the shield outline, inset 0.5 mm (X ±5.8, Y 14.65–24.25);
   - the USB-C shell's flat top (X ±2.8, from 0.5 mm behind the shell front to the rear wall). This is the support
     above the USB-C port: a plug pushed in at an angle now bears on the case.
@@ -292,14 +300,23 @@ The green ghost wires show one feasible route, and the interference check confir
 
 - **Fingers:** there are two snap fingers per side (Y 7 and 27.5), 1.4 mm thick and 6 mm wide, flush with the outside.
   - The free length is 9 mm: 4 mm is slotted into the lid wall, and 5 mm hangs below the split.
-  - The bending strain at full hook deflection is about 1.6 %.
+  - In the lid wall the slot is 0.6 mm behind the finger (`lc_slot_back`). It was 0.15 mm (`lc_gap`, still the gap in
+    the tray pocket), which PETG would bridge and weld, leaving only the 5 mm below the split free. The lid wall behind
+    the slot stays 1.42 mm (front pair) and 1.36 mm (rear pair) thick.
+  - The hooks stand 0.6 mm proud of the finger (`lc_hook`, was 0.75); 0.45 mm of that passes the tray pocket floor,
+    which is both the catch engagement and the finger deflection while it snaps over.
+  - The bending strain at full deflection is about 1.2 % (1.5 · t · y / L², t 1.4, y 0.45, L 9). It was about 1.6 %
+    with the 0.75 mm hook (y 0.6), and would have been about 5 % with the old hook if the slot had welded (L 5).
 - **Catch:** the hooks catch on the top edge of a window through the tray wall, in pockets on its outer face. The
-  window opens below the RS232 board, beside the ledge.
+  window opens below the RS232 board, beside the ledge. Its top is 0.35 mm above the hook top (`lc_win_up`, was 0.1),
+  so the snaps still click home if the lid is held up to 0.35 mm high by a pad, a presser or the flange. The price is
+  up to 0.35 mm of vertical play in the closed lid, so the XIAO and the board can rise about 0.6 mm (pad / presser gap
+  0.25 plus the window) before the lid stops them; a USB plug pushed in at an angle meets the case after that.
 - **Opening:** there is a 0.9 mm pry gap below each finger tip. Push a thin screwdriver in and lever the finger
   outwards.
 - **Unchanged in revision 2, and the next likely failure.** These fingers are also grown along Z and bend across the
   layer lines, the same weakness that broke the XIAO clamps and the board clips. They are thicker (1.4 mm) and
-  longer (9 mm), at 1.6 % strain, but open and close them gently and expect them to be the first thing to crack.
+  longer (9 mm), at 1.2 % strain, but open and close them gently and expect them to be the first thing to crack.
 
 ### Dupont plug on the RS232 header
 
@@ -332,15 +349,16 @@ ghost, `ghost_dupont()`), and the interference checks fail if any case feature e
   passes at 22 mm.
 - **Why:** the first print's 22 mm deboss had 0.8 mm features and sharp corners as gaps in the first layers on the
   bed, which strung badly and did not read.
-- **Two-colour inlay (default, `logo_mode = "inlay"`):** `part="logo"` exports the logo body, `logo_depth` 0.6 mm
-  thick, in lid print orientation and lid coordinates (`out/logo.stl`). The same body is cut from the lid with no
-  clearance: the lid's volume drops by exactly the inlay's 0.280 cm³, and the two do not overlap.
-- **Single-colour fallback:** `logo_mode = "deboss"` cuts the same bold mark 0.6 mm deep; `"none"` leaves the top plain.
+- **Two-colour inlay (default, `logo_mode = "inlay"`):** `part="logo"` exports the logo body, `logo_depth` 0.68 mm
+  thick (the profile's first four layers: 0.2 + 3 × 0.16), in lid print orientation and lid coordinates (`out/logo.stl`). The same body is cut from the lid with no
+  clearance: the lid's volume drops by exactly the inlay's 0.317 cm³, and the two do not overlap.
+- **Single-colour fallback:** `logo_mode = "deboss"` cuts the same bold mark 0.68 mm deep; `"none"` leaves the top plain.
 - **Orientation:** the mark reads upright when you look down on the assembled case with the DB9 at the bottom edge,
   nearest you. The WiFi arcs point towards the USB-C end. `renders/lid_top_logo.png` (inlay, white) and
   `lid_top_logo_deboss.png` show it.
-- **Skin:** the top skin is 1.6 mm (`ceil_t`), so 1.0 mm of lid remains under the 0.6 mm logo. The model asserts at
-  least 1.0 mm. Nothing inside the lid comes above the ceiling.
+- **Skin:** the top skin is 1.6 mm (`ceil_t`), so 0.92 mm of lid remains under the 0.68 mm logo. The model asserts at
+  least 0.9 mm (it asserted 1.0 with a 0.6 mm logo). The skin cannot grow: the 25 mm envelope and the Dupont ceiling
+  fix both its faces. 0.92 mm is six 0.16 mm layers, all solid (5 bottom and 6 top shell layers overlap across it). Nothing inside the lid comes above the ceiling.
 
 ### Fit coupons
 
@@ -349,7 +367,7 @@ cut flat at `coupon_y1` = 14.5 mm, in normal print orientation. They contain the
 front wall that the flange bears on, the leg-tail pockets at Y 9.5, the front pair of lid snaps (Y 7), the front
 pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 9 g of PETG. The lid
 coupon has no logo (single colour). The cut stops at 14.5 rather than 15 because the shield pad ring starts at
-Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.957 cm³, lid coupon 6.433 cm³ (the lid coupon is now 26 mm tall). Both are single
+Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.951 cm³, lid coupon 6.406 cm³ (the lid coupon is now 26 mm tall). Both are single
 pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in them.
 
 ## Assembly order
@@ -367,7 +385,7 @@ pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in
      lead-in);
    - the guides' 0.8 mm lead-ins centre the XIAO in X, the strut's lead-in pushes it back if it sits forward, and the
      lid's USB slot comes down over the receptacle;
-   - the pads stop 0.1 mm above the shield and the USB shell, the pressers 0.1 mm above the board edges;
+   - the pads stop 0.25 mm above the shield and the USB shell, the pressers 0.25 mm above the board edges;
    - the four snaps click.
    No rigid feature has to pass through the XIAO, the board or the DB9 on the way: `check_lid_path` proves it (below).
 4. **Check:** plug a USB-C cable in and out. Nothing should move.
@@ -388,7 +406,8 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the PCB on the front skin and the ledges
 - the lid rim on the tray rim
 
-**Controls** (`./controls.sh`, 45 lines, all must pass; about 80 s). Each moves one ghost and states whether a check must find
+**Controls** (`./controls.sh`, 55 lines, all must pass; about 5 min). An OpenSCAD error (an `ERROR` line such as a
+failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each moves one ghost and states whether a check must find
 real overlap (any piece of at least 0.01 mm³) or none:
 
 | Moved | Check | Result |
@@ -402,8 +421,10 @@ real overlap (any piece of at least 0.01 mm³) or none:
 | leg tails ±0.5 in Y | tray | none |
 | leg tails ±0.7 in Y | tray | hits the pockets |
 | leg tails +0.9 in X | tray | none |
-| XIAO up 0.05 | lid | none |
-| XIAO up 0.15 and 0.3 | lid | hits both pads |
+| leg tails +1.5 in X | tray | hits the pockets |
+| RS232 PCB alone up 0.2 / 0.3 (`ghost_board_dz`) | lid | none / hits the four pressers (0.25 above) |
+| XIAO up 0.05 and 0.2 | lid | none |
+| XIAO up 0.3 | lid | hits both pads |
 | XIAO down 0.04 / 0.06 | tray | none / hits the tongue |
 | XIAO ±X 0.15 | tray, lid | none |
 | XIAO ±X 0.3 | lid | hits a guide (and the USB slot side) |
@@ -413,6 +434,11 @@ real overlap (any piece of at least 0.01 mm³) or none:
 | Dupont keep-out −X 1 / −Y 1 / +Y 1 / up 1 | lid | hits the side wall / −X presser / −X guide / ceiling |
 | −X guide not trimmed (`dupont_clr=-20`) | lid | hits the Dupont zone |
 | +X presser back at Y 24 | lid | hits the rear-edge keep-out |
+| the same, keep-out lowered 3.7 / 3.8 (top 0.3 / 0.2) | lid | hits / none: the keep-out covers the presser bottom (0.25) |
+| snap pockets 0.3 too tight (`clip_clr` −0.3) | tray / lid | hits |
+| pressers into the tray wall (`press_wall_clr` −0.1) | tray / lid | hits |
+| lid held up 0.3 (`ghost_lid_dz`) | tray / lid | none: the hooks are still under the catch window tops |
+| lid held up 0.4, or 0.3 with the old 0.1 window | tray / lid | hits (hook over the window top) |
 | flange plate 0.5 deeper (`ghost_plate_d` 5.6) | lid / lid path | hits the front wall (71 mm³) |
 | revision 2 lid (`fl_plate_d` 0.38) against the 5.1 plate | lid | hits (473 mm³): the reported fault |
 | logo at 30 mm / 20 mm | `check_logo` | none / hits |
@@ -427,10 +453,11 @@ edge. It is clear in the closed position (`check_lid` stays empty) but the swept
 
 **Wall thickness:** `build.sh` also exports both parts in assembly position (`part="tray_inplace"`/`"lid_inplace"`) and
 runs `wallprobe.py`, which casts a ray inwards from sample points on every face and lists everything under 1.2 mm.
-What remains is deliberate:
+What remains is deliberate, and `build.sh` whitelists exactly these regions (`--allow` boxes with a minimum
+thickness); any other sample under 1.2 mm fails the build:
 
-- the lid snap hooks (0.84 and 1.02 mm)
-- the 1.0 mm skin under the logo pocket (the inlay fills it in the two-colour print)
+- the lid snap hooks (0.95 and 1.10 mm)
+- the 0.92 mm skin under the logo pocket (the inlay fills it in the two-colour print)
 - the tongue's top edges beside the USB cradle (0.93–0.95 mm; they taper to the 0.5 mm `tongue_tip` at the top). They
   only round the opening and carry nothing: the shell rests on the cradle bottom, 0.35 mm off these edges.
 - 1.19 mm at the front bottom floor: the floor / front skin gusset, 1.2 mm by construction square to the 45° chamfer

@@ -5,8 +5,10 @@ From sample points on every triangle, a ray goes inward (against the face normal
 surface it meets is the local material thickness there. Prints the minimum and every sample under the threshold,
 grouped into 1 mm cells, so thin spots can be located and judged (a snap finger is meant to be thin; a wall is not).
 
-Usage: wallprobe.py part.stl [--min 1.2] [--box x0 x1 y0 y1 z0 z1 ...]
+Usage: wallprobe.py part.stl [--min 1.2] [--box x0 x1 y0 y1 z0 z1 ...] [--allow x0 x1 y0 y1 z0 z1 tmin ...]
   --box limits the report to samples inside the given box (repeatable).
+  --allow whitelists thin samples inside a box down to tmin (repeatable). Any thin sample not covered by an --allow
+  box is listed as NEW and the exit status is 1, so a gate fails on a new sliver instead of only printing it.
 """
 import argparse
 import os
@@ -62,6 +64,8 @@ def main():
     ap.add_argument('--box', type=float, nargs=6, action='append')
     ap.add_argument('--sub', type=int, default=4)
     ap.add_argument('--summary', action='store_true', help='one line per thickness value with its extent')
+    ap.add_argument('--allow', type=float, nargs=7, action='append', metavar=('X0', 'X1', 'Y0', 'Y1', 'Z0', 'Z1', 'TMIN'),
+                    help='known thin region: samples inside it at least TMIN thick are accepted')
     args = ap.parse_args()
     P, t = probe(read_stl(args.stl), args.sub)
     finite = np.isfinite(t)
@@ -74,6 +78,11 @@ def main():
         sel &= inbox
     print(f'{args.stl}: {sel.sum()} samples, min thickness {t[sel].min():.2f} mm')
     thin = sel & (t < args.min - 1e-3)
+    allowed = np.zeros(len(P), bool)
+    for x0, x1, y0, y1, z0, z1, tmin in args.allow or []:
+        allowed |= ((P[:, 0] >= x0) & (P[:, 0] <= x1) & (P[:, 1] >= y0) & (P[:, 1] <= y1)
+                    & (P[:, 2] >= z0) & (P[:, 2] <= z1) & (t >= tmin - 1e-3))
+    new = thin & ~allowed
     cells = {}
     for p, tt in zip(P[thin], t[thin]):
         k = tuple(np.floor(p).astype(int))
@@ -86,9 +95,15 @@ def main():
             K = np.array(groups[v])
             lo, hi = K.min(axis=0), K.max(axis=0) + 1
             print(f'   {v:.2f} mm in {len(K)} cells, x {lo[0]}..{hi[0]} y {lo[1]}..{hi[1]} z {lo[2]}..{hi[2]}')
-        return
-    for k in sorted(cells, key=lambda k: (cells[k], k)):
-        print(f'   {cells[k]:.2f} mm at x {k[0]}..{k[0] + 1} y {k[1]}..{k[1] + 1} z {k[2]}..{k[2] + 1}')
+    else:
+        for k in sorted(cells, key=lambda k: (cells[k], k)):
+            print(f'   {cells[k]:.2f} mm at x {k[0]}..{k[0] + 1} y {k[1]}..{k[1] + 1} z {k[2]}..{k[2] + 1}')
+    if args.allow is not None:
+        for p, tt in sorted(zip(P[new], t[new]), key=lambda a: a[1])[:20]:
+            print(f'   NEW {tt:.2f} mm at x {p[0]:.2f} y {p[1]:.2f} z {p[2]:.2f} (not on the whitelist)')
+        print(f'   {int(new.sum())} thin samples outside the whitelist')
+        if new.any():
+            sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Positive and negative controls for the interference checks: each line moves a ghost and says whether the named
 # check must find real overlap ("hit": a piece of at least 0.01 mm3, thicker than 0.005 mm in every axis) or none.
-# Prints PASS / FAIL per line and exits non-zero on any FAIL.
+# Prints PASS / FAIL per line and exits non-zero on any FAIL. An OpenSCAD error (an ERROR line such as a failed assert,
+# or a non-zero exit that is not just "Current top level object is empty.") is reported as got "error" and fails.
 # Usage: ./controls.sh
 set -u
 cd "$(dirname "$0")"
@@ -12,8 +13,12 @@ fails=0
 ctl() {   # name check expect -D ...
   name=$1; chk=$2; want=$3; shift 3
   rm -f "$TMP/o.stl"
-  "$OSC" --backend=manifold "$@" -D "part=\"$chk\"" -o "$TMP/o.stl" zebserial_case.scad > "$TMP/o.log" 2>&1
-  if [ -s "$TMP/o.stl" ]; then
+  st=0
+  "$OSC" --backend=manifold "$@" -D "part=\"$chk\"" -o "$TMP/o.stl" zebserial_case.scad > "$TMP/o.log" 2>&1 || st=$?
+  if grep -qE '^ERROR:|Assertion|Execution aborted' "$TMP/o.log" ||
+     { [ "$st" -ne 0 ] && ! grep -q 'Current top level object is empty' "$TMP/o.log"; }; then
+    got="error (exit $st: $(grep -m1 -E '^ERROR:|Assertion' "$TMP/o.log" | cut -c1-80))"
+  elif [ -s "$TMP/o.stl" ]; then
     got=$(python3 -I stlinfo.py --hits "$TMP/o.stl")
   else
     got=none
@@ -45,9 +50,14 @@ ctl "legs -0.5 Y"                  check_tray    none -D ghost_lug_dy=-0.5
 ctl "legs +0.7 Y"                  check_tray    hit  -D ghost_lug_dy=0.7
 ctl "legs -0.7 Y"                  check_tray    hit  -D ghost_lug_dy=-0.7
 ctl "legs +0.9 X"                  check_tray    none -D ghost_lug_dx=0.9
-# XIAO: pads 0.1 above, tongue 0.05 below, guides 0.2 either side, strut 0.2 in front, rear wall 0.2 behind
+ctl "legs +1.5 X"                  check_tray    hit  -D ghost_lug_dx=1.5
+# RS232 PCB alone up (pressers press_gap 0.25 above its top)
+ctl "pcb up 0.2"                   check_lid     none -D ghost_board_dz=0.2
+ctl "pcb up 0.3 (pressers)"        check_lid     hit  -D ghost_board_dz=0.3
+# XIAO: pads 0.25 above, tongue 0.05 below, guides 0.2 either side, strut 0.2 in front, rear wall 0.2 behind
+# (the lid USB slot is usb_clr 0.2 above the shell's rear end, so "up 0.2" just touches it)
 ctl "xiao up 0.05"                 check_lid     none -D 'ghost_offset=[0,0,0.05]'
-ctl "xiao up 0.15 (pads)"          check_lid     hit  -D 'ghost_offset=[0,0,0.15]'
+ctl "xiao up 0.2"                  check_lid     none -D 'ghost_offset=[0,0,0.2]'
 ctl "xiao up 0.3 (pads)"           check_lid     hit  -D 'ghost_offset=[0,0,0.3]'
 ctl "xiao down 0.04"               check_tray    none -D 'ghost_offset=[0,0,-0.04]'
 ctl "xiao down 0.06 (tongue)"      check_tray    hit  -D 'ghost_offset=[0,0,-0.06]'
@@ -74,6 +84,18 @@ ctl "plate 0.5 deeper (path)"      check_lid_path hit  -D '$fn=16' -D ghost_plat
 ctl "rev 2 lid vs the 5.1 plate"   check_lid      hit  -D fl_plate_d=0.38 -D ghost_plate_d=5.1
 # RS232 PCB rear-edge keep-out (resistors): a presser at Y 24 (the revision 2 position) must hit it
 ctl "+X presser at Y 24 (rear edge)" check_lid    hit  -D 'press_y_right=[13.8,17,24]'
+# the keep-out reaches up past the presser bottoms: lowered 3.7 (top 0.3, presser bottom 0.25) it still catches the
+# Y 24 presser, lowered 3.8 (top 0.2) it does not
+ctl "presser Y 24, keep-out top 0.3" check_lid    hit  -D 'press_y_right=[13.8,17,24]' -D ghost_board_dz=-3.7
+ctl "presser Y 24, keep-out top 0.2" check_lid    none -D 'press_y_right=[13.8,17,24]' -D ghost_board_dz=-3.8
+# tray against lid: the check must see a too-tight snap pocket and a presser into the tray wall
+ctl "snap pockets 0.3 too tight"   check_traylid hit  -D clip_clr=-0.3
+ctl "presser into the tray wall"   check_traylid hit  -D press_wall_clr=-0.1
+# snap engagement with the lid held high (by a pad, presser or the flange): up to 0.35 the hook top is still under
+# the catch window top (lc_win_up), so the finger springs in; the old 0.1 window misses at 0.3
+ctl "lid up 0.3 (snaps still catch)" check_traylid none -D ghost_lid_dz=0.3
+ctl "lid up 0.4 (hook above window)" check_traylid hit -D ghost_lid_dz=0.4
+ctl "lid up 0.3, old window 0.1"   check_traylid hit  -D ghost_lid_dz=0.3 -D lc_win_up=0.1
 # logo: every stroke and gap >= logo_min at logo_w 30; the same mark at 20 mm breaks it (0.6 mm corner fillets)
 ctl "logo at 30 mm"                check_logo     none
 ctl "logo at 20 mm"                check_logo     hit  -D logo_w=20
