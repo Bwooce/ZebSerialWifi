@@ -169,15 +169,18 @@ static pin_state_t probe_pin_other_high(int gpio, int other)
  * Drive one pin and watch the other: with a loopback plug, D-sub TX and RX
  * are joined, so RX follows TX through the MAX3232. Only ever called for
  * pins the passive probe found floating, so it never fights the MAX3232's
- * R1OUT driver.
+ * R1OUT driver. The sense pin is pulled UP: behind the RX Schottky diode
+ * (anode on the pin, cathode to R1OUT) the module can only pull RX low, so
+ * mark reads high only through our own pull-up. A pull-down would read low
+ * whatever the module did.
  */
 static bool probe_drive_sense(int drive_pin, int sense_pin)
 {
     gpio_config_t in_cfg = {
         .pin_bit_mask = 1ULL << sense_pin,
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
     gpio_config(&in_cfg);
     gpio_config_t out_cfg = {
@@ -237,7 +240,9 @@ bool board_detect_uart_pins(int *tx, int *rx)
         *tx = CONFIG_ZEB_UART_TX_GPIO;
         *rx = CONFIG_ZEB_UART_RX_GPIO;
         ESP_LOGW(TAG, "UART pin detection inconclusive, using TX=GPIO%d RX=GPIO%d. "
-                      "Check the module has power and its TXD pin goes to D4 or D5.", *tx, *rx);
+                      "Check the module has power and its TXD pin goes to D4 or D5. With RX behind a "
+                      "level-shift diode the pins look alike: fit a loopback plug at boot, or set the "
+                      "pins on the settings page.", *tx, *rx);
         for (size_t i = 0; i < sizeof(XIAO_PADS) / sizeof(XIAO_PADS[0]); i++) {
             pin_state_t s = probe_pin(XIAO_PADS[i].gpio);
             if (s != PIN_FLOATING) {
