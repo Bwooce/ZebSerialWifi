@@ -1,5 +1,5 @@
 /*
- * Host tests for zpl_status and urlcodec.
+ * Host tests for zpl_status, urlcodec and netcfg.
  *
  * ~HS fixtures are typed from the field layout documented for ~HS in the
  * Zebra ZPL II Programming Guide:
@@ -283,6 +283,55 @@ static void test_static_valid(void)
     CHECK(!netcfg_static_valid(ip, 0xFFFFFFFFu, gw));
 }
 
+static void test_hs_multi_digit_flags(void)
+{
+    zpl_hs_t hs;
+    /* flags are numeric: "00" is false, "01" is true */
+    CHECK(parse_str("\x02" "030,00,01,1245,000,0,0,0,000,0,0,0" "\x03\r\n" S2_OK S3_OK, &hs));
+    CHECK(!hs.paper_out);
+    CHECK(hs.pause);
+    CHECK(parse_str(S1_OK "\x02" "001,0,00,000,1,2,6,0,00000000,1,000" "\x03\r\n" S3_OK, &hs));
+    CHECK(!hs.head_up);
+    CHECK(!hs.ribbon_out);
+}
+
+static void test_json_escape(void)
+{
+    char out[64];
+    CHECK(json_escape("plain", out, sizeof(out)) == 5);
+    CHECK(strcmp(out, "plain") == 0);
+    json_escape("a\"b\\c", out, sizeof(out));
+    CHECK(strcmp(out, "a\\\"b\\\\c") == 0);
+    json_escape("t\tn\nr\r\x01\x1f", out, sizeof(out));
+    CHECK(strcmp(out, "t\\tn\\nr\\r\\u0001\\u001f") == 0);
+    json_escape("caf\xc3\xa9 </x>", out, sizeof(out));
+    CHECK(strcmp(out, "caf\xc3\xa9 \\u003c/x\\u003e") == 0);  /* UTF-8 passes; < > never reach markup */
+    /* never a partial escape at the end: "ab" + \u0001 needs 9 bytes with the NUL */
+    char small[8];
+    CHECK(json_escape("ab\x01", small, sizeof(small)) == 2);
+    CHECK(strcmp(small, "ab") == 0);
+    CHECK(json_escape("a\"", small, 3) == 1);
+    CHECK(strcmp(small, "a") == 0);
+    CHECK(json_escape("x", small, 1) == 0);
+    CHECK(small[0] == '\0');
+}
+
+static void test_origin_matches_host(void)
+{
+    CHECK(url_origin_matches_host("http://192.168.4.1", "192.168.4.1"));
+    CHECK(url_origin_matches_host("http://ZebSerial.local", "zebserial.local"));
+    CHECK(url_origin_matches_host("http://zebserial.local:8080", "zebserial.local:8080"));
+    CHECK(url_origin_matches_host("http://[fe80::1]/settings?x=1", "[fe80::1]"));
+    CHECK(url_origin_matches_host("http://10.0.0.5/", "10.0.0.5"));
+    CHECK(!url_origin_matches_host("http://evil.example", "zebserial.local"));
+    CHECK(!url_origin_matches_host("http://zebserial.local.evil.example/", "zebserial.local"));
+    CHECK(!url_origin_matches_host("http://zebserial.local:81", "zebserial.local"));
+    CHECK(!url_origin_matches_host("http://zebserial", "zebserial.local"));
+    CHECK(!url_origin_matches_host("null", "zebserial.local"));
+    CHECK(!url_origin_matches_host("", "zebserial.local"));
+    CHECK(!url_origin_matches_host("http://zebserial.local", ""));
+}
+
 int main(void)
 {
     test_hs_ok();
@@ -298,6 +347,9 @@ int main(void)
     test_hostname();
     test_ipv4_parse();
     test_static_valid();
+    test_hs_multi_digit_flags();
+    test_json_escape();
+    test_origin_matches_host();
     printf("%d checks, %d failures\n", s_checks, s_failures);
     return s_failures ? 1 : 0;
 }

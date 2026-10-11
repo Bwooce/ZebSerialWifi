@@ -1,5 +1,6 @@
 #include "zpl_status.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -53,15 +54,6 @@ static bool all_digits(const char *s)
     return true;
 }
 
-static bool flag(const frame_t *f, int idx, bool *out)
-{
-    if (!all_digits(f->field[idx])) {
-        return false;
-    }
-    *out = f->field[idx][0] != '0' || strlen(f->field[idx]) > 1;
-    return true;
-}
-
 static bool number(const frame_t *f, int idx, int *out)
 {
     if (!all_digits(f->field[idx])) {
@@ -69,9 +61,23 @@ static bool number(const frame_t *f, int idx, int *out)
     }
     int v = 0;
     for (const char *s = f->field[idx]; *s; s++) {
+        if (v > (INT_MAX - 9) / 10) {
+            return false;  /* a field this long is not a ~HS reply */
+        }
         v = v * 10 + (*s - '0');
     }
     *out = v;
+    return true;
+}
+
+/* A flag field is a number: "0" and "00" are false, anything non-zero true. */
+static bool flag(const frame_t *f, int idx, bool *out)
+{
+    int v;
+    if (!number(f, idx, &v)) {
+        return false;
+    }
+    *out = v != 0;
     return true;
 }
 

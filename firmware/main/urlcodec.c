@@ -1,6 +1,8 @@
 #include "urlcodec.h"
 
+#include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 static int hex_val(char c)
 {
@@ -66,4 +68,53 @@ bool form_get(const char *body, const char *key, char *out, size_t out_len)
         p = amp + 1;
     }
     return false;
+}
+
+size_t json_escape(const char *in, char *out, size_t out_len)
+{
+    size_t o = 0;
+    if (out_len == 0) {
+        return 0;
+    }
+    for (; *in; in++) {
+        unsigned char c = (unsigned char)*in;
+        char esc[8];
+        const char *rep = NULL;
+        switch (c) {
+        case '"': rep = "\\\""; break;
+        case '\\': rep = "\\\\"; break;
+        case '\n': rep = "\\n"; break;
+        case '\r': rep = "\\r"; break;
+        case '\t': rep = "\\t"; break;
+        default:
+            if (c < 0x20 || c == '<' || c == '>') {
+                snprintf(esc, sizeof(esc), "\\u%04x", c);
+                rep = esc;
+            }
+            break;
+        }
+        size_t l = rep ? strlen(rep) : 1;
+        if (o + l + 1 > out_len) {
+            break;
+        }
+        if (rep) {
+            memcpy(out + o, rep, l);
+        } else {
+            out[o] = (char)c;
+        }
+        o += l;
+    }
+    out[o] = '\0';
+    return o;
+}
+
+bool url_origin_matches_host(const char *url, const char *host)
+{
+    const char *p = strstr(url, "://");
+    if (p == NULL || host[0] == '\0') {
+        return false;
+    }
+    p += 3;
+    size_t n = strcspn(p, "/?#");
+    return n == strlen(host) && strncasecmp(p, host, n) == 0;
 }
