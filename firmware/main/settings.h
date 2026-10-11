@@ -37,6 +37,9 @@ typedef struct {
 /* Saved options, or the Kconfig defaults for anything not saved. */
 void settings_get_options(settings_options_t *out);
 
+/* True if every option is in range (what settings_set_options checks). */
+bool settings_options_valid(const settings_options_t *opt);
+
 /* Validates and saves. Returns ESP_ERR_INVALID_ARG for out-of-range values. */
 esp_err_t settings_set_options(const settings_options_t *opt);
 
@@ -57,6 +60,9 @@ typedef struct {
 
 /* Saved network settings, or DHCP with the default hostname. */
 void settings_get_net(settings_net_t *out);
+
+/* Hostname rules and, for a static address, subnet sanity (what settings_set_net checks). */
+bool settings_net_valid(const settings_net_t *net);
 
 /* Validates (hostname rules, subnet sanity) and saves. ESP_ERR_INVALID_ARG if invalid. */
 esp_err_t settings_set_net(const settings_net_t *net);

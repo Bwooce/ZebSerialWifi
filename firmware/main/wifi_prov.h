@@ -20,6 +20,13 @@ wifi_prov_state_t wifi_prov_state(void);
 /* True while the setup AP is running (it can overlap with CONNECTING). */
 bool wifi_prov_ap_active(void);
 
+/*
+ * True if the connected socket fd was reached through the setup AP (its
+ * local address is the AP's). If that cannot be read while the AP is up,
+ * answers true, so callers fail closed.
+ */
+bool wifi_prov_sock_on_ap(int fd);
+
 int wifi_prov_rssi(void);
 void wifi_prov_ip(char out[16]);
 

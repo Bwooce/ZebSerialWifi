@@ -128,10 +128,15 @@ void settings_get_options(settings_options_t *out)
     nvs_close(h);
 }
 
+bool settings_options_valid(const settings_options_t *opt)
+{
+    return opt->idle_timeout_s >= SETTINGS_IDLE_MIN_S && opt->idle_timeout_s <= SETTINGS_IDLE_MAX_S &&
+           settings_target_baud_valid(opt->target_baud) && opt->pins <= SETTINGS_PINS_TX_D5;
+}
+
 esp_err_t settings_set_options(const settings_options_t *opt)
 {
-    if (opt->idle_timeout_s < SETTINGS_IDLE_MIN_S || opt->idle_timeout_s > SETTINGS_IDLE_MAX_S ||
-        !settings_target_baud_valid(opt->target_baud) || opt->pins > SETTINGS_PINS_TX_D5) {
+    if (!settings_options_valid(opt)) {
         return ESP_ERR_INVALID_ARG;
     }
     nvs_handle_t h;
@@ -213,10 +218,15 @@ void settings_get_net(settings_net_t *out)
     }
 }
 
+bool settings_net_valid(const settings_net_t *net)
+{
+    return netcfg_hostname_valid(net->hostname) &&
+           (!net->static_ip || netcfg_static_valid(net->ip, net->mask, net->gw));
+}
+
 esp_err_t settings_set_net(const settings_net_t *net)
 {
-    if (!netcfg_hostname_valid(net->hostname) ||
-        (net->static_ip && !netcfg_static_valid(net->ip, net->mask, net->gw))) {
+    if (!settings_net_valid(net)) {
         return ESP_ERR_INVALID_ARG;
     }
     nvs_handle_t h;

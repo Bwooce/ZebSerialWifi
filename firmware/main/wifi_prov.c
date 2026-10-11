@@ -9,7 +9,10 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "lwip/inet.h"
+#include "lwip/sockets.h"
 #include "settings.h"
 
 static const char *TAG = "wifi";
@@ -19,6 +22,13 @@ static const char *TAG = "wifi";
 #define STA_RETRY_MS 2000
 
 static esp_netif_t *s_sta_netif;
+static esp_netif_t *s_ap_netif;
+/*
+ * start_ap runs from the fallback timer and stop_ap from the event task.
+ * Both, and every write of s_state, happen under this lock, so a GOT_IP
+ * that lands while the AP is starting cannot leave the AP up once connected.
+ */
+static SemaphoreHandle_t s_ap_lock;
 static volatile wifi_prov_state_t s_state = WIFI_ST_CONNECTING;
 static volatile bool s_ap_active;
 static bool s_have_creds;
@@ -65,7 +75,10 @@ static void set_mode(wifi_mode_t mode)
 
 static void start_ap(void)
 {
-    if (s_ap_active) {
+    xSemaphoreTake(s_ap_lock, portMAX_DELAY);
+    /* re-checked under the lock: the station may have got its IP since the caller looked */
+    if (s_ap_active || s_state == WIFI_ST_CONNECTED) {
+        xSemaphoreGive(s_ap_lock);
         return;
     }
     ESP_LOGI(TAG, "starting setup AP %s", s_ap_ssid);
@@ -81,21 +94,28 @@ static void start_ap(void)
     ap.ap.ssid_len = strlen(s_ap_ssid);
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
     s_ap_active = true;
-    if (s_state != WIFI_ST_CONNECTED) {
-        s_state = WIFI_ST_AP;
-    }
+    s_state = WIFI_ST_AP;
     dns_hijack_start();
+    xSemaphoreGive(s_ap_lock);
 }
 
 static void stop_ap(void)
 {
-    if (!s_ap_active) {
-        return;
+    xSemaphoreTake(s_ap_lock, portMAX_DELAY);
+    if (s_ap_active) {
+        ESP_LOGI(TAG, "station connected, stopping setup AP");
+        dns_hijack_stop();
+        set_mode(WIFI_MODE_STA);
+        s_ap_active = false;
     }
-    ESP_LOGI(TAG, "station connected, stopping setup AP");
-    dns_hijack_stop();
-    set_mode(WIFI_MODE_STA);
-    s_ap_active = false;
+    xSemaphoreGive(s_ap_lock);
+}
+
+static void set_state(wifi_prov_state_t st)
+{
+    xSemaphoreTake(s_ap_lock, portMAX_DELAY);
+    s_state = st;
+    xSemaphoreGive(s_ap_lock);
 }
 
 static void fallback_cb(void *arg)
@@ -137,7 +157,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             esp_timer_stop(s_fallback_timer);
             esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
         }
+        xSemaphoreTake(s_ap_lock, portMAX_DELAY);
         s_state = s_ap_active ? WIFI_ST_AP : WIFI_ST_CONNECTING;
+        xSemaphoreGive(s_ap_lock);
         if (s_have_creds) {
             esp_timer_stop(s_retry_timer);
             esp_timer_start_once(s_retry_timer, (uint64_t)(s_ap_active ? STA_RETRY_IN_AP_MS : STA_RETRY_MS) * 1000);
@@ -145,7 +167,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
-        s_state = WIFI_ST_CONNECTED;
+        set_state(WIFI_ST_CONNECTED);
         esp_timer_stop(s_fallback_timer);
         stop_ap();
     }
@@ -153,8 +175,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 void wifi_prov_start(void)
 {
+    s_ap_lock = xSemaphoreCreateMutex();
     s_sta_netif = esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
+    s_ap_netif = esp_netif_create_default_wifi_ap();
     settings_get_net(&s_net);
     esp_netif_set_hostname(s_sta_netif, s_net.hostname);
     if (s_net.static_ip) {
@@ -189,7 +212,7 @@ void wifi_prov_start(void)
         set_mode(WIFI_MODE_STA);
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
         ESP_LOGI(TAG, "connecting to \"%s\"", s_ssid);
-        s_state = WIFI_ST_CONNECTING;
+        set_state(WIFI_ST_CONNECTING);
         esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
         ESP_ERROR_CHECK(esp_wifi_start());
     } else {
@@ -209,6 +232,37 @@ wifi_prov_state_t wifi_prov_state(void)
 bool wifi_prov_ap_active(void)
 {
     return s_ap_active;
+}
+
+bool wifi_prov_sock_on_ap(int fd)
+{
+    if (!s_ap_active) {
+        return false;
+    }
+    struct sockaddr_storage local;
+    socklen_t len = sizeof(local);
+    esp_netif_ip_info_t ap;
+    if (getsockname(fd, (struct sockaddr *)&local, &len) != 0 || esp_netif_get_ip_info(s_ap_netif, &ap) != ESP_OK) {
+        return true;
+    }
+    uint32_t addr;
+    if (local.ss_family == AF_INET) {
+        addr = ((struct sockaddr_in *)&local)->sin_addr.s_addr;
+    } else if (local.ss_family == AF_INET6) {
+        /*
+         * Dual-stack sockets report IPv4 as ::ffff:a.b.c.d. A native IPv6
+         * address is never the AP's: only the station gets a link-local.
+         */
+        const uint8_t *b = ((struct sockaddr_in6 *)&local)->sin6_addr.s6_addr;
+        static const uint8_t v4_mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff};
+        if (memcmp(b, v4_mapped, sizeof(v4_mapped)) != 0) {
+            return false;
+        }
+        memcpy(&addr, b + 12, sizeof(addr));
+    } else {
+        return true;
+    }
+    return addr == ap.ip.addr;
 }
 
 int wifi_prov_rssi(void)
