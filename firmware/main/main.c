@@ -101,18 +101,20 @@ void app_main(void)
     settings_get_options(&opt);
     int tx;
     int rx;
-    if (opt.pins == SETTINGS_PINS_TX_D4) {
-        tx = 22;
+    bool pins_sure = true;
+    if (opt.pins == SETTINGS_PINS_TX_D3) {
+        tx = 21;
         rx = 23;
-        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO22 (D4) RX=GPIO23 (D5)");
+        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO21 (D3) RX=GPIO23 (D5)");
     } else if (opt.pins == SETTINGS_PINS_TX_D5) {
         tx = 23;
-        rx = 22;
-        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO23 (D5) RX=GPIO22 (D4)");
+        rx = 21;
+        ESP_LOGI(TAG, "UART pins fixed by setting: TX=GPIO23 (D5) RX=GPIO21 (D3)");
     } else {
-        board_detect_uart_pins(&tx, &rx);
+        pins_sure = board_detect_uart_pins(&tx, &rx);
     }
     ESP_ERROR_CHECK(printer_link_init(tx, rx));
+    printer_link_allow_pin_swap(!pins_sure);
     printer_link_set_target_baud(opt.target_baud);
 
     ESP_ERROR_CHECK(esp_netif_init());

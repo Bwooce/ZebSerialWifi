@@ -60,6 +60,9 @@ void printer_link_get_status(printer_status_t *out);
  */
 void printer_link_set_target_baud(uint32_t baud);
 
+/* Let detection swap TX and RX when no printer answers (pins not fixed or detected). */
+void printer_link_allow_pin_swap(bool allow);
+
 /* Move the UART to other pins (waits for any print job to finish), then re-detect. */
 esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio);
 

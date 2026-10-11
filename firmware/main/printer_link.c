@@ -54,6 +54,7 @@ static bool s_raise_tried;
  * so it always gets flow control, detected or not.
  */
 static volatile bool s_echo;
+static bool s_pin_swap;
 static volatile uint32_t s_target_baud = 115200;
 /* TX ring free space right after driver install, i.e. what "empty" reads as (less than TX_BUF: item headers) */
 static size_t s_tx_free_empty;
@@ -325,9 +326,41 @@ static bool configure_printer(void)
 }
 
 /* Full detection. Caller holds s_lock. */
+/* Swap TX and RX; the caller holds s_lock. */
+static void swap_pins(void)
+{
+    uart_wait_tx_done(PORT, pdMS_TO_TICKS(500));
+    int tx = s_rx_gpio;
+    int rx = s_tx_gpio;
+    gpio_reset_pin(s_tx_gpio);
+    gpio_reset_pin(s_rx_gpio);
+    if (uart_set_pin(PORT, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
+        ESP_LOGE(TAG, "pin swap failed");
+        return;
+    }
+    s_tx_gpio = tx;
+    s_rx_gpio = rx;
+    gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY);
+    uart_flush_input(PORT);
+    ESP_LOGI(TAG, "trying swapped pins: TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
+}
+
 static bool detect(void)
 {
-    if (!scan() || !configure_printer()) {
+    bool found = scan();
+    if (!found && s_pin_swap) {
+        swap_pins();
+        found = scan();
+        if (!found) {
+            swap_pins();  /* back to the first guess, which jobs use until a printer answers */
+            set_baud(fallback_baud());
+        }
+    }
+    if (found && s_pin_swap) {
+        s_pin_swap = false;  /* keep these pins until reboot */
+        ESP_LOGI(TAG, "printer found with TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
+    }
+    if (!found || !configure_printer()) {
         s_detected = false;
         return false;
     }
@@ -525,6 +558,11 @@ esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio)
     printer_link_release();
     printer_link_request_redetect();
     return err;
+}
+
+void printer_link_allow_pin_swap(bool allow)
+{
+    s_pin_swap = allow;
 }
 
 void printer_link_request_redetect(void)

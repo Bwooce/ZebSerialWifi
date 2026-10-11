@@ -16,8 +16,8 @@ esp_err_t settings_clear_wifi(void);
 /* Runtime options, editable from the status page. */
 typedef enum {
     SETTINGS_PINS_AUTO = 0,     /* detect which pin is RX at boot */
-    SETTINGS_PINS_TX_D4 = 1,    /* TX=GPIO22 (D4), RX=GPIO23 (D5) */
-    SETTINGS_PINS_TX_D5 = 2,    /* TX=GPIO23 (D5), RX=GPIO22 (D4) */
+    SETTINGS_PINS_TX_D3 = 1,    /* TX=GPIO21 (D3), RX=GPIO23 (D5) */
+    SETTINGS_PINS_TX_D5 = 2,    /* TX=GPIO23 (D5), RX=GPIO21 (D3) */
 } settings_pins_t;
 
 /*

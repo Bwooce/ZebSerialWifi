@@ -12,7 +12,7 @@ static const char *TAG = "board";
 #define GPIO_ANT_SELECT 14    /* low: ceramic antenna, high: U.FL */
 #define GPIO_LED 15           /* user LED, active low */
 #define GPIO_BOOT 9           /* BOOT button, active low */
-#define GPIO_UART_A 22        /* XIAO D4 */
+#define GPIO_UART_A 21        /* XIAO D3 */
 #define GPIO_UART_B 23        /* XIAO D5 */
 
 #define LED_TICK_MS 50
@@ -211,7 +211,7 @@ bool board_detect_uart_pins(int *tx, int *rx)
 {
     pin_state_t a = probe_pin_other_high(GPIO_UART_A, GPIO_UART_B);
     pin_state_t b = probe_pin_other_high(GPIO_UART_B, GPIO_UART_A);
-    ESP_LOGI(TAG, "passive probe: D4/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B,
+    ESP_LOGI(TAG, "passive probe: D3/GPIO%d %s, D5/GPIO%d %s", GPIO_UART_A, pin_state_name(a), GPIO_UART_B,
              pin_state_name(b));
 
     /*
@@ -229,6 +229,21 @@ bool board_detect_uart_pins(int *tx, int *rx)
         }
     }
 
+    /*
+     * One pin high and the other floating fits two wirings: R1OUT wired
+     * straight to the high pin with T1IN undriven (module at 3.3 V), or a
+     * module at 5 V whose T1IN pull-up drives the TX pin high while RX
+     * floats behind the level-shift diode. Use the defaults; the printer
+     * link tries the swapped pins if no printer answers.
+     */
+    if ((a == PIN_DRIVEN_HIGH && b == PIN_FLOATING) || (b == PIN_DRIVEN_HIGH && a == PIN_FLOATING)) {
+        *tx = CONFIG_ZEB_UART_TX_GPIO;
+        *rx = CONFIG_ZEB_UART_RX_GPIO;
+        ESP_LOGI(TAG, "one pin high, one floating: using the default TX=GPIO%d RX=GPIO%d, swapped if no printer "
+                      "answers", *tx, *rx);
+        return false;
+    }
+
     /* MAX3232 R1OUT idles high (RS232 input open or at mark); T1IN is an undriven input */
     if (a == PIN_DRIVEN_HIGH && b != PIN_DRIVEN_HIGH) {
         *rx = GPIO_UART_A;
@@ -240,7 +255,7 @@ bool board_detect_uart_pins(int *tx, int *rx)
         *tx = CONFIG_ZEB_UART_TX_GPIO;
         *rx = CONFIG_ZEB_UART_RX_GPIO;
         ESP_LOGW(TAG, "UART pin detection inconclusive, using TX=GPIO%d RX=GPIO%d. "
-                      "Check the module has power and its TXD pin goes to D4 or D5. With RX behind a "
+                      "Check the module has power and its TXD pin goes to D3 or D5. With RX behind a "
                       "level-shift diode the pins look alike: fit a loopback plug at boot, or set the "
                       "pins on the settings page.", *tx, *rx);
         for (size_t i = 0; i < sizeof(XIAO_PADS) / sizeof(XIAO_PADS[0]); i++) {

@@ -401,11 +401,11 @@ static esp_err_t settings_get_page(httpd_req_t *req)
     snprintf(buf, sizeof(buf),
              "<label>UART pins <small>(reboots)</small></label><select name=pins>"
              "<option value=0%s>Detect at boot</option>"
-             "<option value=1%s>TX on D4, RX on D5</option>"
-             "<option value=2%s>TX on D5, RX on D4</option></select>"
+             "<option value=1%s>TX on D3, RX on D5</option>"
+             "<option value=2%s>TX on D5, RX on D3</option></select>"
              "<label>Close an idle print connection after (seconds, %d to %d)</label>"
              "<input name=idle type=number min=%d max=%d value=%u></fieldset>",
-             opt.pins == SETTINGS_PINS_AUTO ? " selected" : "", opt.pins == SETTINGS_PINS_TX_D4 ? " selected" : "",
+             opt.pins == SETTINGS_PINS_AUTO ? " selected" : "", opt.pins == SETTINGS_PINS_TX_D3 ? " selected" : "",
              opt.pins == SETTINGS_PINS_TX_D5 ? " selected" : "", SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S,
              SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S, (unsigned)opt.idle_timeout_s);
     httpd_resp_sendstr_chunk(req, buf);
