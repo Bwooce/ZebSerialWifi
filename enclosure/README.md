@@ -368,7 +368,8 @@ front wall that the flange bears on, the leg-tail pockets at Y 9.5, the front pa
 pressers and the start of the side ledges, so the DB9 board can be test-fitted for about 9 g of PETG. The lid
 coupon has no logo (single colour). The cut stops at 14.5 rather than 15 because the shield pad ring starts at
 Y 14.65 and would leave a 0.35 mm slice. Volumes: tray coupon 1.951 cm³, lid coupon 6.406 cm³ (the lid coupon is now 26 mm tall). Both are single
-pieces; the wall probe finds only the known 1.19 mm gusset and the snap hooks in them.
+pieces; the wall probe finds only the known 1.19 mm gusset, the snap hooks (0.95 and 1.10 mm) and the 1.05 mm
+long ledge starts (Y 13.45) where the coupon cut at 14.5 crosses them, an artifact of the cut.
 
 ## Assembly order
 
