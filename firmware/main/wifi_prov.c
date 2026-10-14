@@ -40,12 +40,16 @@ static settings_net_t s_net;
 
 static void apply_static_ip(void)
 {
+    esp_err_t err = esp_netif_dhcpc_stop(s_sta_netif);
+    if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        ESP_LOGW(TAG, "dhcpc stop: %s", esp_err_to_name(err));
+    }
     esp_netif_ip_info_t info = {
         .ip.addr = htonl(s_net.ip),
         .netmask.addr = htonl(s_net.mask),
         .gw.addr = htonl(s_net.gw),
     };
-    esp_err_t err = esp_netif_set_ip_info(s_sta_netif, &info);
+    err = esp_netif_set_ip_info(s_sta_netif, &info);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "static IP: %s", esp_err_to_name(err));
         return;
@@ -181,8 +185,7 @@ void wifi_prov_start(void)
     settings_get_net(&s_net);
     esp_netif_set_hostname(s_sta_netif, s_net.hostname);
     if (s_net.static_ip) {
-        esp_netif_dhcpc_stop(s_sta_netif);
-        ESP_LOGI(TAG, "static IP " IPSTR, IP2STR(&(esp_ip4_addr_t){.addr = htonl(s_net.ip)}));
+        ESP_LOGI(TAG, "configured static IP " IPSTR, IP2STR(&(esp_ip4_addr_t){.addr = htonl(s_net.ip)}));
     }
 
     uint8_t mac[6];

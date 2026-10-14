@@ -281,6 +281,10 @@ static void test_static_valid(void)
     CHECK(!netcfg_static_valid(ip, 0xFF00FF00u, gw));         /* non-contiguous mask */
     CHECK(!netcfg_static_valid(ip, 0, gw));
     CHECK(!netcfg_static_valid(ip, 0xFFFFFFFFu, gw));
+    CHECK(!netcfg_static_valid(0x7F000001u, mask, gw));       /* 127.0.0.1 loopback */
+    CHECK(!netcfg_static_valid(0xE0000001u, mask, gw));       /* 224.0.0.1 multicast */
+    CHECK(!netcfg_static_valid(0x00010203u, mask, gw));       /* 0.1.2.3 zero-net */
+    CHECK(!netcfg_static_valid(0xC0A80402u, mask, 0xC0A80401u)); /* 192.168.4.2 setup AP subnet */
 }
 
 static void test_hs_multi_digit_flags(void)

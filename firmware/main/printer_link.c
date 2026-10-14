@@ -29,7 +29,9 @@ static const char *TAG = "printer";
  */
 #define RX_FULL_THRESH 64
 #define XON_THRESH 32
-#define XOFF_THRESH 110
+#define XOFF_THRESH 120
+/* Ring buffer item overhead: uart_tx_all queues a uart_tx_data_t item before data */
+#define TX_ITEM_OVERHEAD 32
 
 static SemaphoreHandle_t s_lock;
 static SemaphoreHandle_t s_status_lock;
@@ -47,6 +49,7 @@ static uint64_t s_tx_bytes;
 static uint64_t s_rx_bytes;
 static volatile bool s_redetect;
 static bool s_raise_tried;
+static bool s_probe_sgd;
 /*
  * Set when the line echoes our own commands (a loopback plug). XON/XOFF is
  * then switched off: with the line looped, an XOFF we send comes straight
@@ -222,12 +225,14 @@ static bool scan(void)
         set_baud(cand[i]);
         if (probe_hs()) {
             ESP_LOGI(TAG, "printer answered ~HS at %lu baud", (unsigned long)cand[i]);
+            s_probe_sgd = false;
             return true;
         }
         char lang[32];
         if (sgd_get("device.languages", lang, sizeof(lang))) {
             ESP_LOGW(TAG, "printer answered SGD at %lu baud but not ~HS; device.languages = %s",
                      (unsigned long)cand[i], lang);
+            s_probe_sgd = true;
             return true;
         }
         ESP_LOGD(TAG, "no reply at %lu baud", (unsigned long)cand[i]);
@@ -235,6 +240,15 @@ static bool scan(void)
     set_baud(fallback_baud());
     ESP_LOGW(TAG, "printer not found at any baud, staying at %lu", (unsigned long)s_baud);
     return false;
+}
+
+static bool probe_current(void)
+{
+    if (s_probe_sgd) {
+        char dummy[32];
+        return sgd_get("device.languages", dummy, sizeof(dummy));
+    }
+    return probe_hs();
 }
 
 /* Stop reading the ^HH dump once its closing ETX has arrived. */
@@ -297,6 +311,7 @@ static bool configure_printer(void)
         return true;
     }
 
+    uint32_t old_baud = s_baud;
     uint32_t new_baud = move ? target : s_baud;
     char cmd[48];
     zpl_sc_command(cmd, sizeof(cmd), new_baud);
@@ -310,14 +325,58 @@ static bool configure_printer(void)
     uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
     vTaskDelay(pdMS_TO_TICKS(1500));
     set_baud(new_baud);
-    if (!probe_hs()) {
-        ESP_LOGW(TAG, "no reply at %lu baud after ^SC, rescanning; the printer may need a power cycle",
-                 (unsigned long)new_baud);
+
+    bool hs_ok = false;
+    for (int retry = 0; retry < 3; retry++) {
+        if (probe_hs()) {
+            s_probe_sgd = false;
+            hs_ok = true;
+            break;
+        }
+        char lang[32];
+        if (sgd_get("device.languages", lang, sizeof(lang))) {
+            s_probe_sgd = true;
+            hs_ok = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    if (!hs_ok && move) {
+        ESP_LOGW(TAG, "no reply at %lu baud after ^SC, attempting blind revert to %lu baud",
+                 (unsigned long)new_baud, (unsigned long)old_baud);
+        zpl_sc_command(cmd, sizeof(cmd), old_baud);
+        send_str(cmd);
+        uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        set_baud(old_baud);
+        if (probe_hs()) {
+            s_probe_sgd = false;
+            ESP_LOGI(TAG, "printer recovered at reverted %lu baud", (unsigned long)old_baud);
+            return true;
+        }
+        char lang[32];
+        if (sgd_get("device.languages", lang, sizeof(lang))) {
+            s_probe_sgd = true;
+            ESP_LOGI(TAG, "printer recovered at reverted %lu baud via SGD", (unsigned long)old_baud);
+            return true;
+        }
+        ESP_LOGW(TAG, "revert probe failed; staying on %lu baud", (unsigned long)new_baud);
+        set_baud(new_baud);
+        settings_set_baud(new_baud);
+        if (!scan()) {
+            return false;
+        }
+    } else if (!hs_ok) {
+        ESP_LOGW(TAG, "no reply after ^SC at %lu baud, rescanning", (unsigned long)new_baud);
         if (!scan()) {
             return false;
         }
     }
-    settings_set_flag("sc_sent", true);
+
+    if (hs_ok) {
+        settings_set_flag("sc_sent", true);
+    }
     if (read_handshake(hs, sizeof(hs))) {
         ESP_LOGI(TAG, "printer handshake now: %s", hs);
         publish_handshake(hs);
@@ -325,7 +384,6 @@ static bool configure_printer(void)
     return true;
 }
 
-/* Full detection. Caller holds s_lock. */
 /* Swap TX and RX; the caller holds s_lock. */
 static void swap_pins(void)
 {
@@ -345,6 +403,7 @@ static void swap_pins(void)
     ESP_LOGI(TAG, "trying swapped pins: TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
 }
 
+/* Full detection. Caller holds s_lock. */
 static bool detect(void)
 {
     bool found = scan();
@@ -392,7 +451,8 @@ static void link_task(void *arg)
             s_redetect = false;
             detect();
             poll_fails = 0;
-            next_us = now + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            int64_t finish = esp_timer_get_time();
+            next_us = finish + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
             if (!stack_logged) {
                 stack_logged = true;
                 ESP_LOGI(TAG, "stack: %u bytes never used after the first detect",
@@ -406,16 +466,19 @@ static void link_task(void *arg)
              * without counting it as a miss.
              */
             ESP_LOGD(TAG, "TX queued, skipping the ~HS poll");
-            next_us = now + (int64_t)SCAN_RETRY_MS * 1000;
+            int64_t finish = esp_timer_get_time();
+            next_us = finish + (int64_t)SCAN_RETRY_MS * 1000;
         } else {
-            if (probe_hs()) {
+            if (probe_current()) {
                 poll_fails = 0;
             } else if (++poll_fails >= POLL_FAILS_BEFORE_RESCAN) {
-                ESP_LOGW(TAG, "printer stopped answering ~HS, rescanning");
+                ESP_LOGW(TAG, "printer stopped answering %s, rescanning",
+                         s_probe_sgd ? "SGD" : "~HS");
                 s_detected = false;
                 poll_fails = 0;
             }
-            next_us = now + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            int64_t finish = esp_timer_get_time();
+            next_us = finish + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
         }
         printer_link_release();
     }
@@ -461,8 +524,9 @@ int printer_link_write(const uint8_t *data, size_t n, TickType_t wait)
     for (;;) {
         size_t free_sz = 0;
         uart_get_tx_buffer_free_size(PORT, &free_sz);
-        if (free_sz > 0) {
-            size_t chunk = n < free_sz ? n : free_sz;
+        if (free_sz > TX_ITEM_OVERHEAD) {
+            size_t room = free_sz - TX_ITEM_OVERHEAD;
+            size_t chunk = n < room ? n : room;
             int w = uart_write_bytes(PORT, data, chunk);
             if (w > 0) {
                 count_tx((size_t)w);
@@ -504,7 +568,14 @@ void printer_link_abort_tx(void)
 {
     ESP_LOGW(TAG, "discarding queued printer data");
     uart_driver_delete(PORT);
-    uart_setup(s_baud);
+    for (int retry = 0; retry < 3; retry++) {
+        esp_err_t err = uart_setup(s_baud);
+        if (err == ESP_OK) {
+            return;
+        }
+        ESP_LOGE(TAG, "failed to reinit UART after abort (attempt %d): %s", retry + 1, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 }
 
 void printer_link_get_status(printer_status_t *out)

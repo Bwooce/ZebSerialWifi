@@ -131,7 +131,8 @@ void settings_get_options(settings_options_t *out)
 bool settings_options_valid(const settings_options_t *opt)
 {
     return opt->idle_timeout_s >= SETTINGS_IDLE_MIN_S && opt->idle_timeout_s <= SETTINGS_IDLE_MAX_S &&
-           settings_target_baud_valid(opt->target_baud) && opt->pins <= SETTINGS_PINS_TX_D5;
+           settings_target_baud_valid(opt->target_baud) &&
+           opt->pins >= SETTINGS_PINS_AUTO && opt->pins <= SETTINGS_PINS_TX_D5;
 }
 
 esp_err_t settings_set_options(const settings_options_t *opt)

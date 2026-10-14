@@ -53,6 +53,14 @@ bool netcfg_ipv4_parse(const char *s, uint32_t *out)
 
 bool netcfg_static_valid(uint32_t ip, uint32_t mask, uint32_t gw)
 {
+    uint8_t first_octet = (uint8_t)(ip >> 24);
+    if (first_octet == 0 || first_octet == 127 || first_octet >= 224) {
+        return false;
+    }
+    /* Cannot clash with the setup AP subnet 192.168.4.0/24 */
+    if ((ip & 0xFFFFFF00u) == 0xC0A80400u) {
+        return false;
+    }
     if (mask == 0 || mask == 0xFFFFFFFFu) {
         return false;
     }

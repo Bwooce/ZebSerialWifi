@@ -86,6 +86,59 @@ static esp_err_t to_setup_page(httpd_req_t *req)
 }
 
 /*
+ * Validate Host header to protect against DNS rebinding attacks on the LAN.
+ * Captive-portal requests on the setup AP are exempt as phones use arbitrary probe hosts.
+ */
+static bool host_allowed(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return true;
+    }
+    char host[96];
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) {
+        return false;
+    }
+    /* Strip port if present */
+    char *colon = strchr(host, ':');
+    if (colon != NULL) {
+        char *bracket = strrchr(host, ']');
+        if (bracket != NULL) {
+            colon = strchr(bracket, ':');
+        } else if (strchr(colon + 1, ':') != NULL) {
+            colon = NULL;
+        }
+        if (colon != NULL) {
+            *colon = '\0';
+        }
+    }
+    if (strcmp(host, "192.168.4.1") == 0) {
+        return true;
+    }
+    char sta_ip[16] = "";
+    wifi_prov_ip(sta_ip);
+    if (sta_ip[0] != '\0' && strcmp(host, sta_ip) == 0) {
+        return true;
+    }
+    settings_net_t net;
+    settings_get_net(&net);
+    if (net.hostname[0] != '\0') {
+        char local_host[sizeof(net.hostname) + 8];
+        snprintf(local_host, sizeof(local_host), "%s.local", net.hostname);
+        if (strcasecmp(host, local_host) == 0 || strcasecmp(host, net.hostname) == 0) {
+            return true;
+        }
+    }
+    if (strcasecmp(host, "zebserial.local") == 0 || strcasecmp(host, "zebserial") == 0) {
+        return true;
+    }
+    if (host[0] == '[' || strchr(host, ':') != NULL) {
+        return true;
+    }
+    ESP_LOGW(TAG, "refused request with untrusted Host header: %s", host);
+    return false;
+}
+
+/*
  * CSRF guard for state-changing POSTs: a browser names the page a form came
  * from in Origin (or at least Referer), and it has to be this device as the
  * browser addressed it (the Host header). Requests with neither header (curl,
@@ -93,6 +146,9 @@ static esp_err_t to_setup_page(httpd_req_t *req)
  */
 static bool same_origin(httpd_req_t *req)
 {
+    if (!host_allowed(req)) {
+        return false;
+    }
     char from[192];
     esp_err_t err = httpd_req_get_hdr_value_str(req, "Origin", from, sizeof(from));
     if (err != ESP_OK && err != ESP_ERR_HTTPD_RESULT_TRUNC) {
@@ -157,8 +213,13 @@ static esp_err_t send_setup_page(httpd_req_t *req)
     bool want_rescan = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && strstr(q, "rescan") != NULL;
     int64_t now = esp_timer_get_time();
     if (want_rescan || scanned_at == 0 || now - scanned_at > SCAN_MAX_AGE_US) {
-        n = wifi_prov_scan(recs, MAX_SCAN);
-        scanned_at = now;
+        int res = wifi_prov_scan(recs, MAX_SCAN);
+        if (res > 0) {
+            n = res;
+            scanned_at = now;
+        } else if (scanned_at == 0) {
+            n = 0;
+        }
     }
     char esc[200];
     char line[512];
@@ -220,6 +281,9 @@ static esp_err_t root_get(httpd_req_t *req)
 {
     if (on_ap(req)) {
         return send_setup_page(req);
+    }
+    if (!host_allowed(req)) {
+        return cross_site(req);
     }
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
@@ -283,6 +347,9 @@ static esp_err_t status_get(httpd_req_t *req)
 {
     if (on_ap(req)) {
         return to_setup_page(req);
+    }
+    if (!host_allowed(req)) {
+        return cross_site(req);
     }
     printer_status_t p;
     bridge_stats_t b;
@@ -369,6 +436,9 @@ static esp_err_t settings_get_page(httpd_req_t *req)
 {
     if (on_ap(req)) {
         return to_setup_page(req);
+    }
+    if (!host_allowed(req)) {
+        return cross_site(req);
     }
     settings_options_t opt;
     settings_net_t net;
@@ -577,6 +647,7 @@ static esp_err_t not_found(httpd_req_t *req, httpd_err_code_t err)
 void web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.max_open_sockets = 4;
     cfg.stack_size = 8192;
     cfg.lru_purge_enable = true;
     httpd_handle_t server;

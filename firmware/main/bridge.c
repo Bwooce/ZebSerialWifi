@@ -97,6 +97,20 @@ static bool write_all(int sock, const uint8_t *data, size_t n)
     return true;
 }
 
+static bool is_cross_protocol(const uint8_t *data, size_t n)
+{
+    if (n >= 4 && (memcmp(data, "GET ", 4) == 0 || memcmp(data, "PUT ", 4) == 0)) {
+        return true;
+    }
+    if (n >= 5 && memcmp(data, "POST ", 5) == 0) {
+        return true;
+    }
+    if (n >= 8 && memcmp(data, "OPTIONS ", 8) == 0) {
+        return true;
+    }
+    return false;
+}
+
 static void serve(int sock)
 {
     uint8_t buf[CHUNK];
@@ -110,6 +124,8 @@ static void serve(int sock)
 
     struct timeval tv = {.tv_sec = 0, .tv_usec = 50 * 1000};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct timeval snd_tv = {.tv_sec = 5, .tv_usec = 0};
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &snd_tv, sizeof(snd_tv));
     int one = 1;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     int ka_idle = KEEPALIVE_IDLE_S;
@@ -120,9 +136,17 @@ static void serve(int sock)
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &ka_intvl, sizeof(ka_intvl));
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &ka_cnt, sizeof(ka_cnt));
 
+    bool first_chunk = true;
     while (!client_done) {
         int n = recv(sock, buf, sizeof(buf), 0);
         if (n > 0) {
+            if (first_chunk) {
+                first_chunk = false;
+                if (is_cross_protocol(buf, (size_t)n)) {
+                    ESP_LOGW(TAG, "rejecting cross-protocol HTTP request on print port 9100");
+                    return;
+                }
+            }
             last_activity = now_ms();
             if (!write_all(sock, buf, (size_t)n)) {
                 ESP_LOGW(TAG, "client gone or printer stalled too long, discarding the rest of the job");
