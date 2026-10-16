@@ -432,7 +432,8 @@ static void test_cfg_from_fixture(void)
     CHECK(c.v[ZPL_CFG_WIDTH] == 1200);
     CHECK(c.v[ZPL_CFG_LENGTH] == 1938);
     /* 39.0 in at 12 dots/mm: 39.0 x 304.8 dots/in (the guide's ^LL formula) = 11887.2 */
-    CHECK(c.v[ZPL_CFG_MAX_LENGTH] == 11887);
+    /* 975 mm x 12 dots/mm; ^ML11700 on the bench GX430t reads back as "39.0IN   975MM" (2026-10-16) */
+    CHECK(c.v[ZPL_CFG_MAX_LENGTH] == 11700);
     CHECK(c.v[ZPL_CFG_TEAR_OFF] == 0);        /* "+000" */
     CHECK(c.v[ZPL_CFG_LABEL_TOP] == 0);       /* "+000" */
     CHECK(c.v[ZPL_CFG_LEFT_POS] == 0);        /* "+0000" */

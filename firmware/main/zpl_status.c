@@ -598,11 +598,23 @@ static bool decode_field(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const 
         /* "4 IPS" */
         return parse_int_prefix(text, out, &end) && strcmp(end, " IPS") == 0;
     case ZPL_CFG_MAX_LENGTH:
-        /* "39.0IN   975MM": ^ML takes dot rows; inches x 25.4 x dots/mm, as in the guide's ^LL formula */
+        /*
+         * "39.0IN   975MM": ^ML takes dot rows. The mm figure is exact (a
+         * GX430t shows ^ML6000 at 12 dots/mm as 500MM); the inch figure is
+         * the mm divided by 25 (that same setting shows as 20.0IN), so it
+         * is not used.
+         */
         if (cfg->dpmm <= 0 || !parse_tenths_prefix(text, &t, &end) || strncmp(end, "IN", 2) != 0) {
             return false;
         }
-        *out = (t * 254 * cfg->dpmm + 50) / 100;
+        end += 2;
+        while (*end == ' ') {
+            end++;
+        }
+        if (!parse_int_prefix(end, &t, &end) || strcmp(end, "MM") != 0) {
+            return false;
+        }
+        *out = t * cfg->dpmm;
         return true;
     case ZPL_CFG_WIDTH:
     case ZPL_CFG_LENGTH:
