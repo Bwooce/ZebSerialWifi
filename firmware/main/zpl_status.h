@@ -18,6 +18,8 @@ typedef struct {
     bool head_up;
     bool ribbon_out;
     int formats_in_buffer;
+    int comm_settings;   /* string 1 field aaa: eight bits as a decimal number */
+    bool handshake_dtr;  /* aaa bit a7: 0 = XON/XOFF, 1 = DTR */
 } zpl_hs_t;
 
 /*

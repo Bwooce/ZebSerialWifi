@@ -264,7 +264,17 @@ static bool etx_done(const uint8_t *buf, size_t len)
  */
 static bool read_handshake(char *out, size_t out_len)
 {
-    if (sgd_get("comm.handshake", out, out_len)) {
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    bool from_hs = s_hs_valid && !s_probe_sgd;  /* only a ~HS from this detection */
+    bool dtr = s_hs.handshake_dtr;
+    xSemaphoreGive(s_status_lock);
+    if (from_hs) {
+        /* ~HS string 1 bit a7, documented for every ZPL printer */
+        strlcpy(out, dtr ? "DTR" : "XON/XOFF", out_len);
+        return true;
+    }
+    /* "?" is the SGD reply for a variable this firmware does not know */
+    if (sgd_get("comm.handshake", out, out_len) && strcmp(out, "?") != 0) {
         return true;
     }
     static uint8_t dump[2048];

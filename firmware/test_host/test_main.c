@@ -65,6 +65,29 @@ static void test_hs_ok(void)
     CHECK(!hs.under_temp);
 }
 
+/*
+ * A real ~HS reply from a GX430t (firmware V56.17.16Z) set to 9600 8N1
+ * XON/XOFF, captured on the bench on 2026-10-16. aaa = 030: bit a7 (128)
+ * clear means XON/XOFF, per the ZPL II guide's ~HS field table.
+ */
+static void test_hs_handshake_bit(void)
+{
+    zpl_hs_t hs;
+    const char *gx430t = "\x02" "030,0,0,1938,000,0,0,0,000,0,0,0" "\x03\r\n"
+                         "\x02" "000,0,0,0,0,2,6,0,00000000,1,000" "\x03\r\n"
+                         "\x02" "1234,0" "\x03\r\n";
+    CHECK(parse_str(gx430t, &hs));
+    CHECK(hs.comm_settings == 30);
+    CHECK(!hs.handshake_dtr);
+    /* the same settings with a7 set: 30 + 128 = 158, DTR handshake */
+    const char *dtr = "\x02" "158,0,0,1938,000,0,0,0,000,0,0,0" "\x03\r\n"
+                      "\x02" "000,0,0,0,0,2,6,0,00000000,1,000" "\x03\r\n"
+                      "\x02" "1234,0" "\x03\r\n";
+    CHECK(parse_str(dtr, &hs));
+    CHECK(hs.comm_settings == 158);
+    CHECK(hs.handshake_dtr);
+}
+
 static void test_hs_with_leading_garbage(void)
 {
     zpl_hs_t hs;
@@ -339,6 +362,7 @@ static void test_origin_matches_host(void)
 int main(void)
 {
     test_hs_ok();
+    test_hs_handshake_bit();
     test_hs_with_leading_garbage();
     test_hs_rejects_short_frames();
     test_hs_needs_three_frames();

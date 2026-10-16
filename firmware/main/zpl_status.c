@@ -93,7 +93,7 @@ static bool decode(const frame_t fr[3], zpl_hs_t *out)
     const frame_t *s2 = &fr[1];
     zpl_hs_t hs = {0};
     /* string 1: aaa,b,c,dddd,eee,f,g,h,iii,j,k,l */
-    if (!all_digits(s1->field[0]) || !flag(s1, 1, &hs.paper_out) || !flag(s1, 2, &hs.pause) ||
+    if (!number(s1, 0, &hs.comm_settings) || !flag(s1, 1, &hs.paper_out) || !flag(s1, 2, &hs.pause) ||
         !all_digits(s1->field[3]) || !number(s1, 4, &hs.formats_in_buffer) || !flag(s1, 5, &hs.buffer_full) ||
         !flag(s1, 9, &hs.corrupt_ram) || !flag(s1, 10, &hs.under_temp) || !flag(s1, 11, &hs.over_temp)) {
         return false;
@@ -102,6 +102,7 @@ static bool decode(const frame_t fr[3], zpl_hs_t *out)
     if (!all_digits(s2->field[0]) || !flag(s2, 2, &hs.head_up) || !flag(s2, 3, &hs.ribbon_out)) {
         return false;
     }
+    hs.handshake_dtr = (hs.comm_settings & 0x80) != 0;
     *out = hs;
     return true;
 }
