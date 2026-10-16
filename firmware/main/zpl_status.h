@@ -127,8 +127,8 @@ const zpl_cfg_desc_t *zpl_cfg_desc(zpl_cfg_field_t f);
 
 /*
  * Settings decoded from ^HH. Letter settings hold the ZPL letter ('D'),
- * percentages the number; a letter code never equals a multiple of ten
- * between 10 and 90, so ~JS values cannot collide.
+ * percentages the number. For ~JS a value is a letter only if it is one of
+ * N, A, B, O (none a multiple of ten); 70 is 70 %, not 'F'.
  */
 typedef struct {
     int v[ZPL_CFG_COUNT];

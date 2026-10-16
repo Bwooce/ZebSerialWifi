@@ -558,6 +558,83 @@ static void test_cfg_commands(void)
     CHECK(small[0] == '\0');
 }
 
+/*
+ * Every option the settings page offers, and both ends of every number
+ * range: format, parse back, build a command. The option lists mirror
+ * s_printer_ui in web.c.
+ */
+static void test_cfg_all_options(void)
+{
+    static const struct {
+        zpl_cfg_field_t f;
+        const char *values;
+    } opts[] = {
+        {ZPL_CFG_SPEED, "2 3 4"},
+        {ZPL_CFG_METHOD, "D T"},
+        {ZPL_CFG_MODE, "T P R C D"},
+        {ZPL_CFG_MEDIA, "Y M N"},
+        {ZPL_CFG_SENSOR, "A R T"},
+        {ZPL_CFG_POWER_UP, "F C L N"},
+        {ZPL_CFG_HEAD_CLOSE, "F C L N"},
+        {ZPL_CFG_BACKFEED, "N A B O 10 20 30 40 50 60 70 80 90"},
+        {ZPL_CFG_EARLY_WARNING, "D E"},
+        {ZPL_CFG_ZPL_MODE, "2 1"},
+    };
+    zpl_printer_cfg_t c;
+    cfg_from_fixture(&c);
+    for (size_t i = 0; i < sizeof(opts) / sizeof(opts[0]); i++) {
+        char list[64];
+        strcpy(list, opts[i].values);
+        for (char *tok = strtok(list, " "); tok != NULL; tok = strtok(NULL, " ")) {
+            int v;
+            char text[16];
+            char out[128];
+            bool ok = zpl_cfg_parse(&c, opts[i].f, tok, &v);
+            zpl_cfg_format(opts[i].f, v, text, sizeof(text));
+            zpl_printer_cfg_t want = c;
+            want.v[opts[i].f] = v;
+            size_t n = ok ? zpl_cfg_commands(&want, 1u << opts[i].f, out, sizeof(out)) : 0;
+            s_checks++;
+            if (!ok || strcmp(text, tok) != 0 || n == 0 || strstr(out, tok) == NULL) {
+                s_failures++;
+                printf("FAIL option %s of field %d: parse %d, format \"%s\", command \"%s\"\n", tok,
+                       (int)opts[i].f, ok, text, n ? out : "");
+            }
+        }
+    }
+    static const zpl_cfg_field_t ints[] = {ZPL_CFG_DARKNESS, ZPL_CFG_WIDTH, ZPL_CFG_LENGTH, ZPL_CFG_MAX_LENGTH,
+                                           ZPL_CFG_TEAR_OFF, ZPL_CFG_LABEL_TOP, ZPL_CFG_LEFT_POS};
+    for (size_t i = 0; i < sizeof(ints) / sizeof(ints[0]); i++) {
+        int min;
+        int max;
+        zpl_cfg_range(&c, ints[i], &min, &max);
+        int ends[2] = {min, max};
+        for (int k = 0; k < 2; k++) {
+            char text[16];
+            char out[128];
+            int v;
+            zpl_cfg_format(ints[i], ends[k], text, sizeof(text));
+            zpl_printer_cfg_t want = c;
+            want.v[ints[i]] = ends[k];
+            CHECK(zpl_cfg_parse(&c, ints[i], text, &v) && v == ends[k]);
+            CHECK(zpl_cfg_commands(&want, 1u << ints[i], out, sizeof(out)) > 0);
+            CHECK(!zpl_cfg_value_valid(&c, ints[i], ends[k] + (k ? 1 : -1)));
+        }
+    }
+    /* percentages that are also letter codes ('F' = 70, 'P' = 80, 'Z' = 90) stay numbers */
+    char out[64];
+    c.v[ZPL_CFG_BACKFEED] = 70;
+    zpl_cfg_commands(&c, 1u << ZPL_CFG_BACKFEED, out, sizeof(out));
+    CHECK(strcmp(out, "~JS70^XA^JUS^XZ") == 0);
+    c.v[ZPL_CFG_BACKFEED] = 90;
+    zpl_cfg_commands(&c, 1u << ZPL_CFG_BACKFEED, out, sizeof(out));
+    CHECK(strcmp(out, "~JS90^XA^JUS^XZ") == 0);
+    int v;
+    CHECK(!zpl_cfg_parse(&c, ZPL_CFG_BACKFEED, "F", &v));
+    CHECK(!zpl_cfg_parse(&c, ZPL_CFG_BACKFEED, "P", &v));
+    CHECK(!zpl_cfg_parse(&c, ZPL_CFG_BACKFEED, "Z", &v));
+}
+
 static void test_action_commands(void)
 {
     CHECK(strcmp(zpl_action_command("calibrate"), "~JC") == 0);
@@ -694,6 +771,7 @@ int main(void)
     test_cfg_round_trip();
     test_cfg_parse();
     test_cfg_commands();
+    test_cfg_all_options();
     test_action_commands();
     test_hostname();
     test_ipv4_parse();

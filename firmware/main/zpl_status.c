@@ -673,6 +673,16 @@ void zpl_cfg_range(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int *min, in
     }
 }
 
+/*
+ * True if v is one of the field's letters. Percentages are told apart from
+ * letters this way, never by "is it in A..Z": 70, 80 and 90 are 'F', 'P'
+ * and 'Z', none of which ~JS takes as a letter.
+ */
+static bool is_letter_value(const zpl_cfg_desc_t *d, int v)
+{
+    return d->letters != NULL && v > 0 && v < 128 && strchr(d->letters, v) != NULL;
+}
+
 bool zpl_cfg_value_valid(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int v)
 {
     const zpl_cfg_desc_t *d = zpl_cfg_desc(f);
@@ -686,12 +696,9 @@ bool zpl_cfg_value_valid(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int v)
     case ZPL_CFG_INT:
         return v >= min && v <= max;
     case ZPL_CFG_PERCENT_OR_LETTER:
-        if (v >= min && v <= max && v % 10 == 0) {
-            return true;
-        }
-        /* fall through */
+        return is_letter_value(d, v) || (v >= min && v <= max && v % 10 == 0);
     case ZPL_CFG_LETTER:
-        return v > 0 && v < 128 && strchr(d->letters, v) != NULL;
+        return is_letter_value(d, v);
     default:
         return false;
     }
@@ -704,8 +711,8 @@ bool zpl_cfg_parse(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const char *
         return false;
     }
     int v;
-    if (d->kind != ZPL_CFG_INT && text[0] >= 'A' && text[0] <= 'Z' && text[1] == '\0') {
-        v = text[0];
+    if (d->kind != ZPL_CFG_INT && text[0] != '\0' && text[1] == '\0' && is_letter_value(d, (unsigned char)text[0])) {
+        v = (unsigned char)text[0];
     } else if (d->kind == ZPL_CFG_LETTER || !parse_int_exact(text, &v)) {
         return false;
     }
@@ -719,9 +726,7 @@ bool zpl_cfg_parse(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const char *
 void zpl_cfg_format(zpl_cfg_field_t f, int v, char *out, size_t out_len)
 {
     const zpl_cfg_desc_t *d = zpl_cfg_desc(f);
-    bool letter = d != NULL && (d->kind == ZPL_CFG_LETTER || (d->kind == ZPL_CFG_PERCENT_OR_LETTER && v >= 'A' &&
-                                                               v <= 'Z'));
-    if (letter) {
+    if (d != NULL && is_letter_value(d, v)) {
         snprintf(out, out_len, "%c", v);
     } else {
         snprintf(out, out_len, "%d", v);
@@ -797,7 +802,7 @@ size_t zpl_cfg_commands(const zpl_printer_cfg_t *want, uint32_t changed, char *o
     if (has(changed, ZPL_CFG_BACKFEED)) {
         /* ~JSb Change Backfeed Sequence: A, B, N, O or 10 to 90 */
         int b = v[ZPL_CFG_BACKFEED];
-        if (b >= 'A' && b <= 'Z') {
+        if (is_letter_value(&s_cfg_desc[ZPL_CFG_BACKFEED], b)) {
             append(&a, "~JS%c", b);
         } else {
             append(&a, "~JS%d", b);
