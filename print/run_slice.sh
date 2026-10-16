@@ -3,8 +3,8 @@
 # Runs on a Mac with Bambu Studio installed.
 # Usage: run_slice.sh <workdir> [case|coupon]
 #   The workdir holds this folder's files plus the STLs from enclosure/out:
-#   case:   tray.stl lid.stl logo.stl -> zebserial_case.3mf. The logo is a second part of the lid object on
-#           filament 2, so it prints as a flush two-colour inlay.
+#   case:   tray.stl lid.stl logo.stl -> zebserial_case.3mf. The logo is a second part of the tray object on
+#           filament 2, so it prints as a flush two-colour inlay in the tray floor.
 #   coupon: coupon_tray.stl coupon_lid.stl -> zebserial_coupon.3mf, single colour.
 set -euo pipefail
 W="$1"
@@ -20,12 +20,12 @@ if [ "$MODE" = case ]; then
     # the second filament needs its own preset name and colour, or the CLI crashes
     python3 resolve_profile.py "$P" filament "Bambu PETG Basic @BBL H2D 0.4 nozzle" filament_overrides_logo.json filament_logo.json
     OUT=zebserial_case.3mf
-    # objects with the same assemble_index become parts of one object; the STLs share the lid's coordinates
+    # objects with the same assemble_index become parts of one object; logo.stl shares the tray's coordinates
     cat > assemble.json <<JSON
 {"plates": [{"plate_name": "zebserial", "need_arrange": true, "objects": [
   {"path": "$W/tray.stl", "count": 1, "filaments": [1], "assemble_index": [1], "pos_x": [0], "pos_y": [0], "pos_z": [0]},
   {"path": "$W/lid.stl",  "count": 1, "filaments": [1], "assemble_index": [2], "pos_x": [0], "pos_y": [0], "pos_z": [0]},
-  {"path": "$W/logo.stl", "count": 1, "filaments": [2], "assemble_index": [2], "pos_x": [0], "pos_y": [0], "pos_z": [0]}
+  {"path": "$W/logo.stl", "count": 1, "filaments": [2], "assemble_index": [1], "pos_x": [0], "pos_y": [0], "pos_z": [0]}
 ]}]}
 JSON
     rm -f "$OUT"
