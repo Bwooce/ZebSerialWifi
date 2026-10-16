@@ -20,6 +20,8 @@ static const char *TAG = "wifi";
 #define STA_TIMEOUT_MS 60000
 #define STA_RETRY_IN_AP_MS 30000  /* station retries disturb the AP channel, so back off */
 #define STA_RETRY_MS 2000
+#define JOIN_SWITCH_MS 1000   /* lets the page that asked for the join get its reply first */
+#define JOIN_TRIAL_MS 30000
 
 static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
@@ -37,6 +39,19 @@ static char s_ap_ssid[20];
 static esp_timer_handle_t s_fallback_timer;
 static esp_timer_handle_t s_retry_timer;
 static settings_net_t s_net;
+
+/*
+ * A join from the bridge page. The new network is tried for JOIN_TRIAL_MS
+ * and saved only once it gives an address; otherwise the saved one is
+ * restored. s_join_lock orders the GOT_IP and timeout outcomes.
+ */
+static SemaphoreHandle_t s_join_lock;
+static volatile wifi_join_state_t s_join_state;
+static char s_join_ssid[SETTINGS_SSID_MAX];
+static char s_join_pass[SETTINGS_PASS_MAX];
+static volatile int s_join_reason;
+static esp_timer_handle_t s_join_switch_timer;
+static esp_timer_handle_t s_join_trial_timer;
 
 static void apply_static_ip(void)
 {
@@ -75,6 +90,26 @@ static void set_mode(wifi_mode_t mode)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "STA bandwidth: %s", esp_err_to_name(err));
     }
+}
+
+static esp_err_t set_sta_config(const char *ssid, const char *pass)
+{
+    wifi_config_t sta = {0};
+    strlcpy((char *)sta.sta.ssid, ssid, sizeof(sta.sta.ssid));
+    strlcpy((char *)sta.sta.password, pass, sizeof(sta.sta.password));
+    sta.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    sta.sta.pmf_cfg.capable = true;
+    /*
+     * The default fast scan joins the first access point it hears with
+     * this SSID; with several (a mesh, or a far one on the same name)
+     * that can be one at -90 dBm while another is at -30. Scan every
+     * channel and take the strongest.
+     */
+    sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &sta);
+    memset(&sta, 0, sizeof(sta));
+    return err;
 }
 
 static void start_ap(void)
@@ -139,6 +174,64 @@ static void retry_cb(void *arg)
     }
 }
 
+/* Leave the current network for the one being tried. */
+static void join_switch_cb(void *arg)
+{
+    (void)arg;
+    xSemaphoreTake(s_join_lock, portMAX_DELAY);
+    if (s_join_state == WIFI_JOIN_TRYING) {
+        ESP_LOGI(TAG, "trying network \"%s\" for %d s", s_join_ssid, JOIN_TRIAL_MS / 1000);
+        esp_wifi_disconnect();
+        if (set_sta_config(s_join_ssid, s_join_pass) == ESP_OK) {
+            esp_wifi_connect();
+        }
+        esp_timer_start_once(s_join_trial_timer, (uint64_t)JOIN_TRIAL_MS * 1000);
+    }
+    xSemaphoreGive(s_join_lock);
+}
+
+/* No address from the network being tried: go back to the saved one. */
+static void join_trial_cb(void *arg)
+{
+    (void)arg;
+    xSemaphoreTake(s_join_lock, portMAX_DELAY);
+    if (s_join_state == WIFI_JOIN_TRYING) {
+        ESP_LOGW(TAG, "could not join \"%s\" (last reason %d), going back to \"%s\"", s_join_ssid, s_join_reason,
+                 s_ssid);
+        s_join_state = WIFI_JOIN_FAILED;
+        memset(s_join_pass, 0, sizeof(s_join_pass));
+        char ssid[SETTINGS_SSID_MAX];
+        char pass[SETTINGS_PASS_MAX];
+        if (settings_get_wifi(ssid, pass)) {
+            esp_wifi_disconnect();
+            if (set_sta_config(ssid, pass) == ESP_OK) {
+                esp_wifi_connect();
+            }
+        }
+        memset(pass, 0, sizeof(pass));
+    }
+    xSemaphoreGive(s_join_lock);
+}
+
+/* The network being tried gave an address: keep it. Runs on the event task. */
+static void join_got_ip(void)
+{
+    xSemaphoreTake(s_join_lock, portMAX_DELAY);
+    if (s_join_state == WIFI_JOIN_TRYING) {
+        esp_timer_stop(s_join_trial_timer);
+        if (settings_set_wifi(s_join_ssid, s_join_pass) == ESP_OK) {
+            ESP_LOGI(TAG, "joined \"%s\", saved", s_join_ssid);
+        } else {
+            ESP_LOGE(TAG, "joined \"%s\" but could not save it; the old network returns at the next boot",
+                     s_join_ssid);
+        }
+        strlcpy(s_ssid, s_join_ssid, sizeof(s_ssid));
+        memset(s_join_pass, 0, sizeof(s_join_pass));
+        s_join_state = WIFI_JOIN_JOINED;
+    }
+    xSemaphoreGive(s_join_lock);
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
@@ -156,6 +249,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "got IPv6 " IPV6STR, IPV62STR(e->ip6_info.ip));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *d = data;
+        if (s_join_state == WIFI_JOIN_TRYING) {
+            s_join_reason = d->reason;
+        }
         if (s_state == WIFI_ST_CONNECTED) {
             ESP_LOGW(TAG, "disconnected, reason %d", d->reason);
             esp_timer_stop(s_fallback_timer);
@@ -174,12 +270,14 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         set_state(WIFI_ST_CONNECTED);
         esp_timer_stop(s_fallback_timer);
         stop_ap();
+        join_got_ip();
     }
 }
 
 void wifi_prov_start(void)
 {
     s_ap_lock = xSemaphoreCreateMutex();
+    s_join_lock = xSemaphoreCreateMutex();
     s_sta_netif = esp_netif_create_default_wifi_sta();
     s_ap_netif = esp_netif_create_default_wifi_ap();
     settings_get_net(&s_net);
@@ -203,25 +301,16 @@ void wifi_prov_start(void)
     ESP_ERROR_CHECK(esp_timer_create(&fb, &s_fallback_timer));
     const esp_timer_create_args_t rt = {.callback = retry_cb, .name = "wifi_retry"};
     ESP_ERROR_CHECK(esp_timer_create(&rt, &s_retry_timer));
+    const esp_timer_create_args_t js = {.callback = join_switch_cb, .name = "wifi_join"};
+    ESP_ERROR_CHECK(esp_timer_create(&js, &s_join_switch_timer));
+    const esp_timer_create_args_t jt = {.callback = join_trial_cb, .name = "wifi_trial"};
+    ESP_ERROR_CHECK(esp_timer_create(&jt, &s_join_trial_timer));
 
     char pass[SETTINGS_PASS_MAX];
     s_have_creds = settings_get_wifi(s_ssid, pass);
     if (s_have_creds) {
-        wifi_config_t sta = {0};
-        strlcpy((char *)sta.sta.ssid, s_ssid, sizeof(sta.sta.ssid));
-        strlcpy((char *)sta.sta.password, pass, sizeof(sta.sta.password));
-        sta.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
-        sta.sta.pmf_cfg.capable = true;
-        /*
-         * The default fast scan joins the first access point it hears with
-         * this SSID; with several (a mesh, or a far one on the same name)
-         * that can be one at -90 dBm while another is at -30. Scan every
-         * channel and take the strongest.
-         */
-        sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
-        sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
         set_mode(WIFI_MODE_STA);
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
+        ESP_ERROR_CHECK(set_sta_config(s_ssid, pass));
         ESP_LOGI(TAG, "connecting to \"%s\"", s_ssid);
         set_state(WIFI_ST_CONNECTING);
         esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
@@ -377,4 +466,57 @@ int wifi_prov_scan(wifi_ap_record_t *out, int max)
         return 0;
     }
     return n;
+}
+
+esp_err_t wifi_prov_join(const char *ssid, const char *pass)
+{
+    if (ssid[0] == '\0' || strlen(ssid) >= sizeof(s_join_ssid) || strlen(pass) >= sizeof(s_join_pass)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    xSemaphoreTake(s_join_lock, portMAX_DELAY);
+    esp_err_t err = ESP_OK;
+    if (s_join_state == WIFI_JOIN_TRYING || s_state != WIFI_ST_CONNECTED) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        strlcpy(s_join_ssid, ssid, sizeof(s_join_ssid));
+        strlcpy(s_join_pass, pass, sizeof(s_join_pass));
+        s_join_reason = 0;
+        s_join_state = WIFI_JOIN_TRYING;
+        esp_timer_start_once(s_join_switch_timer, (uint64_t)JOIN_SWITCH_MS * 1000);
+    }
+    xSemaphoreGive(s_join_lock);
+    return err;
+}
+
+wifi_join_state_t wifi_prov_join_state(char ssid[SETTINGS_SSID_MAX], const char **why)
+{
+    xSemaphoreTake(s_join_lock, portMAX_DELAY);
+    wifi_join_state_t st = s_join_state;
+    strlcpy(ssid, s_join_ssid, SETTINGS_SSID_MAX);
+    int reason = s_join_reason;
+    xSemaphoreGive(s_join_lock);
+    switch (reason) {
+    case 0:
+        *why = "";
+        break;
+    case WIFI_REASON_NO_AP_FOUND:
+        *why = "network not found";
+        break;
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        *why = "wrong password?";
+        break;
+    default: {
+        /* read only by the web task, so one buffer will do */
+        static char other[24];
+        snprintf(other, sizeof(other), "Wi-Fi reason %d", reason);
+        *why = other;
+        break;
+    }
+    }
+    if (st == WIFI_JOIN_FAILED && **why == '\0') {
+        *why = "no address from the network";
+    }
+    return st;
 }
