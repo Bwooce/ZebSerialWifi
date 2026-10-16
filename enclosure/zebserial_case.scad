@@ -195,10 +195,12 @@ min_wall = 1.2;          // checked by wallprobe.py, not just assumed
 logo_mode = "inlay";
 logo_w = 30.0;           // mark width (the lid top flat leaves about 1.5 mm to its edges at 30)
 logo_depth = 0.68;       // inlay thickness / deboss depth: the first 4 layers of the profile (0.2 first layer + 3 x 0.16)
-logo_file = "../assets/logo/zebserial-mark-lid.svg";      // bold lid variant from assets/logo/make_logo.py, 1 unit = 1 mm
-logo_svg_w = 52.76;      // mark width in that file
-logo_svg_c = [32, 29.0]; // mark centre once imported (OpenSCAD flips the SVG Y axis)
+logo_file = "../assets/logo/zebserial-mark-deboss.svg";   // the web page's striped mark at 1 unit = 1 mm (make_logo.py)
+logo_svg_w = 52.77;      // mark width in that file (imported bounding box)
+logo_svg_c = [32, 29.93]; // mark centre once imported (OpenSCAD flips the SVG Y axis)
 logo_min = 1.2;          // every stroke and gap at least this (three 0.4 mm lines); part="check_logo" checks it
+logo_round = 0.62;       // round every corner to this radius (just over logo_min / 2): the striped mark's stripe ends
+                         // and arc tips are sharp, and a 0.4 mm nozzle cannot print them anyway
 
 /* [Clips and XIAO capture] */
 // Lid-to-tray snaps (on both side walls)
@@ -629,7 +631,9 @@ module lid(logo = logo_mode) union() {
 
 // Seen from above, +Y (away from the DB9) is up, so the mark needs no rotation or mirroring.
 module logo_2d() {
-    translate([0, (y_cf + y_rear_face) / 2]) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
+    // closing then opening rounds concave and convex corners alike; neither removes a stroke or gap over 2 x logo_round
+    offset(r = logo_round) offset(r = -logo_round) offset(r = -logo_round) offset(r = logo_round)
+        translate([0, (y_cf + y_rear_face) / 2]) scale(logo_w / logo_svg_w) translate(-logo_svg_c) import(logo_file);
 }
 // The inlay body (extra = 0), or the same body extended `extra` above the top as the lid cut: no clearance
 module logo_body(extra = 0) {
