@@ -87,6 +87,7 @@ void printer_link_invalidate_config(void);
  * Send ZPL to the printer with the link held, keep the link settle_ms longer
  * (for commands that make the printer busy or change its port), then drop
  * the cached configuration. Errors as for printer_link_refresh_config; also
- * ESP_ERR_TIMEOUT if the printer held XOFF and the command is still queued.
+ * ESP_ERR_NOT_FINISHED if the printer held XOFF and the unsent part was
+ * discarded.
  */
 esp_err_t printer_link_send_zpl(const char *zpl, TickType_t wait, uint32_t settle_ms);

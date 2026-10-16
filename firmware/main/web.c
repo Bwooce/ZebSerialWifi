@@ -854,8 +854,11 @@ static esp_err_t redirect_settings(httpd_req_t *req)
 static esp_err_t link_error(httpd_req_t *req, esp_err_t err)
 {
     if (err == ESP_ERR_TIMEOUT) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "printer busy printing; nothing was sent");
+    }
+    if (err == ESP_ERR_NOT_FINISHED) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "printer busy or paused (XOFF); nothing or not all of it was sent yet");
+                                   "printer paused (XOFF: out of paper or head open?); the command was discarded");
     }
     if (err == ESP_ERR_INVALID_STATE) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "printer not detected");

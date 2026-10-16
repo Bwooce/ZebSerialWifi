@@ -746,9 +746,14 @@ esp_err_t printer_link_send_zpl(const char *zpl, TickType_t wait, uint32_t settl
         ESP_LOGI(TAG, "sending %s", zpl);
         send_str(zpl);
         if (!drain_tx(CMD_DRAIN_MS)) {
-            /* left queued: it goes out when the printer sends XON, ahead of the next job */
-            ESP_LOGW(TAG, "printer is holding XOFF, command still queued");
-            err = ESP_ERR_TIMEOUT;
+            /*
+             * Never leave it queued behind XOFF: it would go out whenever the
+             * printer sends XON, ahead of the next job, or be lost at a baud
+             * change. Discard it so the outcome is definite.
+             */
+            ESP_LOGW(TAG, "printer is holding XOFF, discarding the command");
+            printer_link_abort_tx();
+            err = ESP_ERR_NOT_FINISHED;
         } else if (settle_ms > 0) {
             vTaskDelay(pdMS_TO_TICKS(settle_ms));
         }
