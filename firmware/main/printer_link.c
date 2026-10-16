@@ -361,9 +361,8 @@ static bool configure_printer(void)
             ESP_LOGI(TAG, "printer recovered at reverted %lu baud via SGD", (unsigned long)old_baud);
             return true;
         }
-        ESP_LOGW(TAG, "revert probe failed; staying on %lu baud", (unsigned long)new_baud);
-        set_baud(new_baud);
-        settings_set_baud(new_baud);
+        /* not saved: only a baud the printer has answered at goes to NVS (detect() does that) */
+        ESP_LOGW(TAG, "revert probe failed; rescanning");
         if (!scan()) {
             return false;
         }
