@@ -35,6 +35,9 @@ static void mdns_setup(void)
     settings_get_net(&net);
     char instance[64];
     snprintf(instance, sizeof(instance), "ZebSerial (%s)", net.hostname);
+    /* Bonjour printing spec: the printer's web page, shown as "Printer Website" in the macOS print queue */
+    char adminurl[64];
+    snprintf(adminurl, sizeof(adminurl), "http://%s.local/", net.hostname);
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set(net.hostname);
     mdns_instance_name_set(instance);
@@ -46,6 +49,7 @@ static void mdns_setup(void)
         {"usb_MFG", "Zebra"},
         {"usb_MDL", "ZPL Printer"},
         {"note", "ZebSerialWifi"},
+        {"adminurl", adminurl},
     };
     mdns_service_add(instance, PDL_SERVICE, "_tcp", CONFIG_ZEB_TCP_PORT, txt,
                      sizeof(txt) / sizeof(txt[0]));
