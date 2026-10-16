@@ -412,6 +412,7 @@ static int try_raise(uint32_t to)
     uint32_t old_baud = s_baud;
     ESP_LOGI(TAG, "moving printer from %lu to %lu baud", (unsigned long)old_baud, (unsigned long)to);
     if (send_sc(to)) {
+        ESP_LOGI(TAG, "printer now at %lu baud", (unsigned long)to);
         return 1;
     }
     set_baud(old_baud);
