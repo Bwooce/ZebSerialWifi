@@ -29,7 +29,7 @@ static void mdns_setup(void)
     settings_net_t net;
     settings_get_net(&net);
     char instance[64];
-    snprintf(instance, sizeof(instance), "ZebSerial GK430t (%s)", net.hostname);
+    snprintf(instance, sizeof(instance), "ZebSerial (%s)", net.hostname);
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set(net.hostname);
     mdns_instance_name_set(instance);
