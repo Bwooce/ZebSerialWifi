@@ -53,14 +53,17 @@ static bool pump_from_printer(int sock, TickType_t wait)
 }
 
 /*
- * False once the peer has gone away. A half-closed socket (recv returns 0) is
- * still alive: CUPS shuts down its sending side and then waits for our EOF.
+ * False once the peer has gone away. A half-closed socket is still alive:
+ * CUPS shuts down its sending side and then waits for our EOF. lwIP returns
+ * 0 for the FIN once, then fails later reads with ENOTCONN, so ENOTCONN
+ * counts as alive too; a peer that has really gone shows up as a failed
+ * send instead.
  */
 static bool client_alive(int sock)
 {
     uint8_t b;
     int r = recv(sock, &b, 1, MSG_PEEK | MSG_DONTWAIT);
-    return r >= 0 || errno == EAGAIN || errno == EWOULDBLOCK;
+    return r >= 0 || errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOTCONN;
 }
 
 /*
