@@ -76,4 +76,12 @@ esp_err_t settings_set_flag(const char *key, bool value);
 
 /* Returns 0 when no baud has been saved. */
 uint32_t settings_get_baud(void);
+
+/*
+ * Lowest baud a printer of this model failed to move to (0 if none known):
+ * a model mismatch reads as 0, so a different printer starts from the top.
+ * settings_set_baud_cap("", 0) forgets it.
+ */
+uint32_t settings_get_baud_cap(const char *model);
+esp_err_t settings_set_baud_cap(const char *model, uint32_t cap);
 esp_err_t settings_set_baud(uint32_t baud);

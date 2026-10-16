@@ -14,12 +14,16 @@
 
 typedef struct {
     uint32_t baud;
-    bool detected;
+    bool detected;            /* found since boot or the last re-detect; it may have gone silent since */
     bool hs_valid;
     zpl_hs_t hs;
     int64_t hs_age_ms;        /* ms since the last good ~HS, -1 if never */
     char handshake[16];       /* comm.handshake as last read, "" if unknown */
     char model[32];           /* from ~HI, e.g. "GX430t"; "" until a printer has answered */
+    char language[24];        /* SGD device.languages, e.g. "epl_zpl"; "" if unknown */
+    bool zpl;                 /* false when the language is not ZPL: no ZPL is sent, settings are unavailable */
+    bool answering;           /* detected and answered the last poll (silent with paper out or the head open) */
+    int64_t reply_age_ms;     /* ms since the printer last answered, -1 if never */
     uint64_t tx_bytes;
     uint64_t rx_bytes;
     int tx_gpio;
@@ -74,7 +78,8 @@ void printer_link_request_redetect(void);
  * Read the printer's configuration (^XA^HH^XZ) into the cache. Waits up to
  * `wait` for the link, which a print job holds. ESP_ERR_TIMEOUT if the link
  * stayed busy, ESP_ERR_INVALID_STATE if no printer is detected (or output is
- * held by XOFF), ESP_FAIL if no complete reply came back.
+ * held by XOFF), ESP_ERR_NOT_SUPPORTED if the printer is not in a ZPL
+ * language, ESP_FAIL if no complete reply came back.
  */
 esp_err_t printer_link_refresh_config(TickType_t wait);
 

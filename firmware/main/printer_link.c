@@ -18,15 +18,16 @@ static const char *TAG = "printer";
 #define RX_BUF 4096
 #define TX_BUF 8192
 #define PROBE_TIMEOUT_MS 500
-/* The GX430t's ^HH dump is 2522 bytes: 2.6 s at 9600 baud */
-#define HH_TIMEOUT_MS 5000
-#define HH_BUF 4096
+/* The GX430t's ^HH dump is 2522 bytes; ZT, ZD and Xi4 dumps are longer. Timeout from hh_timeout_ms(). */
+#define HH_BUF 8192
 #define HI_TIMEOUT_MS 1000
 #define CMD_DRAIN_MS 3000
 #define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
 #define POLL_INTERVAL_MS 30000
 #define POLL_FAILS_BEFORE_RESCAN 3
+/* while a found printer stays silent, rescan the bauds this often (in missed polls, SCAN_RETRY_MS apart) */
+#define SILENT_RESCAN_EVERY 30
 /*
  * The ESP sends XOFF to the printer when its own RX FIFO passes XOFF_THRESH.
  * The driver drains the FIFO at RX_FULL_THRESH, so XOFF only goes out if the
@@ -49,6 +50,14 @@ static zpl_hs_t s_hs;
 static int64_t s_hs_time_us;
 static char s_handshake[16];
 static char s_model[32];
+/* device.languages: OTHER means the printer would ignore ZPL or print it as text, so none is sent */
+static zpl_lang_t s_lang;
+static char s_lang_text[24];
+/* time of the last reply to a poll or probe; a detected printer may stop answering (paper out, head open) */
+static int64_t s_reply_us = -1;
+static bool s_answering;
+/* found through SGD while ~HS was silent: configure once ~HS answers */
+static bool s_config_pending;
 /* 64-bit counters are two words on this core: update and read them under s_count_mux */
 static portMUX_TYPE s_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_tx_bytes;
@@ -208,12 +217,18 @@ static bool sgd_get(const char *name, char *out, size_t out_len)
 {
     char cmd[64];
     uint8_t buf[128];
-    snprintf(cmd, sizeof(cmd), "! U1 getvar \"%s\"\r\n", name);
+    /* the leading CR LF ends any partial line (such as a ~HS just sent), so "!" starts a line */
+    snprintf(cmd, sizeof(cmd), "\r\n! U1 getvar \"%s\"\r\n", name);
     uart_flush_input(PORT);
     send_str(cmd);
     size_t len = collect(buf, sizeof(buf), PROBE_TIMEOUT_MS, sgd_done);
-    size_t cmd_len = strlen(cmd) - 2;  /* without the CR LF */
-    if (len >= cmd_len && memcmp(buf, cmd, cmd_len) == 0) {
+    const char *bare = cmd + 2;
+    size_t cmd_len = strlen(bare) - 2;  /* without either CR LF */
+    size_t skip = 0;
+    while (skip < len && (buf[skip] == '\r' || buf[skip] == '\n')) {
+        skip++;
+    }
+    if (len - skip >= cmd_len && memcmp(buf + skip, bare, cmd_len) == 0) {
         if (!s_echo) {
             ESP_LOGW(TAG, "the serial line echoes our commands back at %lu baud: loopback plug, not a printer; "
                           "XON/XOFF off until a printer answers", (unsigned long)s_baud);
@@ -243,7 +258,7 @@ static bool scan(void)
     zpl_baud_candidates(settings_get_baud(), cand, &n);
     for (size_t i = 0; i < n; i++) {
         set_baud(cand[i]);
-        if (probe_hs()) {
+        if (s_lang != ZPL_LANG_OTHER && probe_hs()) {
             ESP_LOGI(TAG, "printer answered ~HS at %lu baud", (unsigned long)cand[i]);
             s_probe_sgd = false;
             return true;
@@ -262,13 +277,37 @@ static bool scan(void)
     return false;
 }
 
-static bool probe_current(void)
+/*
+ * Is the printer there? ~HS first (it also refreshes the status flags), then
+ * an SGD getvar: Zebra printers send no ~HS reply while paper or ribbon is
+ * out, the head is open or it is too hot, but still answer SGD.
+ */
+static bool probe_alive(void)
 {
-    if (s_probe_sgd) {
-        char dummy[32];
-        return sgd_get("device.languages", dummy, sizeof(dummy));
+    bool ok = false;
+    if (s_lang != ZPL_LANG_OTHER && probe_hs()) {
+        s_probe_sgd = false;
+        ok = true;
+    } else {
+        char lang[32];
+        if (sgd_get("device.languages", lang, sizeof(lang))) {
+            s_probe_sgd = true;
+            ok = true;
+        }
     }
-    return probe_hs();
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_answering = ok;
+    if (ok) {
+        s_reply_us = esp_timer_get_time();
+    }
+    xSemaphoreGive(s_status_lock);
+    return ok;
+}
+
+/* Long enough for a full HH_BUF at the current baud (10 bits a byte), plus 2 s for the printer to start. */
+static uint32_t hh_timeout_ms(void)
+{
+    return (uint32_t)((uint64_t)HH_BUF * 10 * 1000 / (s_baud ? s_baud : PRINTER_DEFAULT_BAUD)) + 2000;
 }
 
 /* Stop reading the ^HH dump once its closing ETX has arrived. */
@@ -278,28 +317,27 @@ static bool etx_done(const uint8_t *buf, size_t len)
 }
 
 /*
- * Read the printer's handshake setting: SGD comm.handshake first (newer
- * firmware), then the ^HH configuration dump, which every ZPL printer
- * answers. Returns false if neither gave an answer.
+ * Read the printer's handshake setting: SGD comm.handshake first (it can
+ * say RTS/CTS, which the ~HS bit cannot), then the ~HS a7 bit, then the ^HH
+ * configuration dump (ZPL printers only). Returns false if none answered.
  */
 static bool read_handshake(char *out, size_t out_len)
 {
+    char sgd[24];
+    bool sgd_ok = sgd_get("comm.handshake", sgd, sizeof(sgd));
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
     bool from_hs = s_hs_valid && !s_probe_sgd;  /* only a ~HS from this detection */
     bool dtr = s_hs.handshake_dtr;
     xSemaphoreGive(s_status_lock);
-    if (from_hs) {
-        /* ~HS string 1 bit a7, documented for every ZPL printer */
-        strlcpy(out, dtr ? "DTR" : "XON/XOFF", out_len);
+    if (zpl_pick_handshake(sgd_ok ? sgd : NULL, from_hs, dtr, out, out_len)) {
         return true;
     }
-    /* "?" is the SGD reply for a variable this firmware does not know */
-    if (sgd_get("comm.handshake", out, out_len) && strcmp(out, "?") != 0) {
-        return true;
+    if (s_lang == ZPL_LANG_OTHER) {
+        return false;
     }
     uart_flush_input(PORT);
     send_str("^XA^HH^XZ");
-    size_t len = collect(s_hh_buf, sizeof(s_hh_buf), HH_TIMEOUT_MS, etx_done);
+    size_t len = collect(s_hh_buf, sizeof(s_hh_buf), hh_timeout_ms(), etx_done);
     if (zpl_hh_handshake(s_hh_buf, len, out, out_len)) {
         return true;
     }
@@ -310,16 +348,21 @@ static bool read_handshake(char *out, size_t out_len)
     return false;
 }
 
-/* Ask ~HI for the model name; keeps the previous name if no reply parses. */
+/* Model name: ~HI for a ZPL printer, else SGD device.product_name. Keeps the previous name if neither answers. */
 static void read_model(void)
 {
-    uint8_t buf[96];
-    char model[sizeof(s_model)];
-    uart_flush_input(PORT);
-    send_str("~HI");
-    size_t len = collect(buf, sizeof(buf), HI_TIMEOUT_MS, etx_done);
-    if (!zpl_hi_model(buf, len, model, sizeof(model))) {
-        ESP_LOGW(TAG, "no model in %u bytes of ~HI reply", (unsigned)len);
+    char model[sizeof(s_model)] = "";
+    if (s_lang != ZPL_LANG_OTHER) {
+        uint8_t buf[96];
+        uart_flush_input(PORT);
+        send_str("~HI");
+        size_t len = collect(buf, sizeof(buf), HI_TIMEOUT_MS, etx_done);
+        if (!zpl_hi_model(buf, len, model, sizeof(model))) {
+            ESP_LOGW(TAG, "no model in %u bytes of ~HI reply", (unsigned)len);
+            model[0] = '\0';
+        }
+    }
+    if (model[0] == '\0' && (!sgd_get("device.product_name", model, sizeof(model)) || strcmp(model, "?") == 0)) {
         return;
     }
     ESP_LOGI(TAG, "printer model %s", model);
@@ -336,11 +379,65 @@ static void publish_handshake(const char *hs)
 }
 
 /*
- * Make sure the printer uses XON/XOFF and, if a target is set, runs at the
- * target baud. Both are set with one ZPL ^SC ... ^JUS, which saves to the
- * printer's flash, so it is only sent when something needs to change. If
- * the handshake cannot be read at all, ^SC is sent once and remembered in
- * NVS so it is not rewritten on every boot.
+ * Send ^SC at `baud` (8N1, XON/XOFF, saved with ^JUS), move the UART there
+ * and see whether the printer answers. The printer ignores an ^SC it cannot
+ * take (an unsupported baud), so no answer can mean either a printer still
+ * at the old baud or one at the new baud that this end cannot hear.
+ */
+static bool send_sc(uint32_t baud)
+{
+    char cmd[48];
+    zpl_sc_command(cmd, sizeof(cmd), baud);
+    send_str(cmd);
+    uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    set_baud(baud);
+    for (int retry = 0; retry < 3; retry++) {
+        if (probe_alive()) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    return false;
+}
+
+/*
+ * Try to move the printer from s_baud to `to`. On failure, find it again at
+ * the old baud first; only if it is silent there too is the revert ^SC sent
+ * at the new baud, for a printer that moved but whose replies this end
+ * cannot receive. Returns 1 moved, 0 still at the old baud, -1 lost.
+ */
+static int try_raise(uint32_t to)
+{
+    uint32_t old_baud = s_baud;
+    ESP_LOGI(TAG, "moving printer from %lu to %lu baud", (unsigned long)old_baud, (unsigned long)to);
+    if (send_sc(to)) {
+        return 1;
+    }
+    set_baud(old_baud);
+    if (probe_alive()) {
+        ESP_LOGW(TAG, "printer stayed at %lu baud: it does not take %lu", (unsigned long)old_baud, (unsigned long)to);
+        return 0;
+    }
+    ESP_LOGW(TAG, "no reply at %lu or %lu baud, sending the revert at %lu", (unsigned long)to,
+             (unsigned long)old_baud, (unsigned long)to);
+    set_baud(to);
+    if (send_sc(old_baud)) {
+        ESP_LOGI(TAG, "printer recovered at reverted %lu baud", (unsigned long)old_baud);
+        return 0;
+    }
+    return -1;
+}
+
+/*
+ * Make sure the printer uses XON/XOFF alone and, if a target is set, runs at
+ * the target baud. The handshake is fixed first with an ^SC at the current
+ * baud, so a printer that cannot take the target still gets XON/XOFF. ^SC
+ * ends in ^JUS, which writes the printer's flash, so it is only sent when
+ * something needs to change. If the handshake cannot be read at all, ^SC
+ * is sent once and remembered in NVS so it is not rewritten on every boot.
+ * A baud the printer would not take is remembered for its model, and the
+ * next rung down is tried instead. Never called for a non-ZPL printer.
  * Returns false if the printer was lost and could not be found again.
  */
 static bool configure_printer(void)
@@ -350,82 +447,52 @@ static bool configure_printer(void)
     if (known) {
         ESP_LOGI(TAG, "printer handshake: %s", hs);
     }
-    bool hs_bad = known ? !zpl_handshake_is_xon(hs) : !settings_get_flag("sc_sent");
-    uint32_t target = s_target_baud;
-    bool move = target != 0 && s_baud != target && !s_raise_tried;
     publish_handshake(known ? hs : "");
-    if (!hs_bad && !move) {
+    bool hs_bad = known ? !zpl_handshake_is_xon(hs) : !settings_get_flag("sc_sent");
+    if (hs_bad) {
+        ESP_LOGI(TAG, "configuring printer: XON/XOFF at %lu baud (%s)", (unsigned long)s_baud,
+                 known ? "handshake was not XON/XOFF alone" : "handshake unreadable");
+        if (!send_sc(s_baud)) {
+            ESP_LOGW(TAG, "no reply after ^SC at %lu baud, rescanning", (unsigned long)s_baud);
+            if (!scan()) {
+                return false;
+            }
+        } else {
+            settings_set_flag("sc_sent", true);
+        }
+        if (read_handshake(hs, sizeof(hs))) {
+            ESP_LOGI(TAG, "printer handshake now: %s", hs);
+            publish_handshake(hs);
+        }
+    }
+
+    uint32_t target = s_target_baud;
+    if (target == 0 || s_baud == target || s_raise_tried) {
         return true;
     }
-
-    uint32_t old_baud = s_baud;
-    uint32_t new_baud = move ? target : s_baud;
-    char cmd[48];
-    zpl_sc_command(cmd, sizeof(cmd), new_baud);
-    if (move) {
-        s_raise_tried = true;
+    s_raise_tried = true;
+    char model[sizeof(s_model)];
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    strlcpy(model, s_model, sizeof(model));
+    xSemaphoreGive(s_status_lock);
+    uint32_t cap = settings_get_baud_cap(model);
+    /* a target below the current baud is taken as asked; a raise steps down from the target past known failures */
+    uint32_t to = target < s_baud ? target : zpl_next_raise(target, s_baud, cap);
+    if (to == 0 && cap != 0) {
+        ESP_LOGI(TAG, "staying at %lu baud: %s did not take %lu before", (unsigned long)s_baud, model,
+                 (unsigned long)cap);
     }
-    ESP_LOGI(TAG, "configuring printer: %lu baud, XON/XOFF (%s%s%s)", (unsigned long)new_baud,
-             move ? "baud change" : "", move && hs_bad ? ", " : "",
-             hs_bad ? (known ? "handshake was not XON/XOFF" : "handshake unreadable") : "");
-    send_str(cmd);
-    uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    set_baud(new_baud);
-
-    bool hs_ok = false;
-    for (int retry = 0; retry < 3; retry++) {
-        if (probe_hs()) {
-            s_probe_sgd = false;
-            hs_ok = true;
-            break;
-        }
-        char lang[32];
-        if (sgd_get("device.languages", lang, sizeof(lang))) {
-            s_probe_sgd = true;
-            hs_ok = true;
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-
-    if (!hs_ok && move) {
-        ESP_LOGW(TAG, "no reply at %lu baud after ^SC, attempting blind revert to %lu baud",
-                 (unsigned long)new_baud, (unsigned long)old_baud);
-        zpl_sc_command(cmd, sizeof(cmd), old_baud);
-        send_str(cmd);
-        uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000));
-        vTaskDelay(pdMS_TO_TICKS(1500));
-        set_baud(old_baud);
-        if (probe_hs()) {
-            s_probe_sgd = false;
-            ESP_LOGI(TAG, "printer recovered at reverted %lu baud", (unsigned long)old_baud);
+    while (to != 0) {
+        int r = try_raise(to);
+        if (r > 0) {
             return true;
         }
-        char lang[32];
-        if (sgd_get("device.languages", lang, sizeof(lang))) {
-            s_probe_sgd = true;
-            ESP_LOGI(TAG, "printer recovered at reverted %lu baud via SGD", (unsigned long)old_baud);
-            return true;
+        if (r < 0) {
+            ESP_LOGW(TAG, "printer lost after ^SC, rescanning");
+            return scan();
         }
-        /* not saved: only a baud the printer has answered at goes to NVS (detect() does that) */
-        ESP_LOGW(TAG, "revert probe failed; rescanning");
-        if (!scan()) {
-            return false;
-        }
-    } else if (!hs_ok) {
-        ESP_LOGW(TAG, "no reply after ^SC at %lu baud, rescanning", (unsigned long)new_baud);
-        if (!scan()) {
-            return false;
-        }
-    }
-
-    if (hs_ok) {
-        settings_set_flag("sc_sent", true);
-    }
-    if (read_handshake(hs, sizeof(hs))) {
-        ESP_LOGI(TAG, "printer handshake now: %s", hs);
-        publish_handshake(hs);
+        settings_set_baud_cap(model, to);
+        to = target < s_baud ? 0 : zpl_next_raise(target, s_baud, to);
     }
     return true;
 }
@@ -449,6 +516,24 @@ static void swap_pins(void)
     ESP_LOGI(TAG, "trying swapped pins: TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
 }
 
+/* Ask SGD for device.languages; a printer without SGD that answered ~HS speaks ZPL. */
+static void probe_language(void)
+{
+    char lang[sizeof(s_lang_text)];
+    if (!sgd_get("device.languages", lang, sizeof(lang))) {
+        lang[0] = '\0';
+    }
+    zpl_lang_t kind = zpl_language_kind(lang);
+    if (kind == ZPL_LANG_UNKNOWN && !s_probe_sgd) {
+        kind = ZPL_LANG_ZPL;
+    }
+    ESP_LOGI(TAG, "printer language: %s", lang[0] ? lang : "unknown");
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_lang = kind;
+    strlcpy(s_lang_text, lang, sizeof(s_lang_text));
+    xSemaphoreGive(s_status_lock);
+}
+
 /* Full detection. Caller holds s_lock. */
 static bool detect(void)
 {
@@ -465,11 +550,32 @@ static bool detect(void)
         s_pin_swap = false;  /* keep these pins until reboot */
         ESP_LOGI(TAG, "printer found with TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
     }
-    if (!found || !configure_printer()) {
+    if (!found) {
         s_detected = false;
+        s_lang = ZPL_LANG_UNKNOWN;  /* whatever answers next may speak ZPL: let the scan try ~HS again */
         return false;
     }
+    probe_language();
     read_model();
+    if (s_lang == ZPL_LANG_OTHER) {
+        /* EPL, CPCL or line print: ZPL would be ignored or printed, so the port is left as it is */
+        ESP_LOGW(TAG, "printer language is %s, not ZPL: passing jobs through without configuring it", s_lang_text);
+        s_config_pending = false;
+    } else if (s_probe_sgd) {
+        /* ~HS silent but SGD answers: most likely a fault (paper out, head open); configure once ~HS answers */
+        ESP_LOGW(TAG, "printer answers SGD but not ~HS: configuring it once ~HS answers");
+        s_config_pending = true;
+    } else {
+        s_config_pending = false;
+        if (!configure_printer()) {
+            s_detected = false;
+            return false;
+        }
+    }
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_answering = true;
+    s_reply_us = esp_timer_get_time();
+    xSemaphoreGive(s_status_lock);
     s_detected = true;
     if (s_echo) {
         s_echo = false;
@@ -478,6 +584,53 @@ static bool detect(void)
     }
     settings_set_baud(s_baud);
     return true;
+}
+
+/*
+ * Poll a detected printer. A printer that stops answering stays detected:
+ * Zebra printers go silent to ~HS with paper out or the head open, and a
+ * baud scan then would only send probes at wrong rates. The bauds are
+ * scanned after POLL_FAILS_BEFORE_RESCAN misses and then every
+ * SILENT_RESCAN_EVERY, in case the printer was reset to another baud.
+ */
+static void poll_once(int *fails)
+{
+    if (probe_alive()) {
+        if (*fails > 0) {
+            ESP_LOGI(TAG, "printer answering again");
+        }
+        *fails = 0;
+        if (s_config_pending && !s_probe_sgd) {
+            s_config_pending = false;
+            ESP_LOGI(TAG, "printer answers ~HS now: configuring it");
+            if (!configure_printer()) {
+                s_detected = false;
+                return;
+            }
+            read_model();
+        }
+        return;
+    }
+    if (++*fails == 1) {
+        ESP_LOGW(TAG, "printer not answering (paper or ribbon out, head open, or switched off?)");
+    }
+    if (*fails % SILENT_RESCAN_EVERY != POLL_FAILS_BEFORE_RESCAN) {
+        return;
+    }
+    uint32_t was = s_baud;
+    ESP_LOGW(TAG, "printer silent for %d polls, scanning the bauds", *fails);
+    if (scan()) {
+        *fails = 0;
+        xSemaphoreTake(s_status_lock, portMAX_DELAY);
+        s_answering = true;
+        s_reply_us = esp_timer_get_time();
+        xSemaphoreGive(s_status_lock);
+        if (s_baud != was) {
+            ESP_LOGW(TAG, "printer found at %lu baud, was %lu: detecting it again", (unsigned long)s_baud,
+                     (unsigned long)was);
+            s_redetect = true;
+        }
+    }
 }
 
 static void link_task(void *arg)
@@ -517,16 +670,9 @@ static void link_task(void *arg)
             int64_t finish = esp_timer_get_time();
             next_us = finish + (int64_t)SCAN_RETRY_MS * 1000;
         } else {
-            if (probe_current()) {
-                poll_fails = 0;
-            } else if (++poll_fails >= POLL_FAILS_BEFORE_RESCAN) {
-                ESP_LOGW(TAG, "printer stopped answering %s, rescanning",
-                         s_probe_sgd ? "SGD" : "~HS");
-                s_detected = false;
-                poll_fails = 0;
-            }
+            poll_once(&poll_fails);
             int64_t finish = esp_timer_get_time();
-            next_us = finish + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            next_us = finish + (int64_t)(s_answering ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
         }
         printer_link_release();
     }
@@ -636,6 +782,10 @@ void printer_link_get_status(printer_status_t *out)
     out->hs_age_ms = s_hs_time_us < 0 ? -1 : (esp_timer_get_time() - s_hs_time_us) / 1000;
     strlcpy(out->handshake, s_handshake, sizeof(out->handshake));
     strlcpy(out->model, s_model, sizeof(out->model));
+    strlcpy(out->language, s_lang_text, sizeof(out->language));
+    out->zpl = s_lang != ZPL_LANG_OTHER;
+    out->answering = s_detected && s_answering;
+    out->reply_age_ms = s_reply_us < 0 ? -1 : (esp_timer_get_time() - s_reply_us) / 1000;
     taskENTER_CRITICAL(&s_count_mux);
     out->tx_bytes = s_tx_bytes;
     out->rx_bytes = s_rx_bytes;
@@ -650,6 +800,7 @@ void printer_link_set_target_baud(uint32_t baud)
 {
     if (baud != s_target_baud) {
         s_target_baud = baud;
+        settings_set_baud_cap("", 0);  /* a new target gets a fresh try, even at a rate that failed before */
         printer_link_request_redetect();
     }
 }
@@ -713,6 +864,8 @@ esp_err_t printer_link_refresh_config(TickType_t wait)
     zpl_hh_t *hh = NULL;
     if (!s_detected) {
         err = ESP_ERR_INVALID_STATE;
+    } else if (s_lang == ZPL_LANG_OTHER) {
+        err = ESP_ERR_NOT_SUPPORTED;
     } else if (!printer_link_tx_idle()) {
         err = ESP_ERR_INVALID_STATE;  /* output still held by XOFF: a reply would queue behind it */
     } else if ((hh = malloc(sizeof(*hh))) == NULL) {
@@ -720,7 +873,7 @@ esp_err_t printer_link_refresh_config(TickType_t wait)
     } else {
         uart_flush_input(PORT);
         send_str("^XA^HH^XZ");
-        size_t len = collect(s_hh_buf, sizeof(s_hh_buf), HH_TIMEOUT_MS, etx_done);
+        size_t len = collect(s_hh_buf, sizeof(s_hh_buf), hh_timeout_ms(), etx_done);
         if (zpl_hh_parse(s_hh_buf, len, hh) && memchr(s_hh_buf, ETX_BYTE, len) != NULL) {
             xSemaphoreTake(s_status_lock, portMAX_DELAY);
             s_cfg = *hh;
@@ -764,6 +917,8 @@ esp_err_t printer_link_send_zpl(const char *zpl, TickType_t wait, uint32_t settl
     esp_err_t err = ESP_OK;
     if (!s_detected) {
         err = ESP_ERR_INVALID_STATE;
+    } else if (s_lang == ZPL_LANG_OTHER) {
+        err = ESP_ERR_NOT_SUPPORTED;
     } else {
         ESP_LOGI(TAG, "sending %s", zpl);
         send_str(zpl);

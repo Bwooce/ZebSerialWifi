@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 
 #define STX 0x02
@@ -453,14 +454,60 @@ bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len)
     return c.found;
 }
 
-bool zpl_handshake_is_xon(const char *value)
+/* Case-insensitive search for an ASCII word in value. */
+static bool has_word(const char *value, const char *word)
 {
-    for (const char *p = value; p[0] && p[1] && p[2]; p++) {
-        if ((p[0] == 'x' || p[0] == 'X') && (p[1] == 'o' || p[1] == 'O') && (p[2] == 'n' || p[2] == 'N')) {
+    size_t n = strlen(word);
+    for (const char *p = value; *p != '\0'; p++) {
+        size_t i = 0;
+        while (i < n && p[i] != '\0' && tolower((unsigned char)p[i]) == word[i]) {
+            i++;
+        }
+        if (i == n) {
             return true;
         }
     }
     return false;
+}
+
+bool zpl_handshake_is_xon(const char *value)
+{
+    return has_word(value, "xon") && !has_word(value, "dtr") && !has_word(value, "dsr") &&
+           !has_word(value, "rts") && !has_word(value, "cts");
+}
+
+bool zpl_pick_handshake(const char *sgd, bool hs_valid, bool hs_dtr, char *out, size_t out_len)
+{
+    if (sgd != NULL && sgd[0] != '\0' && strcmp(sgd, "?") != 0) {
+        strlcpy(out, sgd, out_len);
+        return true;
+    }
+    if (hs_valid) {
+        /* ~HS string 1 bit a7: 0 = XON/XOFF, 1 = DTR */
+        strlcpy(out, hs_dtr ? "DTR" : "XON/XOFF", out_len);
+        return true;
+    }
+    return false;
+}
+
+zpl_lang_t zpl_language_kind(const char *value)
+{
+    if (value == NULL || value[0] == '\0' || strcmp(value, "?") == 0) {
+        return ZPL_LANG_UNKNOWN;
+    }
+    return has_word(value, "zpl") ? ZPL_LANG_ZPL : ZPL_LANG_OTHER;
+}
+
+uint32_t zpl_next_raise(uint32_t target, uint32_t current, uint32_t cap)
+{
+    static const uint32_t ladder[] = {115200, 57600, 38400, 19200};
+    for (size_t i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++) {
+        uint32_t b = ladder[i];
+        if (b <= target && b > current && (cap == 0 || b < cap)) {
+            return b;
+        }
+    }
+    return 0;
 }
 
 /*

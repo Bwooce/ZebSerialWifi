@@ -310,7 +310,10 @@ static const char STATUS_BODY[] =
     "row('WiFi',s.wifi.ssid+' ('+s.wifi.rssi+' dBm)')+"
     "row('Address',s.wifi.hostname+'.local, '+s.wifi.ip+(s.wifi.static_ip?' (static)':' (DHCP)'))+"
     "row('IPv6',s.wifi.ip6.length?s.wifi.ip6.join('\\n'):'none')+"
-    "row('Printer',p.detected?((p.model?p.model+', ':'')+'detected at '+p.baud+' baud'):('not detected (trying '+p.baud+')'))+"
+    "row('Printer',p.detected?((p.model?p.model+', ':'')+(p.answering?'answering at '+p.baud+' baud':"
+    "'not answering for '+dur(Math.round(p.reply_age_ms/1000))+' (paper or ribbon out, head open, or switched off?)')):"
+    "('not detected (trying '+p.baud+')'))+"
+    "(p.language?row('Language',p.language+(p.zpl?'':' (not ZPL: jobs pass through, settings unavailable)')):'')+"
     "row('Status',p.hs_valid?flags(p.hs)+' ('+Math.round(p.hs_age_ms/1000)+' s ago)':'unknown')+"
     "row('Handshake',p.handshake||'unknown')+"
     "row('UART pins','TX GPIO'+p.tx_gpio+', RX GPIO'+p.rx_gpio)+"
@@ -431,6 +434,8 @@ static esp_err_t status_get(httpd_req_t *req)
     json_escape(p.handshake, handshake_esc, sizeof(handshake_esc));
     char model_esc[sizeof(p.model) * 6];
     json_escape(p.model, model_esc, sizeof(model_esc));
+    char lang_esc[sizeof(p.language) * 6];
+    json_escape(p.language, lang_esc, sizeof(lang_esc));
     char hostname_esc[sizeof(net.hostname) * 6];
     json_escape(net.hostname, hostname_esc, sizeof(hostname_esc));
     char ip6[WIFI_PROV_IP6_MAX][46];
@@ -451,7 +456,8 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"hostname\":\"%s\",\"static_ip\":%s,"
              "\"ip6\":%s},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
-             "\"printer\":{\"detected\":%s,\"model\":\"%s\",\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
+             "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"model\":\"%s\","
+             "\"language\":\"%s\",\"zpl\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
              "\"hs_valid\":%s,\"hs_age_ms\":%lld,\"hs\":{\"paper_out\":%s,\"pause\":%s,\"head_up\":%s,"
              "\"ribbon_out\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
              "\"formats_in_buffer\":%d},\"tx_bytes\":%llu,\"rx_bytes\":%llu},"
@@ -460,7 +466,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
-             model_esc, (unsigned long)p.baud, handshake_esc,
+             p.answering ? "true" : "false", (long long)p.reply_age_ms, model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
              p.hs.paper_out ? "true" : "false", p.hs.pause ? "true" : "false", p.hs.head_up ? "true" : "false",
              p.hs.ribbon_out ? "true" : "false", p.hs.buffer_full ? "true" : "false",
@@ -504,6 +510,8 @@ static const char *printer_config(zpl_hh_t *hh, bool refresh, bool *have, int64_
         return "Printer busy (printing or being detected)";
     case ESP_ERR_INVALID_STATE:
         return "Printer not detected, or holding output paused";
+    case ESP_ERR_NOT_SUPPORTED:
+        return "The printer is not in a ZPL language (see Language on the status page), so its settings cannot be read";
     case ESP_ERR_NO_MEM:
         return "Out of memory";
     default:
@@ -904,6 +912,10 @@ static esp_err_t link_error(httpd_req_t *req, esp_err_t err)
     }
     if (err == ESP_ERR_INVALID_STATE) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "printer not detected");
+    }
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "the printer is not in a ZPL language; nothing was sent");
     }
     return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "could not send to the printer");
 }

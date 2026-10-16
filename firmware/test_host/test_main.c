@@ -279,7 +279,8 @@ static void test_hh_handshake(void)
     const char *dtr = "  DTR & XON/XOFF...HOST HANDSHAKE\r\n";
     CHECK(zpl_hh_handshake((const uint8_t *)dtr, strlen(dtr), v, sizeof(v)));
     CHECK(strcmp(v, "DTR & XON/XOFF") == 0);
-    CHECK(zpl_handshake_is_xon(v));
+    /* combined mode needs DTR/DSR too, which a three-wire adapter lacks: the bridge must change it */
+    CHECK(!zpl_handshake_is_xon(v));
 
     const char *hw = "  DTR/DSR..........HOST HANDSHAKE\r\n";
     CHECK(zpl_hh_handshake((const uint8_t *)hw, strlen(hw), v, sizeof(v)));
@@ -291,6 +292,58 @@ static void test_hh_handshake(void)
     CHECK(zpl_handshake_is_xon("xon/xoff"));
     CHECK(!zpl_handshake_is_xon("rts/cts"));
     CHECK(!zpl_handshake_is_xon(""));
+    CHECK(!zpl_handshake_is_xon("dtr & xon/xoff"));
+    CHECK(!zpl_handshake_is_xon("XON/XOFF, RTS/CTS"));
+    CHECK(zpl_handshake_is_xon("XON/XOFF"));
+}
+
+static void test_pick_handshake(void)
+{
+    char v[24];
+    /* SGD wins over the ~HS bit, which cannot express RTS/CTS */
+    CHECK(zpl_pick_handshake("rts/cts", true, false, v, sizeof(v)));
+    CHECK(strcmp(v, "rts/cts") == 0);
+    /* "?" (the bench GX430t's reply to comm.handshake) falls through to the ~HS bit */
+    CHECK(zpl_pick_handshake("?", true, false, v, sizeof(v)));
+    CHECK(strcmp(v, "XON/XOFF") == 0);
+    CHECK(zpl_pick_handshake(NULL, true, true, v, sizeof(v)));
+    CHECK(strcmp(v, "DTR") == 0);
+    CHECK(zpl_pick_handshake("", true, false, v, sizeof(v)));
+    CHECK(strcmp(v, "XON/XOFF") == 0);
+    /* nothing to go on: the caller reads ^HH */
+    CHECK(!zpl_pick_handshake("?", false, false, v, sizeof(v)));
+    CHECK(!zpl_pick_handshake(NULL, false, false, v, sizeof(v)));
+}
+
+static void test_language_kind(void)
+{
+    /* "epl_zpl" is the bench GX430t's device.languages reply (2026-10-16) */
+    CHECK(zpl_language_kind("epl_zpl") == ZPL_LANG_ZPL);
+    CHECK(zpl_language_kind("zpl") == ZPL_LANG_ZPL);
+    CHECK(zpl_language_kind("hybrid_xml_zpl") == ZPL_LANG_ZPL);
+    CHECK(zpl_language_kind("ZPL") == ZPL_LANG_ZPL);
+    CHECK(zpl_language_kind("epl") == ZPL_LANG_OTHER);
+    CHECK(zpl_language_kind("line_print") == ZPL_LANG_OTHER);
+    CHECK(zpl_language_kind("cpcl") == ZPL_LANG_OTHER);
+    CHECK(zpl_language_kind("?") == ZPL_LANG_UNKNOWN);
+    CHECK(zpl_language_kind("") == ZPL_LANG_UNKNOWN);
+    CHECK(zpl_language_kind(NULL) == ZPL_LANG_UNKNOWN);
+}
+
+static void test_next_raise(void)
+{
+    CHECK(zpl_next_raise(115200, 9600, 0) == 115200);
+    /* 115200 failed before (a 2844-Z stops at 57600): step down */
+    CHECK(zpl_next_raise(115200, 9600, 115200) == 57600);
+    CHECK(zpl_next_raise(115200, 9600, 57600) == 38400);
+    CHECK(zpl_next_raise(115200, 9600, 19200) == 0);
+    /* already at or above every remaining rung */
+    CHECK(zpl_next_raise(115200, 57600, 115200) == 0);
+    CHECK(zpl_next_raise(115200, 115200, 0) == 0);
+    /* a lower target caps the ladder */
+    CHECK(zpl_next_raise(38400, 9600, 0) == 38400);
+    CHECK(zpl_next_raise(9600, 9600, 0) == 0);
+    CHECK(zpl_next_raise(0, 9600, 0) == 0);
 }
 
 
@@ -371,6 +424,26 @@ static void test_hh_parse_fixture(void)
     check_pair(&hh, "SERIAL NUMBER", "32J133802399");
     check_pair(&hh, "EARLY WARNING", "MAINT. OFF");
     CHECK(zpl_hh_get(&hh, "NO SUCH LINE") == NULL);
+}
+
+/* Synthetic, not a capture: a dump longer than the GX430t's, in its layout. */
+static void test_hh_parse_long(void)
+{
+    static uint8_t buf[8192];
+    static zpl_hh_t hh;
+    size_t len = 0;
+    buf[len++] = 0x02;
+    for (int i = 0; i < 130; i++) {
+        char name[24];
+        snprintf(name, sizeof(name), "SETTING %03d", i);
+        len += (size_t)snprintf((char *)buf + len, sizeof(buf) - len, "  %-20d%-18s\r\n", i, name);
+    }
+    buf[len++] = 0x03;
+    CHECK(zpl_hh_parse(buf, len, &hh));
+    CHECK(hh.count == ZPL_HH_MAX_PAIRS);
+    CHECK(ZPL_HH_MAX_PAIRS >= 120);
+    const char *v = zpl_hh_get(&hh, "SETTING 119");
+    CHECK(v != NULL && strcmp(v, "119") == 0);
 }
 
 static void test_hh_parse_edges(void)
@@ -796,6 +869,9 @@ int main(void)
     test_hs_needs_three_frames();
     test_sgd_value();
     test_hi_model();
+    test_pick_handshake();
+    test_language_kind();
+    test_next_raise();
     test_url_decode();
     test_form_get();
     test_baud_candidates();
@@ -804,6 +880,7 @@ int main(void)
     s_hh_fixture_len = load_fixture("gx430t_hh.bin", s_hh_fixture, sizeof(s_hh_fixture));
     test_hh_handshake_fixture();
     test_hh_parse_fixture();
+    test_hh_parse_long();
     test_hh_parse_edges();
     test_cfg_from_fixture();
     test_cfg_round_trip();

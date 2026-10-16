@@ -63,8 +63,36 @@ size_t zpl_sc_command(char *out, size_t out_len, uint32_t baud);
  */
 bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len);
 
-/* True if a handshake value (SGD or ^HH form) includes XON/XOFF. */
+/*
+ * True if a handshake value (SGD or ^HH form) is XON/XOFF alone. A combined
+ * mode such as the G-series "DTR & XON/XOFF" is false: it also needs the
+ * DTR/DSR lines, which a three-wire adapter does not carry.
+ */
 bool zpl_handshake_is_xon(const char *value);
+
+/*
+ * The printer's handshake from what detection has: the SGD comm.handshake
+ * reply (sgd NULL if there was none; "?" means the firmware lacks the
+ * variable), then the ~HS a7 bit (hs_valid false if no ~HS answered). False
+ * when neither tells, and the caller reads ^HH.
+ */
+bool zpl_pick_handshake(const char *sgd, bool hs_valid, bool hs_dtr, char *out, size_t out_len);
+
+typedef enum {
+    ZPL_LANG_UNKNOWN,   /* no reply, "?" or empty */
+    ZPL_LANG_ZPL,       /* zpl, epl_zpl, hybrid_xml_zpl, ... */
+    ZPL_LANG_OTHER,     /* epl, line_print, cpcl, ...: ZPL would be ignored or printed as text */
+} zpl_lang_t;
+
+/* Classify an SGD device.languages value. */
+zpl_lang_t zpl_language_kind(const char *value);
+
+/*
+ * Next baud to raise the printer to: the highest standard rate up to
+ * target that is above current and below cap (the lowest rate known to
+ * fail; 0 if none). 0 when there is nothing to try.
+ */
+uint32_t zpl_next_raise(uint32_t target, uint32_t current, uint32_t cap);
 
 /*
  * ^HH (configuration label as text) lines. The GX430t sends two spaces, the
@@ -72,7 +100,8 @@ bool zpl_handshake_is_xon(const char *value);
  * "  15.0                DARKNESS"; older firmware puts a dot leader
  * between value and name instead. Long values are truncated.
  */
-#define ZPL_HH_MAX_PAIRS 80
+/* the GX430t sends 60 lines; ZT, ZD and Xi4 dumps add network, RFID and Link-OS lines */
+#define ZPL_HH_MAX_PAIRS 128
 #define ZPL_HH_NAME_LEN 24
 #define ZPL_HH_VALUE_LEN 28
 

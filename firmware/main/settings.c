@@ -77,6 +77,40 @@ uint32_t settings_get_baud(void)
     return baud;
 }
 
+uint32_t settings_get_baud_cap(const char *model)
+{
+    nvs_handle_t h;
+    uint32_t cap = 0;
+    char stored[32] = "";
+    size_t len = sizeof(stored);
+    if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_str(h, "cap_model", stored, &len) != ESP_OK || strcmp(stored, model) != 0 ||
+            nvs_get_u32(h, "cap_baud", &cap) != ESP_OK) {
+            cap = 0;
+        }
+        nvs_close(h);
+    }
+    return cap;
+}
+
+esp_err_t settings_set_baud_cap(const char *model, uint32_t cap)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_str(h, "cap_model", model);
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "cap_baud", cap);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
 esp_err_t settings_set_baud(uint32_t baud)
 {
     nvs_handle_t h;

@@ -99,7 +99,7 @@ static void status_task(void *arg)
             board_led_set_mode(LED_CONNECTING);
             break;
         case WIFI_ST_CONNECTED:
-            board_led_set_mode(p.detected ? LED_READY : LED_NO_PRINTER);
+            board_led_set_mode(p.answering ? LED_READY : LED_NO_PRINTER);
             break;
         }
 
