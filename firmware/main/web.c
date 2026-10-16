@@ -378,7 +378,7 @@ static const char STATUS_BODY[] =
     "if(o)h+='<h4>Other</h4><table>'+o+'</table>';"
     "document.getElementById('c').innerHTML=h;"
     "st.textContent=(c.error?c.error+'. ':'')+(c.age_ms>=0?'Read from the printer '+Math.round(c.age_ms/1000)+' s ago. '"
-    "+'Hold the pointer over a row to see the printer\'s own wording.':'')"
+    "+'Hold the pointer over a row to see the wording the printer uses.':'')"
     "}catch(x){st.textContent='Could not load the printer configuration.'}}"
     "cfg(0)"
     "</script>";
