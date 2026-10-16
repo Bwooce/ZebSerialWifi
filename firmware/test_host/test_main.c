@@ -88,6 +88,23 @@ static void test_hs_handshake_bit(void)
     CHECK(hs.handshake_dtr);
 }
 
+/*
+ * A real ~HS reply from the GX430t on 2026-10-17 while it ignored SGD
+ * getvar; ^XZ cured it. String 1 field h (the eighth) is the ZPL II
+ * guide's partial format flag.
+ */
+static void test_hs_partial_format(void)
+{
+    zpl_hs_t hs;
+    const char *open_format = "\x02" "284,0,0,1929,000,0,0,1,000,0,0,0" "\x03\r\n"
+                              "\x02" "000,0,0,0,0,2,6,0,00000000,1,000" "\x03\r\n"
+                              "\x02" "1234,0" "\x03";
+    CHECK(parse_str(open_format, &hs));
+    CHECK(hs.partial_format);
+    CHECK(parse_str(S1_OK S2_OK S3_OK, &hs));
+    CHECK(!hs.partial_format);
+}
+
 static void test_hs_with_leading_garbage(void)
 {
     zpl_hs_t hs;
@@ -864,6 +881,7 @@ int main(void)
 {
     test_hs_ok();
     test_hs_handshake_bit();
+    test_hs_partial_format();
     test_hs_with_leading_garbage();
     test_hs_rejects_short_frames();
     test_hs_needs_three_frames();

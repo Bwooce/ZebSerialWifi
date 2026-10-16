@@ -104,6 +104,8 @@ static bool decode(const frame_t fr[3], zpl_hs_t *out)
     if (!all_digits(s2->field[0]) || !flag(s2, 2, &hs.head_up) || !flag(s2, 3, &hs.ribbon_out)) {
         return false;
     }
+    int partial;
+    hs.partial_format = number(s1, 7, &partial) && partial == 1;
     hs.handshake_dtr = (hs.comm_settings & 0x80) != 0;
     *out = hs;
     return true;

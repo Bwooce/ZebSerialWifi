@@ -642,7 +642,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"model\":\"%s\","
              "\"language\":\"%s\",\"zpl\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
              "\"hs_valid\":%s,\"hs_age_ms\":%lld,\"hs\":{\"paper_out\":%s,\"pause\":%s,\"head_up\":%s,"
-             "\"ribbon_out\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
+             "\"ribbon_out\":%s,\"partial_format\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
              "\"formats_in_buffer\":%d},\"tx_bytes\":%llu,\"rx_bytes\":%llu},"
              "\"bridge\":{\"active\":%s,\"client_ip\":\"%s\",\"sessions\":%lu,\"aborted\":%lu,"
              "\"to_printer\":%llu,\"from_printer\":%llu},"
@@ -653,7 +653,8 @@ static esp_err_t status_get(httpd_req_t *req)
              p.answering ? "true" : "false", (long long)p.reply_age_ms, model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
              p.hs.paper_out ? "true" : "false", p.hs.pause ? "true" : "false", p.hs.head_up ? "true" : "false",
-             p.hs.ribbon_out ? "true" : "false", p.hs.buffer_full ? "true" : "false",
+             p.hs.ribbon_out ? "true" : "false", p.hs.partial_format ? "true" : "false",
+             p.hs.buffer_full ? "true" : "false",
              p.hs.corrupt_ram ? "true" : "false", p.hs.under_temp ? "true" : "false",
              p.hs.over_temp ? "true" : "false", p.hs.formats_in_buffer, (unsigned long long)p.tx_bytes,
              (unsigned long long)p.rx_bytes, b.active ? "true" : "false", b.client_ip, (unsigned long)b.sessions,

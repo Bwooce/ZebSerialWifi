@@ -236,7 +236,14 @@ static bool sgd_get(const char *name, char *out, size_t out_len)
             uart_set_sw_flow_ctrl(PORT, false, XON_THRESH, XOFF_THRESH);
         }
     }
-    return zpl_sgd_value(buf, len, out, out_len);
+    bool ok = zpl_sgd_value(buf, len, out, out_len);
+    if (!ok && !s_echo) {
+        ESP_LOGW(TAG, "SGD %s: no value in %u bytes at %lu baud", name, (unsigned)len, (unsigned long)s_baud);
+        if (len > 0) {
+            ESP_LOG_BUFFER_HEXDUMP(TAG, buf, len < 64 ? len : 64, ESP_LOG_WARN);
+        }
+    }
+    return ok;
 }
 
 /* Baud the bridge uses while the printer is not detected: last known good, else the G-series default. */
@@ -265,6 +272,12 @@ static bool scan(void)
         }
         char lang[32];
         if (sgd_get("device.languages", lang, sizeof(lang))) {
+            /* the first ~HS after this board resets can be lost to line noise: ask once more now a printer is known */
+            if (zpl_language_kind(lang) != ZPL_LANG_OTHER && probe_hs()) {
+                ESP_LOGI(TAG, "printer answered ~HS at %lu baud on the second try", (unsigned long)cand[i]);
+                s_probe_sgd = false;
+                return true;
+            }
             ESP_LOGW(TAG, "printer answered SGD at %lu baud but not ~HS; device.languages = %s",
                      (unsigned long)cand[i], lang);
             s_probe_sgd = true;
@@ -517,6 +530,31 @@ static void swap_pins(void)
     ESP_LOGI(TAG, "trying swapped pins: TX=GPIO%d RX=GPIO%d", s_tx_gpio, s_rx_gpio);
 }
 
+/*
+ * Noise on the printer's RX while this board resets (the TX pin floats
+ * until the UART starts) can leave the printer inside a ^ format: ~HS then
+ * reports a partial format and SGD commands go unanswered until it ends
+ * (GX430t, 2026-10-17). With no format queued, ~JA cancels it without
+ * printing; ^XZ would end it and print whatever it holds. Called with a ~HS
+ * from this detection; no client job is open while detection runs.
+ */
+static void clear_partial_format(void)
+{
+    if (!s_hs_valid || s_probe_sgd || !s_hs.partial_format) {
+        return;
+    }
+    if (s_hs.formats_in_buffer != 0) {
+        ESP_LOGW(TAG, "the printer has a partial format open and %d formats queued: leaving them",
+                 s_hs.formats_in_buffer);
+        return;
+    }
+    send_str("~JA");
+    vTaskDelay(pdMS_TO_TICKS(100));
+    bool answered = probe_hs();
+    ESP_LOGW(TAG, "the printer had a partial format open (line noise at reset?): sent ~JA, %s",
+             !answered ? "no ~HS reply after it" : s_hs.partial_format ? "still open" : "cleared");
+}
+
 /* Ask SGD for device.languages; a printer without SGD that answered ~HS speaks ZPL. */
 static void probe_language(void)
 {
@@ -556,6 +594,7 @@ static bool detect(void)
         s_lang = ZPL_LANG_UNKNOWN;  /* whatever answers next may speak ZPL: let the scan try ~HS again */
         return false;
     }
+    clear_partial_format();
     probe_language();
     read_model();
     if (s_lang == ZPL_LANG_OTHER) {
