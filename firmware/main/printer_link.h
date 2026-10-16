@@ -68,3 +68,25 @@ esp_err_t printer_link_set_pins(int tx_gpio, int rx_gpio);
 
 /* Ask the background task to re-run detection at the next idle moment. */
 void printer_link_request_redetect(void);
+
+/*
+ * Read the printer's configuration (^XA^HH^XZ) into the cache. Waits up to
+ * `wait` for the link, which a print job holds. ESP_ERR_TIMEOUT if the link
+ * stayed busy, ESP_ERR_INVALID_STATE if no printer is detected (or output is
+ * held by XOFF), ESP_FAIL if no complete reply came back.
+ */
+esp_err_t printer_link_refresh_config(TickType_t wait);
+
+/* Copy of the cached configuration and its age; false if none is cached. */
+bool printer_link_get_config(zpl_hh_t *out, int64_t *age_ms);
+
+/* Drop the cached configuration so the next reader asks the printer again. */
+void printer_link_invalidate_config(void);
+
+/*
+ * Send ZPL to the printer with the link held, keep the link settle_ms longer
+ * (for commands that make the printer busy or change its port), then drop
+ * the cached configuration. Errors as for printer_link_refresh_config; also
+ * ESP_ERR_TIMEOUT if the printer held XOFF and the command is still queued.
+ */
+esp_err_t printer_link_send_zpl(const char *zpl, TickType_t wait, uint32_t settle_ms);

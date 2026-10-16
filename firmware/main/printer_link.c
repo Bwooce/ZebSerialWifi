@@ -1,6 +1,7 @@
 #include "printer_link.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "driver/gpio.h"
 #include "driver/uart.h"
@@ -17,7 +18,10 @@ static const char *TAG = "printer";
 #define RX_BUF 4096
 #define TX_BUF 8192
 #define PROBE_TIMEOUT_MS 500
-#define HH_TIMEOUT_MS 3000
+/* The GX430t's ^HH dump is 2522 bytes: 2.6 s at 9600 baud */
+#define HH_TIMEOUT_MS 5000
+#define HH_BUF 4096
+#define CMD_DRAIN_MS 3000
 #define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
 #define POLL_INTERVAL_MS 30000
@@ -58,6 +62,13 @@ static bool s_probe_sgd;
  */
 static volatile bool s_echo;
 static bool s_pin_swap;
+/* set once the unparsed ~HS bytes of a loopback have been logged, so a scan does not dump them every time */
+static bool s_echo_logged;
+/* ^HH output, used under s_lock by read_handshake and refresh_config */
+static uint8_t s_hh_buf[HH_BUF];
+/* last parsed ^HH configuration, under s_status_lock; s_cfg_time_us < 0 when there is none */
+static zpl_hh_t s_cfg;
+static int64_t s_cfg_time_us = -1;
 static volatile uint32_t s_target_baud = 115200;
 /* TX ring free space right after driver install, i.e. what "empty" reads as (less than TX_BUF: item headers) */
 static size_t s_tx_free_empty;
@@ -169,7 +180,14 @@ static bool probe_hs(void)
     size_t len = collect(buf, sizeof(buf), PROBE_TIMEOUT_MS, hs_done);
     zpl_hs_t hs;
     if (!zpl_hs_parse(buf, len, &hs)) {
-        if (len > 0) {
+        if (len > 0 && s_echo) {
+            /* a loopback plug sends our own ~HS back on every probe: say so once, not a dump per scan */
+            if (!s_echo_logged) {
+                s_echo_logged = true;
+                ESP_LOGW(TAG, "~HS came back unparsed (%u bytes): the line echoes, not dumping further replies",
+                         (unsigned)len);
+            }
+        } else if (len > 0) {
             /* bytes came back but did not parse: wrong baud, or a reply format we do not expect */
             ESP_LOGW(TAG, "%u bytes at %lu baud did not parse as ~HS:", (unsigned)len, (unsigned long)s_baud);
             ESP_LOG_BUFFER_HEXDUMP(TAG, buf, len < 64 ? len : 64, ESP_LOG_WARN);
@@ -277,16 +295,15 @@ static bool read_handshake(char *out, size_t out_len)
     if (sgd_get("comm.handshake", out, out_len) && strcmp(out, "?") != 0) {
         return true;
     }
-    static uint8_t dump[2048];
     uart_flush_input(PORT);
     send_str("^XA^HH^XZ");
-    size_t len = collect(dump, sizeof(dump), HH_TIMEOUT_MS, etx_done);
-    if (zpl_hh_handshake(dump, len, out, out_len)) {
+    size_t len = collect(s_hh_buf, sizeof(s_hh_buf), HH_TIMEOUT_MS, etx_done);
+    if (zpl_hh_handshake(s_hh_buf, len, out, out_len)) {
         return true;
     }
     ESP_LOGW(TAG, "no handshake in %u bytes of ^HH output", (unsigned)len);
     if (len > 0) {
-        ESP_LOG_BUFFER_HEXDUMP(TAG, dump, len < 128 ? len : 128, ESP_LOG_WARN);
+        ESP_LOG_BUFFER_HEXDUMP(TAG, s_hh_buf, len < 128 ? len : 128, ESP_LOG_WARN);
     }
     return false;
 }
@@ -435,6 +452,7 @@ static bool detect(void)
     s_detected = true;
     if (s_echo) {
         s_echo = false;
+        s_echo_logged = false;
         uart_set_sw_flow_ctrl(PORT, true, XON_THRESH, XOFF_THRESH);
     }
     settings_set_baud(s_baud);
@@ -649,4 +667,93 @@ void printer_link_request_redetect(void)
 {
     s_raise_tried = false;
     s_redetect = true;
+}
+
+/* Wait for everything queued to reach the printer; false if it is still queued at the deadline (XOFF). */
+static bool drain_tx(uint32_t timeout_ms)
+{
+    int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    while (!printer_link_tx_idle()) {
+        if (esp_timer_get_time() >= deadline) {
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return true;
+}
+
+esp_err_t printer_link_refresh_config(TickType_t wait)
+{
+    if (!printer_link_acquire(wait)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = ESP_OK;
+    zpl_hh_t *hh = NULL;
+    if (!s_detected) {
+        err = ESP_ERR_INVALID_STATE;
+    } else if (!printer_link_tx_idle()) {
+        err = ESP_ERR_INVALID_STATE;  /* output still held by XOFF: a reply would queue behind it */
+    } else if ((hh = malloc(sizeof(*hh))) == NULL) {
+        err = ESP_ERR_NO_MEM;
+    } else {
+        uart_flush_input(PORT);
+        send_str("^XA^HH^XZ");
+        size_t len = collect(s_hh_buf, sizeof(s_hh_buf), HH_TIMEOUT_MS, etx_done);
+        if (zpl_hh_parse(s_hh_buf, len, hh) && memchr(s_hh_buf, ETX_BYTE, len) != NULL) {
+            xSemaphoreTake(s_status_lock, portMAX_DELAY);
+            s_cfg = *hh;
+            s_cfg_time_us = esp_timer_get_time();
+            xSemaphoreGive(s_status_lock);
+            ESP_LOGI(TAG, "^HH: %d settings from %u bytes", hh->count, (unsigned)len);
+        } else {
+            ESP_LOGW(TAG, "^HH: no complete configuration in %u bytes", (unsigned)len);
+            err = ESP_FAIL;
+        }
+    }
+    free(hh);
+    printer_link_release();
+    return err;
+}
+
+bool printer_link_get_config(zpl_hh_t *out, int64_t *age_ms)
+{
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    bool have = s_cfg_time_us >= 0;
+    if (have) {
+        *out = s_cfg;
+        *age_ms = (esp_timer_get_time() - s_cfg_time_us) / 1000;
+    }
+    xSemaphoreGive(s_status_lock);
+    return have;
+}
+
+void printer_link_invalidate_config(void)
+{
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_cfg_time_us = -1;
+    xSemaphoreGive(s_status_lock);
+}
+
+esp_err_t printer_link_send_zpl(const char *zpl, TickType_t wait, uint32_t settle_ms)
+{
+    if (!printer_link_acquire(wait)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = ESP_OK;
+    if (!s_detected) {
+        err = ESP_ERR_INVALID_STATE;
+    } else {
+        ESP_LOGI(TAG, "sending %s", zpl);
+        send_str(zpl);
+        if (!drain_tx(CMD_DRAIN_MS)) {
+            /* left queued: it goes out when the printer sends XON, ahead of the next job */
+            ESP_LOGW(TAG, "printer is holding XOFF, command still queued");
+            err = ESP_ERR_TIMEOUT;
+        } else if (settle_ms > 0) {
+            vTaskDelay(pdMS_TO_TICKS(settle_ms));
+        }
+    }
+    printer_link_release();
+    printer_link_invalidate_config();
+    return err;
 }
