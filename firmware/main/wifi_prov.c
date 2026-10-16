@@ -278,6 +278,52 @@ bool wifi_prov_sock_on_ap(int fd)
     return addr == ap.ip.addr;
 }
 
+bool wifi_prov_link(char *phy, size_t phy_len, int *channel, char bssid[18])
+{
+    phy[0] = '\0';
+    *channel = 0;
+    bssid[0] = '\0';
+    wifi_ap_record_t ap;
+    if (s_state != WIFI_ST_CONNECTED || esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return false;
+    }
+    *channel = ap.primary;
+    snprintf(bssid, 18, "%02x:%02x:%02x:%02x:%02x:%02x", ap.bssid[0], ap.bssid[1], ap.bssid[2], ap.bssid[3],
+             ap.bssid[4], ap.bssid[5]);
+    wifi_phy_mode_t mode;
+    if (esp_wifi_sta_get_negotiated_phymode(&mode) == ESP_OK) {
+        const char *name = "";
+        switch (mode) {
+        case WIFI_PHY_MODE_HE20:
+            name = "Wi-Fi 6 (802.11ax)";
+            break;
+        case WIFI_PHY_MODE_VHT20:
+            name = "Wi-Fi 5 (802.11ac)";
+            break;
+        case WIFI_PHY_MODE_HT20:
+        case WIFI_PHY_MODE_HT40:
+            name = "Wi-Fi 4 (802.11n)";
+            break;
+        case WIFI_PHY_MODE_11G:
+            name = "802.11g";
+            break;
+        case WIFI_PHY_MODE_11A:
+            name = "802.11a";
+            break;
+        case WIFI_PHY_MODE_11B:
+            name = "802.11b";
+            break;
+        case WIFI_PHY_MODE_LR:
+            name = "Espressif long range";
+            break;
+        default:
+            break;
+        }
+        strlcpy(phy, name, phy_len);
+    }
+    return true;
+}
+
 int wifi_prov_rssi(void)
 {
     wifi_ap_record_t ap;

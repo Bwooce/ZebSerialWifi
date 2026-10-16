@@ -28,6 +28,13 @@ bool wifi_prov_ap_active(void);
 bool wifi_prov_sock_on_ap(int fd);
 
 int wifi_prov_rssi(void);
+
+/*
+ * The link to the access point: the negotiated standard ("Wi-Fi 6
+ * (802.11ax)", ...), the channel and the access point's MAC address.
+ * False (and empty values) when not connected.
+ */
+bool wifi_prov_link(char *phy, size_t phy_len, int *channel, char bssid[18]);
 void wifi_prov_ip(char out[16]);
 
 #define WIFI_PROV_IP6_MAX 3

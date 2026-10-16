@@ -341,7 +341,8 @@ static const char STATUS_BODY[] =
     "function flags(h){var f=[];for(var k in h)if(h[k]===true)f.push(k.replace('_',' '));return f.length?f.join(', '):'ok'}"
     "async function upd(){try{var s=await(await fetch('/api/status')).json();var p=s.printer,b=s.bridge;"
     "document.getElementById('t').innerHTML="
-    "row('WiFi',s.wifi.ssid+' ('+s.wifi.rssi+' dBm)')+"
+    "row('WiFi',s.wifi.ssid+', '+s.wifi.rssi+' dBm'+(s.wifi.phy?', '+s.wifi.phy:'')+(s.wifi.channel?', channel '+s.wifi.channel:''))+"
+    "(s.wifi.bssid?row('Access point',s.wifi.bssid):'')+"
     "row('Address',s.wifi.hostname+'.local, '+s.wifi.ip+(s.wifi.static_ip?' (static)':' (DHCP)'))+"
     "row('IPv6',s.wifi.ip6.length?s.wifi.ip6.join('\\n'):'none')+"
     "row('Printer',p.detected?((p.model?p.model+', ':'')+(p.answering?'answering at '+p.baud+' baud':"
@@ -461,6 +462,11 @@ static esp_err_t status_get(httpd_req_t *req)
     char version_esc[sizeof(app->version) * 6];
     json_escape(app->version, version_esc, sizeof(version_esc));
 
+    char phy[24];
+    int channel;
+    char bssid[18];
+    wifi_prov_link(phy, sizeof(phy), &channel, bssid);
+
     settings_net_t net;
     settings_options_t opt;
     settings_get_net(&net);
@@ -488,7 +494,7 @@ static esp_err_t status_get(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
     }
     int json_len = snprintf(json, json_cap,
-             "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"hostname\":\"%s\",\"static_ip\":%s,"
+             "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"phy\":\"%s\",\"channel\":%d,\"bssid\":\"%s\",\"hostname\":\"%s\",\"static_ip\":%s,"
              "\"ip6\":%s},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
              "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"model\":\"%s\","
@@ -499,7 +505,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"bridge\":{\"active\":%s,\"client_ip\":\"%s\",\"sessions\":%lu,\"aborted\":%lu,"
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
-             ssid_esc, ip, wifi_prov_rssi(), hostname_esc, net.static_ip ? "true" : "false", ip6_json,
+             ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
              p.answering ? "true" : "false", (long long)p.reply_age_ms, model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
