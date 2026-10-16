@@ -13,52 +13,59 @@ run() { "$OSC" --backend=manifold "$@" "$SCAD"; }
 echo "== STL export"
 run -D 'part="tray"' -D show_ghosts=false -o out/tray.stl
 run -D 'part="lid"' -D show_ghosts=false -o out/lid.stl
-run -D 'part="logo"' -o out/logo.stl     # two-colour inlay, aligned with lid.stl (logo_mode="inlay")
-# fit coupons: the front coupon_y1 of each part, single colour, in print orientation
+run -D 'part="logo"' -o out/logo.stl     # two-colour inlay, aligned with tray.stl (logo_mode="inlay")
+# fit coupons, single colour, in print orientation: the tray with the middle of the floor cut out, and the lid below
+# coupon_z (front wall, top lip, corner pressers, snaps)
 run -D 'part="coupon_tray"' -o out/coupon_tray.stl
 run -D 'part="coupon_lid"' -o out/coupon_lid.stl
 
 echo "== renders"
 IMG="--imgsize=1400,1050 --colorscheme=Tomorrow --render"
 # assembly views
-run $IMG --camera=0,18,6,60,0,25,140 -D 'part="assembly"' -o renders/assembly_front.png
-run $IMG --camera=0,18,6,60,0,205,140 -D 'part="assembly"' -o renders/assembly_rear.png
-run $IMG --camera=0,18,14,60,0,25,180 -D 'part="exploded"' -o renders/exploded.png
-run $IMG --camera=0,18,14,60,0,205,180 -D 'part="exploded"' -D show_ghosts=false -o renders/exploded_case_only.png
+run $IMG --camera=0,16,6,60,0,25,140 -D 'part="assembly"' -o renders/assembly_front.png
+run $IMG --camera=0,16,6,60,0,205,140 -D 'part="assembly"' -o renders/assembly_rear.png
+run $IMG --camera=0,16,14,60,0,25,180 -D 'part="exploded"' -o renders/exploded.png
+run $IMG --camera=0,16,14,60,0,205,180 -D 'part="exploded"' -D show_ghosts=false -o renders/exploded_case_only.png
+# as it hangs on the printer: tray floor up with the logo, DB9 (printer) at the left, parallel-port side (+X) at the
+# top, USB-C at the bottom; plan view and a view from the printer side
+run $IMG --camera=16,0,0,0,0,0,105 --projection=o -D 'part="plugged"' -o renders/plugged_floor_logo.png
+run $IMG --camera=16,0,0,50,0,300,120 -D 'part="plugged"' -o renders/plugged_iso.png
+run $IMG --camera=16,0,0,0,0,0,105 --projection=o -D 'part="plugged"' -D 'logo_mode="deboss"' -D show_ghosts=false -o renders/plugged_floor_deboss.png
 # front: flange flush with the case front, D-shell out, retention lips over the flange margins
 run $IMG --camera=0,0,6,82,0,12,95 -D 'part="assembly"' -o renders/front_flush.png
 run $IMG --camera=0,0,6,90,0,0,105 --projection=o -D 'part="assembly"' -o renders/front_elevation.png
-# sections: x=0 plane through the XIAO length, the DB9 body, both lips, the strut and the pads, seen from +X
-run $IMG --camera=0,18,6,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_xiao_length.png
+# x plane at X 0 (DB9 body, both lips, lid front wall, XIAO across its width, D5 channel, Dupont housing), from +X
+run $IMG --camera=0,16,8,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_x0.png
 # close-up of the same plane at the front: lips, flange slot, lid front wall
 run $IMG --camera=0,2,5,90,0,90,65 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=0.2 -o renders/section_lips.png
 # x plane at X 12 (through the flange plate beside the DB9 body), seen from +X: plate, lid front wall bearing on it
 run $IMG --camera=0,6,6,90,0,90,50 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=12.5 -D section_t=1 -o renders/section_plate.png
 # the lid alone from the front: the opening for the full flange plate
 run $IMG --camera=0,0,12,80,0,0,90 -D 'part="lid_inplace"' -o renders/lid_front.png
-# x plane through the backstop rib and the rear of the board (X -3), seen from +X
-run $IMG --camera=0,24,0,90,0,90,50 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=-3 -o renders/section_backstop.png
-# y planes across the XIAO: +X guide + shield pad (Y 15..17), -X guide + shield pad (Y 23.5..25.5), USB pad (Y 28..30)
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=15 -D section_t=2 -o renders/section_xiao_guide_plusx.png
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=23.5 -D section_t=2 -o renders/section_xiao_guide_minusx.png
-run $IMG --camera=0,18,6,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=28 -D section_t=2 -o renders/section_usb_pad.png
-# rear: the USB-C opening (radiused relief, stadium slot, tongue cradle)
-run $IMG --camera=0,34,12,75,0,195,70 -D 'part="assembly"' -o renders/rear_usb.png
-run $IMG --camera=0,36,12,90,0,180,60 --projection=o -D 'part="assembly"' -D show_ghosts=false -o renders/rear_usb_case_only.png
-# y plane through the board-lock leg-tail pockets (Y 8.9), seen from the front
-run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="y"' -D section_pos=7.9 -D section_t=2 -o renders/section_leg_pockets.png
-# x plane through the +X leg-tail pocket (X 12.5), seen from +X
-run $IMG --camera=0,14,2,90,0,90,90 --projection=o -D 'part="assembly"' -D leg_pocket_on=true -D 'section="x"' -D section_pos=13.5 -D section_t=2 -o renders/section_leg_pocket_length.png
-# lid top with the logo inlay, DB9 at the bottom edge (how the logo reads), and the single-colour deboss fallback
-run $IMG --camera=0,17,8,0,0,0,105 --projection=o -D 'part="assembly"' -o renders/lid_top_logo.png
-run $IMG --camera=0,17,8,25,0,0,115 -D 'part="assembly"' -D 'logo_mode="deboss"' -D show_ghosts=false -o renders/lid_top_logo_deboss.png
-# sections through each lid snap finger (front pair at Y 7, rear pair at Y 27.5 by default), seen from the front
-run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=6 -D section_t=2 -o renders/section_snap_front.png
-run $IMG --camera=0,18,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=26.4 -D section_t=2 -o renders/section_snap_rear.png
+# plan section at the USB-C axis (z 13.25), from above: XIAO, USB slot and relief in the -X wall, +X stop rib,
+# shield pad and stop, D3/D5 channel, Dupont housing, corner pressers
+run $IMG --camera=0,16,0,0,0,0,105 --projection=o -D 'part="assembly"' -D 'section="z"' -D section_pos=13.25 -D section_t=30 -o renders/section_plan_usb.png
+run $IMG --camera=0,16,0,0,0,0,105 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="z"' -D section_pos=13.25 -D section_t=30 -o renders/section_plan_usb_case_only.png
+# y plane through the USB-C axis (Y 16.2), from the front: tongue cradle, slot, relief, USB pad, shield pad, stop rib
+run $IMG --camera=0,16,8,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=16.2 -D section_t=2 -o renders/section_usb.png
+# y plane through the corner pins (Y 27), from the front: pins, bosses, pressers, Dupont housing
+run $IMG --camera=0,27,4,90,0,0,110 --projection=o -D 'part="assembly"' -D 'section="y"' -D section_pos=27 -D section_t=2 -o renders/section_pins.png
+# x plane through the +X corner pin (X 13.25), seen from +X, close-up
+run $IMG --camera=0,26,0,90,0,90,40 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=13.25 -D section_t=2 -o renders/section_pin_x.png
+# x plane at X 1.5 (shield stop block over the rear edge strip, D5 pad relief in the front wall), from +X
+run $IMG --camera=0,16,10,90,0,90,90 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=1.5 -D section_t=2 -o renders/section_shield_stop.png
+# the -X side: the USB-C opening (radiused relief, stadium slot, tongue cradle)
+run $IMG --camera=-20,16,12,75,0,285,70 -D 'part="assembly"' -o renders/side_usb.png
+run $IMG --camera=-22,16,10,90,0,270,60 --projection=o -D 'part="assembly"' -D show_ghosts=false -o renders/side_usb_case_only.png
+# y plane through the estimated leg tails (Y 7.6..9.6), from the front: the keep-out (orange) is clear of the tray
+run $IMG --camera=0,16,0,90,0,0,110 --projection=o -D 'part="assembly"' -D show_pin_zone=false -D 'section="y"' -D section_pos=7.6 -D section_t=2 -o renders/section_leg_keepout.png
+# sections through each lid snap finger (front pair at Y 6.3, rear pair at Y 25.6), seen from the front
+run $IMG --camera=0,16,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=5.3 -D section_t=2 -o renders/section_snap_front.png
+run $IMG --camera=0,16,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=24.6 -D section_t=2 -o renders/section_snap_rear.png
 # exterior style, same viewpoints as the reference renders (plan from above, isometric from the front left)
-run $IMG --camera=0,19,6,0,0,0,120 --projection=o -D 'part="assembly"' -o renders/style_plan.png
-run $IMG --camera=0,19,6,55,0,330,135 -D 'part="assembly"' -o renders/style_iso.png
-run $IMG --camera=0,19,6,90,0,90,120 --projection=o -D 'part="assembly"' -o renders/style_side.png
+run $IMG --camera=0,16,6,0,0,0,120 --projection=o -D 'part="assembly"' -o renders/style_plan.png
+run $IMG --camera=0,16,6,55,0,330,135 -D 'part="assembly"' -o renders/style_iso.png
+run $IMG --camera=0,16,6,90,0,90,120 --projection=o -D 'part="assembly"' -o renders/style_side.png
 # print orientation
 run $IMG --camera=0,0,0,55,0,25,130 --autocenter --viewall -D 'part="tray"' -o renders/print_tray.png
 run $IMG --camera=0,0,0,55,0,205,130 --autocenter --viewall -D 'part="lid"' -o renders/print_lid.png
@@ -103,13 +110,14 @@ else
 fi
 echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped; anything off the whitelist fails"
 # Whitelist (assembly coordinates, x0 x1 y0 y1 z0 z1 minimum), each one judged acceptable in the README:
-#  tray: the tongue's top edges beside the USB cradle (about 0.93): they taper to tongue_tip, only round the opening
-#        and carry nothing (the shell rests on the cradle bottom)
+#  tray: the tongue's top edges beside the USB cradle in the -X wall (about 0.93): they taper to tongue_tip, only
+#        round the opening and carry nothing (the shell rests on the cradle bottom)
 #  tray: the floor / front skin gusset (1.19): 1.2 by construction square to the 45 degree bottom front chamfer
+#  tray: the floor skin under the logo pocket (0.92), over the logo footprint only: the inlay fills the pocket in the
+#        two-colour print, and the 0.92 prints as six solid 0.16 mm layers
 #  lid:  the snap hooks (about 0.95 and 1.1): the hook profile itself, a 0.6 mm 45 degree bump on the finger
-#  lid:  the top skin under the logo pocket (0.92): the inlay fills the pocket in the two-colour print
-ALLOW_tray="--allow -6 6 30 34 10.5 12.5 0.9 --allow -17 17 0 14 -6.5 -1 1.18"
-ALLOW_lid="--allow 16 20.5 3 32 -1.5 1 0.9 --allow -20.5 -16 3 32 -1.5 1 0.9 --allow -16 16 2 34 23 25.1 0.9"
+ALLOW_tray="--allow -20.5 -15.5 10 22.5 10.5 12.5 0.9 --allow -17 17 0 14 -6.5 -1 1.18 --allow -13 13 2.5 28.5 -6.5 -4.5 0.9"
+ALLOW_lid="--allow 16 20.5 3 32 -1.5 1 0.9 --allow -20.5 -16 3 32 -1.5 1 0.9"
 for p in tray lid; do
   rm -f "$TMP/${p}_inplace.stl"
   st=0; run "$@" -D "part=\"${p}_inplace\"" -o "$TMP/${p}_inplace.stl" > "$TMP/${p}_inplace.log" 2>&1 || st=$?
