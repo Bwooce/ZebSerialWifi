@@ -51,13 +51,19 @@ static const char PAGE_HEAD[] =
     "<meta name=viewport content='width=device-width,initial-scale=1'>"
     "<title>ZebSerial</title><link rel=icon href=/favicon.svg><style>"
     "body{font-family:system-ui,sans-serif;max-width:32em;margin:1em auto;padding:0 1em;color:#222;background:#fff}"
-    "@media(prefers-color-scheme:dark){body{color:#ddd;background:#181818}input,select{background:#222;color:#ddd}}"
     "input,select,button{font-size:1em;padding:.4em;margin:.2em 0;width:100%;box-sizing:border-box}"
+    "label{display:block;margin-top:.4em}label.check{display:flex;gap:.5em;align-items:baseline}"
     "td{padding:.15em .6em .15em 0;vertical-align:top;white-space:pre-line}td:first-child{opacity:.7}"
     "form.inline{display:inline-block;width:48%}"
     "h2 svg{width:1.6em;height:1.6em;vertical-align:middle;margin:0 .35em .15em 0}"
-    "fieldset{border:1px solid #8884;margin:1em 0;padding:.5em 1em}label small,td small{opacity:.7}"
+    "nav{display:flex;gap:1.2em;margin:-.4em 0 1em}nav a[aria-current]{font-weight:bold;color:inherit;text-decoration:none}"
+    "fieldset{border:1px solid #8884;margin:1em 0;padding:.5em 1em}label small,td small,p small,h4 small{opacity:.7}"
     "input[type=checkbox]{width:auto}"
+    ".danger{color:#b00;border:1px solid #b006}"
+    ".note{padding:.5em .8em;border-left:4px solid #2a7;background:#2a71}.note.bad{border-color:#c33;background:#c331}"
+    "@media(prefers-color-scheme:dark){body{color:#ddd;background:#181818}"
+    "input,select,button{background:#222;color:#ddd;border:1px solid #555}.danger{color:#f77;border-color:#f776}"
+    "a{color:#8bf}}"
     "</style></head><body>";
 static const char PAGE_TAIL[] = "</body></html>";
 
@@ -225,23 +231,90 @@ static void html_escape(const char *in, char *out, size_t out_len)
     out[o] = '\0';
 }
 
-static esp_err_t send_setup_page(httpd_req_t *req)
+typedef enum {
+    NAV_STATUS,
+    NAV_PRINTER,
+    NAV_BRIDGE,
+} nav_page_t;
+
+/* Page head, heading and the bar linking the three pages. */
+static void send_page_start(httpd_req_t *req, nav_page_t page, const char *title)
 {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-    httpd_resp_sendstr_chunk(req, "<h2>" LOGO_SVG "ZebSerial WiFi setup</h2><form method=post action=/save>"
-                                  "<label>Network</label><select name=ssid>");
-    /*
-     * Phones fire several captive-portal probes that all land here; scanning
-     * on each one disrupts the AP, so reuse a recent scan unless asked.
-     */
+    httpd_resp_sendstr_chunk(req, "<h2>" LOGO_SVG);
+    const char *cur = " aria-current=page";
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "%s</h2><nav><a href='/'%s>Status</a><a href=/printer%s>Printer</a><a href=/bridge%s>Bridge</a></nav>",
+             title, page == NAV_STATUS ? cur : "", page == NAV_PRINTER ? cur : "", page == NAV_BRIDGE ? cur : "");
+    httpd_resp_sendstr_chunk(req, buf);
+}
+
+static esp_err_t send_page_end(httpd_req_t *req)
+{
+    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
+    return httpd_resp_sendstr_chunk(req, NULL);
+}
+
+/* A form's error as a page with a way back. status is e.g. "400 Bad Request"; msg is plain text. */
+static esp_err_t fail(httpd_req_t *req, const char *status, const char *msg, const char *back)
+{
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(req, "<h2>" LOGO_SVG "ZebSerial</h2>");
+    char esc[400];
+    html_escape(msg, esc, sizeof(esc));
+    char buf[512];
+    snprintf(buf, sizeof(buf), "<p class='note bad'>%s</p><p><a href='%s'>Back</a></p>", esc, back);
+    httpd_resp_sendstr_chunk(req, buf);
+    return send_page_end(req);
+}
+
+static esp_err_t redirect_to(httpd_req_t *req, const char *location)
+{
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", location);
+    return httpd_resp_send(req, NULL, 0);
+}
+
+typedef struct {
+    const char *code;
+    const char *text;
+} notice_t;
+
+/* The message for a page's ?done=code, from a fixed list so a link cannot put its own text on the page. */
+static void send_notice(httpd_req_t *req, const notice_t *list, size_t n)
+{
+    char q[48];
+    char code[24];
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK ||
+        httpd_query_key_value(q, "done", code, sizeof(code)) != ESP_OK) {
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (strcmp(code, list[i].code) == 0) {
+            httpd_resp_sendstr_chunk(req, "<p class=note>");
+            httpd_resp_sendstr_chunk(req, list[i].text);
+            httpd_resp_sendstr_chunk(req, "</p>");
+            return;
+        }
+    }
+}
+
+/*
+ * The latest scan. Scanning takes the radio off its channel for about 2 s,
+ * so it is repeated only when forced, or when scan_if_stale and the last one
+ * is over a minute old.
+ */
+static int wifi_scan_cached(bool force, bool scan_if_stale, const wifi_ap_record_t **out)
+{
     static wifi_ap_record_t recs[MAX_SCAN];
     static int n;
     static int64_t scanned_at;
-    char q[16] = "";
-    bool want_rescan = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && strstr(q, "rescan") != NULL;
     int64_t now = esp_timer_get_time();
-    if (want_rescan || scanned_at == 0 || now - scanned_at > SCAN_MAX_AGE_US) {
+    if (force || (scan_if_stale && (scanned_at == 0 || now - scanned_at > SCAN_MAX_AGE_US))) {
         int res = wifi_prov_scan(recs, MAX_SCAN);
         if (res > 0) {
             n = res;
@@ -250,6 +323,13 @@ static esp_err_t send_setup_page(httpd_req_t *req)
             n = 0;
         }
     }
+    *out = recs;
+    return n;
+}
+
+/* One <option> per network name in the scan, strongest first as the scan sorts them. */
+static void send_ssid_options(httpd_req_t *req, const wifi_ap_record_t *recs, int n)
+{
     char esc[200];
     char line[512];
     for (int i = 0; i < n; i++) {
@@ -268,6 +348,23 @@ static esp_err_t send_setup_page(httpd_req_t *req)
         snprintf(line, sizeof(line), "<option value=\"%s\">%s (%d dBm)</option>", esc, esc, recs[i].rssi);
         httpd_resp_sendstr_chunk(req, line);
     }
+}
+
+static esp_err_t send_setup_page(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(req, "<h2>" LOGO_SVG "ZebSerial WiFi setup</h2><form method=post action=/save>"
+                                  "<label>Network</label><select name=ssid>");
+    /*
+     * Phones fire several captive-portal probes that all land here; scanning
+     * on each one disrupts the AP, so reuse a recent scan unless asked.
+     */
+    char q[16] = "";
+    bool want_rescan = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && strstr(q, "rescan") != NULL;
+    const wifi_ap_record_t *recs;
+    int n = wifi_scan_cached(want_rescan, true, &recs);
+    send_ssid_options(req, recs, n);
     httpd_resp_sendstr_chunk(req, "</select>"
                                   "<label>or type a network name</label><input name=ssid_manual maxlength=32>"
                                   "<label>Password</label><input name=pass type=password maxlength=64>"
@@ -277,13 +374,16 @@ static esp_err_t send_setup_page(httpd_req_t *req)
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
-static const char STATUS_BODY[] =
-    "<h2>" LOGO_SVG "ZebSerial</h2><table id=t></table><p><a href=/settings>Settings</a></p>"
-    "<form class=inline method=post action=/redetect><button>Re-detect printer</button></form> "
-    "<form class=inline method=post action=/forget onsubmit=\"return confirm('Forget WiFi and reboot into setup mode?')\">"
-    "<button>Forget WiFi</button></form>"
-    "<h3>Printer configuration</h3><p id=cs>Reading...</p><div id=c></div>"
-    "<button onclick=cfg(1)>Refresh printer configuration</button>"
+static const char STATUS_HTML[] =
+    "<div id=j></div>"
+    "<h3>Printer</h3><table id=tp></table>"
+    "<h3>Bridge</h3><table id=tb></table>"
+    "<h3>Printer configuration</h3><p id=cs>Reading...</p>"
+    "<label class=check><input type=checkbox id=raw onchange=draw()> Also show the printer's own wording</label>"
+    "<div id=c></div>"
+    "<button onclick=cfg(1)>Read the configuration from the printer again</button>";
+
+static const char STATUS_SCRIPT[] =
     "<script>"
     /* status values include printer replies and SSIDs, so escape everything that goes into the table */
     "function e(s){return String(s).replace(/[&<>\"']/g,function(c){return '&#'+c.charCodeAt(0)+';'})}"
@@ -300,18 +400,32 @@ static const char STATUS_BODY[] =
     "if(x=/^([\\d,]+(\\.\\d+)?) ?IN$/.exec(v))return len(parseFloat(x[1].replace(/,/g,''))*25.4);"
     "if(D&&DOTS[n]&&/^[+-]?\\d+$/.test(v))return (+v)+' dots = '+len(v/D);"
     "return null}"
-    "var FN={'SENSOR TYPE':'Media sensing','SENSOR SELECT':'Sensor choice',"
+    /* names for lines the printer form does not change; UI (from the firmware) names the ones it does */
+    "var FN={'SENSOR TYPE':'Media sensing',"
     "'WEB S.':'Gap sensor: gap reading','MEDIA S.':'Gap sensor: label reading','WEB GAIN':'Gap sensor gain',"
     "'MARK S.':'Mark sensor: mark reading','MARK MED S.':'Mark sensor: media reading','MARK GAIN':'Mark sensor gain',"
     "'MARK MEDIA GAIN':'Mark sensor media gain','CONT MEDIA S.':'Continuous media reading',"
     "'CONT MEDIA GAIN':'Continuous media gain','RIBBON OUT':'Ribbon-out threshold','RIBBON GAIN':'Ribbon sensor gain',"
-    "'TAKE LABEL':'Label-taken sensor threshold','ONBOARD FLASH':'Onboard flash'};"
+    "'TAKE LABEL':'Label-taken sensor threshold','ONBOARD FLASH':'Onboard flash',"
+    "'BAUD':'Serial speed','DATA BITS':'Data bits','PARITY':'Parity','HOST HANDSHAKE':'Handshake','PROTOCOL':'Protocol',"
+    "'SER COMM. MODE':'Serial port mode','USB COMM.':'USB port','PARALLEL COMM.':'Parallel port',"
+    "'CONTROL CHAR':'Control command prefix','COMMAND CHAR':'Format command prefix','DELIM. CHAR':'Delimiter',"
+    "'FIRMWARE':'Firmware','HARDWARE ID':'Hardware ID','SERIAL NUMBER':'Serial number','RESOLUTION':'Resolution',"
+    "'XML SCHEMA':'XML schema','CONFIGURATION':'Configuration','ZBI VERSION':'ZBI version',"
+    "'FORMAT CONVERT':'Format conversion','MODES ENABLED':'Modes enabled','MODES DISABLED':'Modes disabled',"
+    "'HEXDUMP':'Hex dump','HEAD USAGE':'Printhead usage','TOTAL USAGE':'Total printed','RESET CNTR1':'Counter 1',"
+    "'RESET CNTR2':'Counter 2','LAST CLEANED':'Since the head was cleaned'};"
+    "function has(o,k){return Object.prototype.hasOwnProperty.call(o,k)}"
+    "function nm(k){return has(UI,k)?UI[k][0]:has(FN,k)?FN[k]:k}"
     "var ST={'WEB':'gaps between labels','MARK':'black marks','CONTINUOUS':'continuous media'};"
+    "var LN={'zpl':'ZPL','epl_zpl':'ZPL and EPL','hybrid_xml_zpl':'ZPL and XML','epl':'EPL','line_print':'Line print',"
+    "'cpcl':'CPCL'};"
+    "var PIN={21:'D3',23:'D5'};function pin(g){return (has(PIN,g)?PIN[g]+' ':'')+'(GPIO'+g+')'}"
     /* sensors and lines the printer is not using with this media, print method and mode are dimmed */
     "function unused(k,m){var t=m['MEDIA TYPE']||'';"
     "if(/^(WEB S\\.|MEDIA S\\.|WEB GAIN)$/.test(k))return /GAP|NOTCH|WEB/.test(t)?'':'not used with this media';"
     "if(/^MARK/.test(k))return /MARK/.test(t)?'':'used for black-mark media only';"
-    "if(/^CONT/.test(k))return /CONT/.test(t)?'':'used for continuous media only';"
+    "if(/^CONT /.test(k))return /CONT/.test(t)?'':'used for continuous media only';"
     "if(/^RIBBON/.test(k))return /DIRECT/.test(m['PRINT METHOD']||'')?'not used in direct thermal mode':'';"
     "if(k=='TAKE LABEL')return /PEEL/.test(m['PRINT MODE']||'')?'':'used in peel-off mode only';"
     "return ''}"
@@ -322,43 +436,59 @@ static const char STATUS_BODY[] =
     "if(/ S\\.$|^RIBBON OUT$|^TAKE LABEL$/.test(k)&&/^\\d+$/.test(v))return (+v)+' of 100';"
     "if(/GAIN$/.test(k)&&/^\\d+$/.test(v))return ''+(+v);"
     "return si(k,v)}"
-    /* one clean value per row; the printer's own name and text are in the tooltip */
-    "function srow(k,v,m){var s=nice(k,v),u=m?unused(k,m):'',t=k+': '+v;if(s==null)s=v;"
-    "return '<tr title=\"'+e(t)+'\"'+(u?' style=opacity:.45':'')+'><td>'+e(FN[k]||k)+'</td><td>'+e(s)+"
-    "(u?' <small>('+e(u)+')</small>':'')+'</td></tr>'}"
+    /* a setting the printer form changes reads as the form does: its option text, or its number (and mm) */
+    "function val(k,v){if(has(UI,k)&&has(C,k)){var u=UI[k],c=C[k];if(has(u[3],c))return u[3][c];"
+    "if(u[2])return D?c+' dots = '+len(c/D):c+' dots';if(!Object.keys(u[3]).length)return c}return nice(k,v)}"
+    /* one clean value per row; the printer's own name and text in the tooltip, or under it when asked */
+    "function srow(k,v,m){var s=val(k,v),u=m?unused(k,m):'',t=k+': '+v;if(s==null)s=v;"
+    "return '<tr title=\"'+e(t)+'\"'+(u?' style=opacity:.45':'')+'><td>'+e(nm(k))+'</td><td>'+e(s)+"
+    "(u?' <small>('+e(u)+')</small>':'')+(RAW?'<br><small>'+e(t)+'</small>':'')+'</td></tr>'}"
     /* where the gap and label readings sit on the 0 to 100 scale */
     "function sbar(m){var w=+m['WEB S.'],l=+m['MEDIA S.'];"
     "if(!(w>=0&&l>=0&&w<=100&&l<=100)||!/GAP|NOTCH|WEB/.test(m['MEDIA TYPE']||''))return '';"
     "function d(x,c,t){return '<circle cx='+(4+x)+' cy=6 r=2.5 fill='+c+' />'+"
     "'<text x='+(4+x)+' y=15 font-size=4.5 text-anchor=middle fill=currentColor>'+t+' '+x+'</text>'}"
     "return '<p><small>Sensor readings are on the printer\\'s 0 to 100 scale and are set when it calibrates "
-    "(Calibrate media on the settings page). The further apart the gap and label readings, the more easily "
+    "(Calibrate media on the Printer page). The further apart the gap and label readings, the more easily "
     "it tells them apart.</small></p><svg viewBox=\"0 0 108 17\" style=\"width:100%;max-width:26em\">'+"
     "'<line x1=4 y1=6 x2=104 y2=6 stroke=currentColor stroke-opacity=.3 stroke-width=1.5 />'+"
     "d(w,'#c60','gap')+d(l,'#06c','label')+'</svg>'}"
     "function dur(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
     "return (d?d+'d ':'')+(d||h?h+'h ':'')+m+'m'}"
     "function flags(h){var f=[];for(var k in h)if(h[k]===true)f.push(k.replace('_',' '));return f.length?f.join(', '):'ok'}"
-    "async function upd(){try{var s=await(await fetch('/api/status')).json();var p=s.printer,b=s.bridge;"
-    "document.getElementById('t').innerHTML="
-    "row('WiFi',s.wifi.ssid+', '+s.wifi.rssi+' dBm'+(s.wifi.phy?', '+s.wifi.phy:'')+(s.wifi.channel?', channel '+s.wifi.channel:''))+"
-    "(s.wifi.bssid?row('Access point',s.wifi.bssid):'')+"
-    "row('Address',s.wifi.hostname+'.local, '+s.wifi.ip+(s.wifi.static_ip?' (static)':' (DHCP)'))+"
-    "row('IPv6',s.wifi.ip6.length?s.wifi.ip6.join('\\n'):'none')+"
-    "row('Printer',p.detected?((p.model?p.model+', ':'')+(p.answering?'answering at '+p.baud+' baud':"
+    "function id(x){return document.getElementById(x)}"
+    /* J: the last Wi-Fi join state seen, H: the hostname, for when the bridge stops answering mid-join */
+    "var J='',H='zebserial';"
+    "function join(w){var j=w.join,t;J=j.state;if(!J){id('j').innerHTML='';return}"
+    "t=J=='trying'?'Trying network '+j.ssid+'. If it cannot join within 30 s the bridge goes back to '+w.ssid+'.':"
+    "J=='joined'?'Joined '+j.ssid+'.':'Could not join '+j.ssid+(j.why?' ('+j.why+')':'')+'; still on '+w.ssid+'.';"
+    "id('j').innerHTML='<p class=\"note'+(J=='failed'?' bad':'')+'\">'+e(t)+'</p>'}"
+    "async function upd(){try{var s=await(await fetch('/api/status')).json();var p=s.printer,b=s.bridge,w=s.wifi;"
+    "H=w.hostname;join(w);"
+    "id('tp').innerHTML="
+    "row('Printer',p.detected?((p.model?p.model+', ':'')+(p.answering?'answering':"
     "'not answering for '+dur(Math.round(p.reply_age_ms/1000))+' (paper or ribbon out, head open, or switched off?)')):"
-    "('not detected (trying '+p.baud+')'))+"
-    "(p.language?row('Language',p.language+(p.zpl?'':' (not ZPL: jobs pass through, settings unavailable)')):'')+"
+    "('not detected (trying '+p.baud+' baud)'))+"
+    "(p.language?row('Language',(has(LN,p.language)?LN[p.language]:p.language)+"
+    "(p.zpl?'':' (not ZPL: jobs pass through, settings unavailable)')):'')+"
     "row('Status',p.hs_valid?flags(p.hs)+' ('+Math.round(p.hs_age_ms/1000)+' s ago)':'unknown')+"
-    "row('Handshake',p.handshake||'unknown')+"
-    "row('UART pins','TX GPIO'+p.tx_gpio+', RX GPIO'+p.rx_gpio)+"
+    "row('Serial link',p.baud+' baud, '+(p.handshake||'handshake unknown')+'\\nTX '+pin(p.tx_gpio)+', RX '+pin(p.rx_gpio)+"
+    "(s.config.target_baud&&s.config.target_baud!=p.baud?'\\nset to '+s.config.target_baud+' baud on the Bridge page':''));"
+    "id('tb').innerHTML="
+    "row('Wi-Fi',w.ip?w.ssid+', '+w.rssi+' dBm'+(w.phy?', '+w.phy:'')+(w.channel?', channel '+w.channel:''):"
+    "'not connected'+(w.ssid?' (trying '+w.ssid+')':''))+"
+    "(w.bssid?row('Access point',w.bssid):'')+"
+    "row('Address',w.hostname+'.local, '+(w.ip||'no address')+(w.static_ip?' (static)':' (DHCP)'))+"
+    "row('IPv6',w.ip6.length?w.ip6.join('\\n'):'none')+"
     "row('Print client',b.active?('printing from '+b.client_ip):('idle, last '+(b.client_ip||'none')))+"
     "row('Jobs',b.sessions+' ('+b.aborted+' dropped)')+"
     "row('Bytes',b.to_printer+' to printer, '+b.from_printer+' back')+"
     "row('Uptime',dur(s.uptime_s))+"
-    "row('Firmware',s.version+' '+s.built)}catch(e){}}"
+    "row('Firmware',s.version+' '+s.built)}"
+    "catch(x){if(J=='trying')id('j').innerHTML='<p class=note>No reply from the bridge. If it joined the new network, '+"
+    "'connect to that network and open http://'+e(H)+'.local/</p>'}}"
     "upd();setInterval(upd,2000);"
-    /* ^HH names by group; names this list does not know go under Other */
+    /* ^HH names by group, as the Printer page groups its form; names this list does not know go under Other */
     "var G=[['Print',['DARKNESS','PRINT SPEED','PRINT METHOD','PRINT MODE','PRINT WIDTH','LABEL LENGTH','TEAR OFF',"
     "'LABEL TOP','LEFT POSITION','BACKFEED']],"
     "['Media',['MEDIA TYPE','MAXIMUM LENGTH','MEDIA POWER UP','HEAD CLOSE']],"
@@ -368,21 +498,27 @@ static const char STATUS_BODY[] =
     "'MARK MEDIA GAIN','CONT MEDIA S.','CONT MEDIA GAIN','RIBBON OUT','RIBBON GAIN','TAKE LABEL']],"
     "['Firmware and hardware',['FIRMWARE','HARDWARE ID','SERIAL NUMBER','RESOLUTION','RAM','ONBOARD FLASH',"
     "'XML SCHEMA','CONFIGURATION','ZBI','ZBI VERSION','FORMAT CONVERT','MODES ENABLED','MODES DISABLED','HEXDUMP']],"
-    "['Usage',['HEAD USAGE','TOTAL USAGE','RESET CNTR1','RESET CNTR2','LAST CLEANED','EARLY WARNING']]];"
-    "async function cfg(r){var st=document.getElementById('cs');st.textContent='Reading...';"
-    "try{var c=await(await fetch('/api/printer_config'+(r?'?refresh=1':''))).json();"
+    "['Usage and maintenance',['HEAD USAGE','TOTAL USAGE','RESET CNTR1','RESET CNTR2','LAST CLEANED','EARLY WARNING']]];"
+    "var LC=null,C={},RAW=false;"
+    "function draw(){RAW=id('raw').checked;if(!LC)return;var c=LC;"
     "var m=Object.create(null),seen=Object.create(null),h='',o='';c.pairs.forEach(function(p){if(!(p[0] in m))m[p[0]]=p[1]});"
-    "var r=/ (\\d+)\\/MM/.exec(m['RESOLUTION']||'');D=r?+r[1]:0;"
-    "G.forEach(function(g){var t='';g[1].forEach(function(n){if(n in m){t+=srow(n,m[n],m);seen[n]=1}});"
-    "if(t)h+='<h4>'+e(g[0])+'</h4>'+(g[0]=='Sensors'?sbar(m):'')+'<table>'+t+'</table>'});"
+    "var r=/ (\\d+)\\/MM/.exec(m['RESOLUTION']||'');D=r?+r[1]:0;C=c.cfg||{};"
+    "G.forEach(function(g){var t='',ch=false;g[1].forEach(function(n){if(n in m){t+=srow(n,m[n],m);seen[n]=1;"
+    "if(has(UI,n)&&has(C,n))ch=true}});"
+    "if(t)h+='<h4>'+e(g[0])+(ch?' <small><a href=\"/printer#g-'+g[0].split(' ')[0].toLowerCase()+'\">change</a></small>':'')+"
+    "'</h4>'+(g[0]=='Sensors'?sbar(m):'')+'<table>'+t+'</table>'});"
     "c.pairs.forEach(function(p){if(!seen[p[0]])o+=srow(p[0],p[1],m)});"
     "if(o)h+='<h4>Other</h4><table>'+o+'</table>';"
-    "document.getElementById('c').innerHTML=h;"
+    "id('c').innerHTML=h}"
+    "async function cfg(r){var st=id('cs');st.textContent='Reading...';"
+    "try{var c=await(await fetch('/api/printer_config'+(r?'?refresh=1':''))).json();LC=c;draw();"
     "st.textContent=(c.error?c.error+'. ':'')+(c.age_ms>=0?'Read from the printer '+Math.round(c.age_ms/1000)+' s ago. '"
     "+'Hold the pointer over a row to see the wording the printer uses.':'')"
     "}catch(x){st.textContent='Could not load the printer configuration.'}}"
     "cfg(0)"
     "</script>";
+
+static void send_ui_script(httpd_req_t *req);
 
 static esp_err_t root_get(httpd_req_t *req)
 {
@@ -392,11 +528,11 @@ static esp_err_t root_get(httpd_req_t *req)
     if (!host_allowed(req)) {
         return cross_site(req);
     }
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-    httpd_resp_sendstr_chunk(req, STATUS_BODY);
-    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
-    return httpd_resp_sendstr_chunk(req, NULL);
+    send_page_start(req, NAV_STATUS, "ZebSerial");
+    httpd_resp_sendstr_chunk(req, STATUS_HTML);
+    send_ui_script(req);
+    httpd_resp_sendstr_chunk(req, STATUS_SCRIPT);
+    return send_page_end(req);
 }
 
 static esp_err_t save_post(httpd_req_t *req)
@@ -420,15 +556,15 @@ static esp_err_t save_post(httpd_req_t *req)
         strlcpy(ssid, manual, sizeof(ssid));
     }
     if (ssid[0] == '\0') {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no network chosen");
+        return fail(req, "400 Bad Request", "No network chosen.", "/");
     }
     if (pass[0] != '\0' && strlen(pass) < 8) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "WPA passwords are at least 8 characters");
+        return fail(req, "400 Bad Request", "WPA passwords are at least 8 characters.", "/");
     }
     esp_err_t err = settings_set_wifi(ssid, pass);
     memset(pass, 0, sizeof(pass));
     if (err != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "could not save");
+        return fail(req, "500 Internal Server Error", "Could not save the network.", "/");
     }
     ESP_LOGI(TAG, "saved WiFi network \"%s\", rebooting", ssid);
     httpd_resp_set_type(req, "text/html");
@@ -479,6 +615,12 @@ static esp_err_t status_get(httpd_req_t *req)
     json_escape(p.language, lang_esc, sizeof(lang_esc));
     char hostname_esc[sizeof(net.hostname) * 6];
     json_escape(net.hostname, hostname_esc, sizeof(hostname_esc));
+    char join_ssid[SETTINGS_SSID_MAX];
+    const char *join_why;
+    wifi_join_state_t join = wifi_prov_join_state(join_ssid, &join_why);
+    static const char *const join_names[] = {"", "trying", "joined", "failed"};
+    char join_esc[32 * 6 + 1];
+    json_escape(join_ssid, join_esc, sizeof(join_esc));
     char ip6[WIFI_PROV_IP6_MAX][46];
     int n6 = wifi_prov_ip6(ip6);
     char ip6_json[WIFI_PROV_IP6_MAX * 50 + 4] = "[";
@@ -488,14 +630,14 @@ static esp_err_t status_get(httpd_req_t *req)
     }
     strlcat(ip6_json, "]", sizeof(ip6_json));
 
-    const size_t json_cap = 2048;
+    const size_t json_cap = 3072;
     char *json = malloc(json_cap);
     if (json == NULL) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
     }
     int json_len = snprintf(json, json_cap,
              "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"phy\":\"%s\",\"channel\":%d,\"bssid\":\"%s\",\"hostname\":\"%s\",\"static_ip\":%s,"
-             "\"ip6\":%s},"
+             "\"ip6\":%s,\"join\":{\"state\":\"%s\",\"ssid\":\"%s\",\"why\":\"%s\"}},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
              "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"model\":\"%s\","
              "\"language\":\"%s\",\"zpl\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
@@ -506,6 +648,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
+             join_names[join], join_esc, join_why,
              (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
              p.answering ? "true" : "false", (long long)p.reply_age_ms, model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
@@ -528,8 +671,6 @@ static esp_err_t status_get(httpd_req_t *req)
     free(json);
     return err;
 }
-
-static esp_err_t redirect_home(httpd_req_t *req);
 
 /*
  * The cached printer configuration, read again from the printer when older
@@ -597,42 +738,109 @@ static esp_err_t printer_config_get(httpd_req_t *req)
         snprintf(line, sizeof(line), "%s[\"%s\",\"%s\"]", i ? "," : "", name, value);
         httpd_resp_sendstr_chunk(req, line);
     }
+    /* the settings the printer form changes, decoded as the form's values, so the status page words them alike */
+    httpd_resp_sendstr_chunk(req, "],\"cfg\":{");
+    zpl_printer_cfg_t cur;
+    zpl_cfg_from_hh(hh, &cur);
     free(hh);
-    httpd_resp_sendstr_chunk(req, "]}");
+    int k = 0;
+    for (int f = 0; f < ZPL_CFG_COUNT; f++) {
+        if (cur.known & (1u << f)) {
+            char text[16];
+            zpl_cfg_format((zpl_cfg_field_t)f, cur.v[f], text, sizeof(text));
+            snprintf(line, sizeof(line), "%s\"%s\":\"%s\"", k++ ? "," : "", zpl_cfg_desc((zpl_cfg_field_t)f)->hh_name,
+                     text);
+            httpd_resp_sendstr_chunk(req, line);
+        }
+    }
+    httpd_resp_sendstr_chunk(req, "}}");
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
-/* Form controls for the printer settings, in page order. options: "value=Label|..." or NULL for a number. */
+/*
+ * Form controls for the printer settings, in page order. The groups and
+ * labels are the status page's too (send_ui_script), so a setting has one
+ * name and one wording everywhere. options: "value=Label|..." or NULL for a
+ * number.
+ */
 typedef struct {
     zpl_cfg_field_t field;
+    const char *group;      /* as in the status page's G list */
     const char *label;
+    const char *unit;       /* "dots" or "dot rows": a number also shown in mm; NULL otherwise */
     const char *options;
-    bool dots;      /* a number in dots or dot rows: also shown in mm */
 } printer_field_ui_t;
 
 #define FEED_OPTIONS "F=Feed|C=Calibrate|L=Measure length|N=No motion"
 static const printer_field_ui_t s_printer_ui[] = {
-    {ZPL_CFG_DARKNESS, "Darkness", NULL, false},
-    {ZPL_CFG_SPEED, "Print speed", "2=51 mm/s (2 ips)|3=76 mm/s (3 ips)|4=102 mm/s (4 ips)|5=127 mm/s (5 ips)|"
-                                     "6=152 mm/s (6 ips)", false},
-    {ZPL_CFG_METHOD, "Print method", "D=Direct thermal|T=Thermal transfer", false},
-    {ZPL_CFG_MODE, "Print mode", "T=Tear off|P=Peel off|R=Rewind|C=Cutter|D=Delayed cut", false},
-    {ZPL_CFG_MEDIA, "Media type", "Y=Gap/notch|M=Mark|N=Continuous", false},
-    {ZPL_CFG_SENSOR, "Sensor select", "A=Auto|R=Reflective|T=Transmissive", false},
-    {ZPL_CFG_WIDTH, "Print width (dots)", NULL, true},
-    {ZPL_CFG_LENGTH, "Label length (dots)", NULL, true},
-    {ZPL_CFG_MAX_LENGTH, "Maximum label length (dots)", NULL, true},
-    {ZPL_CFG_TEAR_OFF, "Tear-off adjust (dot rows)", NULL, true},
-    {ZPL_CFG_LABEL_TOP, "Label top (dot rows)", NULL, true},
-    {ZPL_CFG_LEFT_POS, "Left position (dots)", NULL, true},
-    {ZPL_CFG_POWER_UP, "Media at power up", FEED_OPTIONS, false},
-    {ZPL_CFG_HEAD_CLOSE, "Media at head close", FEED_OPTIONS, false},
-    {ZPL_CFG_BACKFEED, "Backfeed", "N=Default (90% after printing)|A=After printing|B=Before the next label|O=Off|"
-                                   "10=10% after|20=20% after|30=30% after|40=40% after|50=50% after|60=60% after|"
-                                   "70=70% after|80=80% after|90=90% after", false},
-    {ZPL_CFG_EARLY_WARNING, "Head maintenance early warning", "D=Off|E=On", false},
-    {ZPL_CFG_ZPL_MODE, "ZPL mode", "2=ZPL II|1=ZPL", false},
+    {ZPL_CFG_DARKNESS, "Print", "Darkness", NULL, NULL},
+    {ZPL_CFG_SPEED, "Print", "Print speed", NULL,
+     "2=51 mm/s (2 ips)|3=76 mm/s (3 ips)|4=102 mm/s (4 ips)|5=127 mm/s (5 ips)|6=152 mm/s (6 ips)"},
+    {ZPL_CFG_METHOD, "Print", "Print method", NULL, "D=Direct thermal|T=Thermal transfer"},
+    {ZPL_CFG_MODE, "Print", "Print mode", NULL, "T=Tear off|P=Peel off|R=Rewind|C=Cutter|D=Delayed cut"},
+    {ZPL_CFG_WIDTH, "Print", "Print width", "dots", NULL},
+    {ZPL_CFG_LENGTH, "Print", "Label length", "dots", NULL},
+    {ZPL_CFG_TEAR_OFF, "Print", "Tear-off adjust", "dot rows", NULL},
+    {ZPL_CFG_LABEL_TOP, "Print", "Label top", "dot rows", NULL},
+    {ZPL_CFG_LEFT_POS, "Print", "Left position", "dots", NULL},
+    {ZPL_CFG_BACKFEED, "Print", "Backfeed",
+     NULL, "N=Default (90% after printing)|A=After printing|B=Before the next label|O=Off|"
+           "10=10% after|20=20% after|30=30% after|40=40% after|50=50% after|60=60% after|"
+           "70=70% after|80=80% after|90=90% after"},
+    {ZPL_CFG_MEDIA, "Media", "Media type", NULL, "Y=Gap/notch|M=Mark|N=Continuous"},
+    {ZPL_CFG_MAX_LENGTH, "Media", "Maximum label length", "dots", NULL},
+    {ZPL_CFG_POWER_UP, "Media", "Media at power up", NULL, FEED_OPTIONS},
+    {ZPL_CFG_HEAD_CLOSE, "Media", "Media at head close", NULL, FEED_OPTIONS},
+    {ZPL_CFG_ZPL_MODE, "Communications", "ZPL mode", NULL, "2=ZPL II|1=ZPL"},
+    {ZPL_CFG_SENSOR, "Sensors", "Sensor select", NULL, "A=Auto|R=Reflective|T=Transmissive"},
+    {ZPL_CFG_EARLY_WARNING, "Usage and maintenance", "Head maintenance early warning", NULL, "D=Off|E=On"},
 };
+#define PRINTER_UI_COUNT (sizeof(s_printer_ui) / sizeof(s_printer_ui[0]))
+
+/* Calls fn(value, value_len, text, text_len) for each "value=Label" in options. */
+#define FOR_EACH_OPTION(options, value, vlen, text, tlen, body)                    \
+    for (const char *o_ = (options); *o_ != '\0';) {                               \
+        const char *bar_ = strchr(o_, '|');                                         \
+        size_t len_ = bar_ ? (size_t)(bar_ - o_) : strlen(o_);                      \
+        const char *eq_ = memchr(o_, '=', len_);                                    \
+        if (eq_ != NULL) {                                                          \
+            const char *value = o_;                                                 \
+            size_t vlen = (size_t)(eq_ - o_);                                       \
+            const char *text = eq_ + 1;                                             \
+            size_t tlen = len_ - vlen - 1;                                          \
+            body                                                                    \
+        }                                                                           \
+        o_ += len_;                                                                 \
+        if (*o_ == '|') {                                                           \
+            o_++;                                                                   \
+        }                                                                           \
+    }
+
+/*
+ * var UI={'^HH name':[label, group, in dots, {value: option text}], ...}
+ * for the status page. The labels and options hold no quote or backslash.
+ */
+static void send_ui_script(httpd_req_t *req)
+{
+    char buf[160];
+    httpd_resp_sendstr_chunk(req, "<script>var UI={");
+    for (size_t i = 0; i < PRINTER_UI_COUNT; i++) {
+        const printer_field_ui_t *ui = &s_printer_ui[i];
+        snprintf(buf, sizeof(buf), "%s'%s':['%s','%s',%d,{", i ? "," : "", zpl_cfg_desc(ui->field)->hh_name, ui->label,
+                 ui->group, ui->unit != NULL);
+        httpd_resp_sendstr_chunk(req, buf);
+        if (ui->options != NULL) {
+            bool first = true;
+            FOR_EACH_OPTION(ui->options, value, vlen, text, tlen, {
+                snprintf(buf, sizeof(buf), "%s'%.*s':'%.*s'", first ? "" : ",", (int)vlen, value, (int)tlen, text);
+                httpd_resp_sendstr_chunk(req, buf);
+                first = false;
+            })
+        }
+        httpd_resp_sendstr_chunk(req, "}]");
+    }
+    httpd_resp_sendstr_chunk(req, "};</script>");
+}
 
 /* dots at dpmm dots per mm as millimetres to one decimal place */
 static void fmt_mm(int dots, int dpmm, char *out, size_t out_len)
@@ -647,12 +855,12 @@ static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, c
     const zpl_cfg_desc_t *d = zpl_cfg_desc(ui->field);
     char cur_text[16];
     zpl_cfg_format(ui->field, cur->v[ui->field], cur_text, sizeof(cur_text));
-    char buf[512];
+    char buf[640];
     if (ui->options == NULL) {
         int min;
         int max;
         zpl_cfg_range(cur, ui->field, &min, &max);
-        if (ui->dots && cur->dpmm > 0) {
+        if (ui->unit != NULL && cur->dpmm > 0) {
             char lo[16];
             char hi[16];
             char now[16];
@@ -660,48 +868,53 @@ static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, c
             fmt_mm(max, cur->dpmm, hi, sizeof(hi));
             fmt_mm(cur->v[ui->field], cur->dpmm, now, sizeof(now));
             snprintf(buf, sizeof(buf),
-                     "<label>%s <small>(%d to %d, %s to %s mm; now <span id=mm_%s>%s mm</span>)</small></label>"
-                     "<input name=%s type=number min=%d max=%d step=1 value=%s oninput=\"document.getElementById("
-                     "'mm_%s').textContent=(this.value/%d).toFixed(1)+' mm'\">",
-                     ui->label, min, max, lo, hi, d->key, now, d->key, min, max, cur_text, d->key, cur->dpmm);
+                     "<label for=f_%s>%s <small>(%s, %d to %d = %s to %s mm; now <span id=mm_%s>%s mm</span>)</small>"
+                     "</label><input id=f_%s name=%s type=number min=%d max=%d step=1 value=%s "
+                     "oninput=\"document.getElementById('mm_%s').textContent=(this.value/%d).toFixed(1)+' mm'\">",
+                     d->key, ui->label, ui->unit, min, max, lo, hi, d->key, now, d->key, d->key, min, max, cur_text,
+                     d->key, cur->dpmm);
             httpd_resp_sendstr_chunk(req, buf);
             return;
         }
         snprintf(buf, sizeof(buf),
-                 "<label>%s <small>(%d to %d)</small></label>"
-                 "<input name=%s type=number min=%d max=%d step=1 value=%s>",
-                 ui->label, min, max, d->key, min, max, cur_text);
+                 "<label for=f_%s>%s <small>(%s%s%d to %d)</small></label>"
+                 "<input id=f_%s name=%s type=number min=%d max=%d step=1 value=%s>",
+                 d->key, ui->label, ui->unit ? ui->unit : "", ui->unit ? ", " : "", min, max, d->key, d->key, min, max,
+                 cur_text);
         httpd_resp_sendstr_chunk(req, buf);
         return;
     }
-    snprintf(buf, sizeof(buf), "<label>%s</label><select name=%s>", ui->label, d->key);
+    snprintf(buf, sizeof(buf), "<label for=f_%s>%s</label><select id=f_%s name=%s>", d->key, ui->label, d->key,
+             d->key);
     httpd_resp_sendstr_chunk(req, buf);
-    for (const char *o = ui->options; *o != '\0';) {
-        const char *bar = strchr(o, '|');
-        size_t len = bar ? (size_t)(bar - o) : strlen(o);
-        const char *eq = memchr(o, '=', len);
-        char value[8];
-        size_t vlen = eq ? (size_t)(eq - o) : 0;
+    FOR_EACH_OPTION(ui->options, value, vlen, text, tlen, {
+        char v_text[8];
         int v;
-        if (eq != NULL && vlen < sizeof(value)) {
-            memcpy(value, o, vlen);
-            value[vlen] = '\0';
-            if (zpl_cfg_parse(cur, ui->field, value, &v)) {
-                snprintf(buf, sizeof(buf), "<option value=%s%s>%.*s</option>", value,
-                         v == cur->v[ui->field] ? " selected" : "", (int)(len - vlen - 1), eq + 1);
+        if (vlen < sizeof(v_text)) {
+            memcpy(v_text, value, vlen);
+            v_text[vlen] = '\0';
+            if (zpl_cfg_parse(cur, ui->field, v_text, &v)) {
+                snprintf(buf, sizeof(buf), "<option value=%s%s>%.*s</option>", v_text,
+                         v == cur->v[ui->field] ? " selected" : "", (int)tlen, text);
                 httpd_resp_sendstr_chunk(req, buf);
             }
         }
-        o += len;
-        if (*o == '|') {
-            o++;
-        }
-    }
+    })
     httpd_resp_sendstr_chunk(req, "</select>");
 }
 
-/* The printer's own settings and maintenance actions on the settings page. */
-static void send_printer_section(httpd_req_t *req)
+/* "g-print" for "Print": the anchor the status page's group headings link to. */
+static void group_anchor(const char *group, char *out, size_t out_len)
+{
+    size_t o = strlcpy(out, "g-", out_len);
+    for (const char *g = group; *g != '\0' && *g != ' ' && o + 1 < out_len; g++) {
+        out[o++] = (char)(*g >= 'A' && *g <= 'Z' ? *g - 'A' + 'a' : *g);
+    }
+    out[o] = '\0';
+}
+
+/* The printer's settings form, grouped as on the status page. */
+static void send_printer_form(httpd_req_t *req)
 {
     zpl_hh_t *hh = malloc(sizeof(*hh));
     zpl_printer_cfg_t *cur = malloc(sizeof(*cur));
@@ -713,24 +926,36 @@ static void send_printer_section(httpd_req_t *req)
     }
     char buf[512];
     char esc[ZPL_HH_VALUE_LEN * 6];
-    httpd_resp_sendstr_chunk(req, "<form method=post action=/printer_config><fieldset>"
-                                  "<legend>Printer settings <small>(sent to the printer and saved there; "
-                                  "only changed values are sent)</small></legend>");
+    httpd_resp_sendstr_chunk(req, "<form method=post action=/printer_config>");
     if (error != NULL) {
-        snprintf(buf, sizeof(buf), "<p>%s.%s <a href=/settings>Try again</a></p>", error,
+        snprintf(buf, sizeof(buf), "<p class='note bad'>%s.%s <a href=/printer>Try again</a></p>", error,
                  have ? " These values are from an earlier reading." : "");
         httpd_resp_sendstr_chunk(req, buf);
     }
     if (have) {
         zpl_cfg_from_hh(hh, cur);
-        for (size_t i = 0; i < sizeof(s_printer_ui) / sizeof(s_printer_ui[0]); i++) {
-            if (cur->known & (1u << s_printer_ui[i].field)) {
-                send_printer_field(req, cur, &s_printer_ui[i]);
+        const char *group = NULL;
+        for (size_t i = 0; i < PRINTER_UI_COUNT; i++) {
+            const printer_field_ui_t *ui = &s_printer_ui[i];
+            if (!(cur->known & (1u << ui->field))) {
+                continue;
             }
+            if (group == NULL || strcmp(group, ui->group) != 0) {
+                char anchor[24];
+                group_anchor(ui->group, anchor, sizeof(anchor));
+                snprintf(buf, sizeof(buf), "%s<fieldset id=%s><legend>%s</legend>", group ? "</fieldset>" : "", anchor,
+                         ui->group);
+                httpd_resp_sendstr_chunk(req, buf);
+                group = ui->group;
+            }
+            send_printer_field(req, cur, ui);
+        }
+        if (group != NULL) {
+            httpd_resp_sendstr_chunk(req, "</fieldset>");
         }
         /* the bridge depends on these, so they are shown, not offered */
         static const char *const serial[] = {"BAUD", "DATA BITS", "PARITY", "HOST HANDSHAKE", "PROTOCOL"};
-        httpd_resp_sendstr_chunk(req, "<p><small>Serial port (set by the bridge, not changeable here):");
+        httpd_resp_sendstr_chunk(req, "<p><small>Serial port:");
         for (size_t i = 0; i < sizeof(serial) / sizeof(serial[0]); i++) {
             const char *v = zpl_hh_get(hh, serial[i]);
             if (v != NULL) {
@@ -739,36 +964,75 @@ static void send_printer_section(httpd_req_t *req)
                 httpd_resp_sendstr_chunk(req, buf);
             }
         }
-        httpd_resp_sendstr_chunk(req, "</small></p><button type=submit>Save to printer</button>");
+        httpd_resp_sendstr_chunk(req, ". The bridge sets these; its speed is under Serial link on the "
+                                      "<a href=/bridge>Bridge</a> page.</small></p>"
+                                      "<button type=submit>Send to printer</button>");
     }
-    httpd_resp_sendstr_chunk(req, "</fieldset></form>");
+    httpd_resp_sendstr_chunk(req, "</form>");
     free(hh);
     free(cur);
+}
 
-    httpd_resp_sendstr_chunk(
-        req,
-        "<fieldset><legend>Printer maintenance</legend>"
-        "<form class=inline method=post action=/printer_action><input type=hidden name=action value=calibrate>"
-        "<button>Calibrate media</button></form> "
-        "<form class=inline method=post action=/printer_action><input type=hidden name=action value=feed>"
-        "<button>Feed one label</button></form> "
-        "<form class=inline method=post action=/printer_action><input type=hidden name=action value=config_label>"
-        "<button>Print configuration label</button></form> "
-        "<form class=inline method=post action=/printer_action onsubmit=\"return confirm('Reset counter 1?')\">"
-        "<input type=hidden name=action value=reset_counter1><button>Reset counter 1</button></form> "
-        "<form class=inline method=post action=/printer_action onsubmit=\"return confirm('Reset counter 2?')\">"
-        "<input type=hidden name=action value=reset_counter2><button>Reset counter 2</button></form> "
-        "<form class=inline method=post action=/printer_action "
-        "onsubmit=\"return confirm('Reset the head cleaned counter?')\">"
-        "<input type=hidden name=action value=reset_head_cleaned><button>Head cleaned</button></form> "
-        "<form class=inline method=post action=/printer_action "
-        "onsubmit=\"return confirm('Discard unsaved printer changes and reload its saved settings?')\">"
-        "<input type=hidden name=action value=reload_saved><button>Reload saved settings</button></form> "
-        "<form class=inline method=post action=/printer_action onsubmit=\"return confirm("
-        "'Restore the printer to factory defaults and save them? This also resets its serial port; "
-        "the bridge then finds it again and sets 115200 baud, XON/XOFF.')\">"
-        "<input type=hidden name=action value=factory_defaults><button>Restore factory defaults</button></form>"
-        "</fieldset>");
+/* A one-button form posting action to /printer_action; confirm (no quotes) asks first when not NULL. */
+static void send_action(httpd_req_t *req, const char *action, const char *label, const char *confirm, bool danger)
+{
+    char buf[400];
+    snprintf(buf, sizeof(buf),
+             "<form class=inline method=post action=/printer_action%s%s%s><input type=hidden name=action value=%s>"
+             "<button%s>%s</button></form> ",
+             confirm ? " onsubmit=\"return confirm('" : "", confirm ? confirm : "", confirm ? "')\"" : "", action,
+             danger ? " class=danger" : "", label);
+    httpd_resp_sendstr_chunk(req, buf);
+}
+
+static const notice_t s_printer_notices[] = {
+    {"sent", "Sent to the printer and saved there."},
+    {"same", "Nothing was changed, so nothing was sent."},
+    {"calibrate", "Calibrating: the printer feeds labels while it measures them."},
+    {"feed", "Fed one label."},
+    {"config_label", "Printing the configuration label."},
+    {"reset_counter1", "Counter 1 reset."},
+    {"reset_counter2", "Counter 2 reset."},
+    {"reset_head_cleaned", "Head cleaning recorded."},
+    {"reload_saved", "The printer reloaded its saved settings."},
+    {"factory_defaults", "Factory defaults restored. The bridge is finding the printer again to set its serial port."},
+    {"redetect", "Finding the printer again."},
+};
+
+/* GET /printer: the printer's own settings and maintenance. */
+static esp_err_t printer_get_page(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    if (!host_allowed(req)) {
+        return cross_site(req);
+    }
+    send_page_start(req, NAV_PRINTER, "Printer settings");
+    send_notice(req, s_printer_notices, sizeof(s_printer_notices) / sizeof(s_printer_notices[0]));
+    httpd_resp_sendstr_chunk(req, "<p><small>These settings are kept in the printer and sent to it over the serial "
+                                  "link; only changed values are sent, then saved in the printer. The bridge's own "
+                                  "settings are on the <a href=/bridge>Bridge</a> page.</small></p>");
+    send_printer_form(req);
+    httpd_resp_sendstr_chunk(req, "<fieldset><legend>Routine</legend>");
+    send_action(req, "feed", "Feed one label", NULL, false);
+    send_action(req, "calibrate", "Calibrate media", "Calibrate the media sensors? The printer feeds several labels.",
+                false);
+    send_action(req, "config_label", "Print configuration label", NULL, false);
+    send_action(req, "reset_head_cleaned", "Mark head cleaned", "Record that the printhead has just been cleaned?",
+                false);
+    httpd_resp_sendstr_chunk(req, "<form class=inline method=post action=/redetect><button>Re-detect printer</button>"
+                                  "</form></fieldset><fieldset><legend>Reset</legend>");
+    send_action(req, "reset_counter1", "Reset counter 1", "Reset counter 1?", true);
+    send_action(req, "reset_counter2", "Reset counter 2", "Reset counter 2?", true);
+    send_action(req, "reload_saved", "Reload saved settings",
+                "Discard unsaved printer changes and reload its saved settings?", true);
+    send_action(req, "factory_defaults", "Restore factory defaults",
+                "Restore the printer to factory defaults and save them? This also resets its serial port; "
+                "the bridge then finds it again and sets its serial speed and XON/XOFF.",
+                true);
+    httpd_resp_sendstr_chunk(req, "</fieldset>");
+    return send_page_end(req);
 }
 
 static void ip_str(uint32_t v, char out[16])
@@ -781,7 +1045,69 @@ static void ip_str(uint32_t v, char out[16])
              (unsigned long)(v >> 8 & 255), (unsigned long)(v & 255));
 }
 
-static esp_err_t settings_get_page(httpd_req_t *req)
+static const notice_t s_bridge_notices[] = {
+    {"saved", "Saved."},
+};
+
+/* The Wi-Fi part of the bridge page: the latest join, the network, and joining another. */
+static void send_wifi_section(httpd_req_t *req, const settings_net_t *net)
+{
+    char buf[1024];
+    char cur[32 * 6 + 1];
+    html_escape(wifi_prov_ssid(), cur, sizeof(cur));
+    char join_ssid[SETTINGS_SSID_MAX];
+    char join_esc[32 * 6 + 1];
+    const char *why;
+    wifi_join_state_t join = wifi_prov_join_state(join_ssid, &why);
+    html_escape(join_ssid, join_esc, sizeof(join_esc));
+    if (join == WIFI_JOIN_TRYING) {
+        snprintf(buf, sizeof(buf), "<p class=note>Trying network %s. <a href=/>The status page</a> shows the result.</p>",
+                 join_esc);
+        httpd_resp_sendstr_chunk(req, buf);
+    } else if (join == WIFI_JOIN_JOINED) {
+        snprintf(buf, sizeof(buf), "<p class=note>Joined %s.</p>", join_esc);
+        httpd_resp_sendstr_chunk(req, buf);
+    } else if (join == WIFI_JOIN_FAILED) {
+        snprintf(buf, sizeof(buf), "<p class='note bad'>Could not join %s%s%s%s; still on %s.</p>", join_esc,
+                 why[0] ? " (" : "", why, why[0] ? ")" : "", cur);
+        httpd_resp_sendstr_chunk(req, buf);
+    }
+
+    char q[16] = "";
+    bool scan = httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && strstr(q, "scan=1") != NULL;
+    const wifi_ap_record_t *recs;
+    int n = wifi_scan_cached(scan, false, &recs);
+    snprintf(buf, sizeof(buf),
+             "<form method=post action=/wifi_join><fieldset id=wifi><legend>Wi-Fi</legend>"
+             "<p>Connected to <b>%s</b>, %d dBm.</p>"
+             "<label for=ssid>Network <small>(<a href='/bridge?scan=1#wifi'>scan for networks</a>; "
+             "a scan pauses Wi-Fi for about 2 s)</small></label>"
+             "<input id=ssid name=ssid list=nets maxlength=32 required value=\"%s\"><datalist id=nets>",
+             cur, wifi_prov_rssi(), cur);
+    httpd_resp_sendstr_chunk(req, buf);
+    send_ssid_options(req, recs, n);
+    snprintf(buf, sizeof(buf),
+             "</datalist><label for=pass>Password <small>(blank for an open network)</small></label>"
+             "<input id=pass name=pass type=password maxlength=64>"
+             "<p><small>The bridge tries the network for up to 30 s and keeps it only if it gets an address there; "
+             "otherwise it goes back to %s. If it joins, connect to that network and open "
+             "<a href='http://%s.local/'>http://%s.local/</a>.%s</small></p>"
+             "<button type=submit>Join</button></fieldset></form>",
+             cur, net->hostname, net->hostname,
+             net->static_ip ? " The static address below is kept: switch to DHCP first if the new network uses "
+                              "other addresses."
+                            : "");
+    httpd_resp_sendstr_chunk(req, buf);
+    snprintf(buf, sizeof(buf),
+             "<form method=post action=/forget onsubmit=\"return confirm('Forget this Wi-Fi network? The bridge "
+             "restarts as the open setup network %s.')\"><button class=danger>Forget Wi-Fi and start setup mode"
+             "</button></form>",
+             wifi_prov_ap_ssid());
+    httpd_resp_sendstr_chunk(req, buf);
+}
+
+/* GET /bridge: the bridge's own settings, kept in its flash. */
+static esp_err_t bridge_get_page(httpd_req_t *req)
 {
     if (on_ap(req)) {
         return to_setup_page(req);
@@ -802,51 +1128,64 @@ static esp_err_t settings_get_page(httpd_req_t *req)
     ip_str(net.gw, gw);
     ip_str(net.dns, dns);
 
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    send_page_start(req, NAV_BRIDGE, "Bridge settings");
+    send_notice(req, s_bridge_notices, sizeof(s_bridge_notices) / sizeof(s_bridge_notices[0]));
+    httpd_resp_sendstr_chunk(req, "<p><small>Settings of the ZebSerial bridge itself, kept in the bridge. "
+                                  "The printer's settings are on the <a href=/printer>Printer</a> page.</small></p>");
+    send_wifi_section(req, &net);
+
+    const char *off = net.static_ip ? "" : " disabled";
     char buf[1536];
     snprintf(buf, sizeof(buf),
-             "<h2>" LOGO_SVG "ZebSerial settings</h2><form method=post action=/config>"
-             "<fieldset><legend>Printer link</legend>"
-             "<label>Printer baud <small>(the printer is moved to this rate at detection)</small></label>"
-             "<select name=baud>"
-             "<option value=115200%s>115200</option><option value=57600%s>57600</option>"
-             "<option value=38400%s>38400</option><option value=19200%s>19200</option>"
-             "<option value=9600%s>9600</option><option value=0%s>Leave the printer as it is</option></select>",
+             "<form method=post action=/config>"
+             "<fieldset><legend>Network</legend>"
+             "<label for=hostname>Hostname <small>(lower case, digits, hyphens; reached as name.local)</small></label>"
+             "<input id=hostname name=hostname maxlength=32 pattern='[a-z0-9]([a-z0-9-]*[a-z0-9])?' value='%s'>"
+             "<label class=check><input type=checkbox name=static value=1%s "
+             "onchange=\"for(var i of document.querySelectorAll('.sip'))i.disabled=!this.checked\"> Static IPv4 address "
+             "<small>(otherwise DHCP; IPv6 is automatic)</small></label>"
+             "<label for=ip>Address</label><input class=sip id=ip name=ip value='%s' placeholder='192.168.1.50'%s>"
+             "<label for=mask>Netmask</label><input class=sip id=mask name=mask value='%s' placeholder='255.255.255.0'%s>"
+             "<label for=gw>Gateway</label><input class=sip id=gw name=gw value='%s' placeholder='192.168.1.1'%s>"
+             "<label for=dns>DNS <small>(blank uses the gateway)</small></label>"
+             "<input class=sip id=dns name=dns value='%s'%s></fieldset>",
+             net.hostname, net.static_ip ? " checked" : "", ip, off, mask, off, gw, off, dns, off);
+    httpd_resp_sendstr_chunk(req, buf);
+    snprintf(buf, sizeof(buf),
+             "<fieldset id=link><legend>Serial link to the printer</legend>"
+             "<label for=baud>Speed <small>(the bridge moves the printer to this when it finds it)</small></label>"
+             "<select id=baud name=baud>"
+             "<option value=115200%s>115200 baud</option><option value=57600%s>57600 baud</option>"
+             "<option value=38400%s>38400 baud</option><option value=19200%s>19200 baud</option>"
+             "<option value=9600%s>9600 baud</option><option value=0%s>Leave the printer as it is</option></select>",
              opt.target_baud == 115200 ? " selected" : "", opt.target_baud == 57600 ? " selected" : "",
              opt.target_baud == 38400 ? " selected" : "", opt.target_baud == 19200 ? " selected" : "",
              opt.target_baud == 9600 ? " selected" : "", opt.target_baud == 0 ? " selected" : "");
     httpd_resp_sendstr_chunk(req, buf);
     snprintf(buf, sizeof(buf),
-             "<label>UART pins <small>(reboots)</small></label><select name=pins>"
+             "<label for=pins>Pins</label><select id=pins name=pins>"
              "<option value=0%s>Detect at boot</option>"
-             "<option value=1%s>TX on D3, RX on D5</option>"
-             "<option value=2%s>TX on D5, RX on D3</option></select>"
-             "<label>Close an idle print connection after (seconds, %d to %d)</label>"
-             "<input name=idle type=number min=%d max=%d value=%u></fieldset>",
+             "<option value=1%s>TX on D3 (GPIO21), RX on D5 (GPIO23)</option>"
+             "<option value=2%s>TX on D5 (GPIO23), RX on D3 (GPIO21)</option></select>"
+             "<label for=idle>Close an idle print connection after <small>(seconds, %d to %d)</small></label>"
+             "<input id=idle name=idle type=number min=%d max=%d value=%u></fieldset>"
+             "<p><small>Changing the hostname, the address or the pins restarts the bridge.</small></p>"
+             "<button type=submit>Save</button></form>"
+             "<p><small>Holding the BOOT button for 5 s clears the Wi-Fi and network settings.</small></p>",
              opt.pins == SETTINGS_PINS_AUTO ? " selected" : "", opt.pins == SETTINGS_PINS_TX_D3 ? " selected" : "",
              opt.pins == SETTINGS_PINS_TX_D5 ? " selected" : "", SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S,
              SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S, (unsigned)opt.idle_timeout_s);
     httpd_resp_sendstr_chunk(req, buf);
-    snprintf(buf, sizeof(buf),
-             "<fieldset><legend>Network <small>(changes reboot)</small></legend>"
-             "<label>Hostname <small>(lower case, digits, hyphens; reached as name.local)</small></label>"
-             "<input name=hostname maxlength=32 pattern='[a-z0-9]([a-z0-9-]*[a-z0-9])?' value='%s'>"
-             "<label><input type=checkbox name=static value=1%s> Static IPv4 address "
-             "<small>(otherwise DHCP; IPv6 is automatic)</small></label>"
-             "<label>Address</label><input name=ip value='%s' placeholder='192.168.1.50'>"
-             "<label>Netmask</label><input name=mask value='%s' placeholder='255.255.255.0'>"
-             "<label>Gateway</label><input name=gw value='%s' placeholder='192.168.1.1'>"
-             "<label>DNS <small>(blank uses the gateway)</small></label><input name=dns value='%s'>"
-             "</fieldset><button type=submit>Save</button></form>",
-             net.hostname, net.static_ip ? " checked" : "", ip, mask, gw, dns);
-    httpd_resp_sendstr_chunk(req, buf);
-    send_printer_section(req);
-    httpd_resp_sendstr_chunk(req, "<p><a href=/>Back to status</a></p>"
-                                  "<p><small>Holding the BOOT button for 5 s clears WiFi and network settings."
-                                  "</small></p>");
-    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
-    return httpd_resp_sendstr_chunk(req, NULL);
+    return send_page_end(req);
+}
+
+/* The old combined settings page's address. */
+static esp_err_t settings_get_page(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    return redirect_to(req, "/printer");
 }
 
 static esp_err_t config_post(httpd_req_t *req)
@@ -890,22 +1229,22 @@ static esp_err_t config_post(httpd_req_t *req)
         for (int i = 0; i < 4; i++) {
             *dst[i] = 0;
             if (form_get(body, keys[i], v, sizeof(v)) && v[0] != '\0' && !netcfg_ipv4_parse(v, dst[i])) {
-                snprintf(body, sizeof(body), "%s is not a valid IPv4 address", keys[i]);
-                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, body);
+                snprintf(body, sizeof(body), "%s is not a valid IPv4 address.", keys[i]);
+                return fail(req, "400 Bad Request", body, "/bridge");
             }
         }
     }
 
     /* validate everything before saving anything, so a bad address does not leave half the form applied */
     if (!settings_options_valid(&opt)) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "printer settings out of range");
+        return fail(req, "400 Bad Request", "A serial link setting is out of range.", "/bridge");
     }
     if (!settings_net_valid(&net)) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "invalid hostname, or the static address, netmask and gateway do not fit together");
+        return fail(req, "400 Bad Request",
+                    "Invalid hostname, or the static address, netmask and gateway do not fit together.", "/bridge");
     }
     if (settings_set_options(&opt) != ESP_OK || settings_set_net(&net) != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "could not save");
+        return fail(req, "500 Internal Server Error", "Could not save the settings.", "/bridge");
     }
     printer_link_set_target_baud(opt.target_baud);
 
@@ -917,7 +1256,7 @@ static esp_err_t config_post(httpd_req_t *req)
              (int)opt.pins, (unsigned)opt.idle_timeout_s, net.hostname, net.static_ip ? "static" : "DHCP",
              reboot ? ", rebooting" : "");
     if (!reboot) {
-        return redirect_home(req);
+        return redirect_to(req, "/bridge?done=saved");
     }
     char ip[16];
     ip_str(net.ip, ip);
@@ -929,36 +1268,24 @@ static esp_err_t config_post(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
     httpd_resp_sendstr_chunk(req, msg);
-    httpd_resp_sendstr_chunk(req, PAGE_TAIL);
-    httpd_resp_sendstr_chunk(req, NULL);
+    send_page_end(req);
     restart_soon();
     return ESP_OK;
 }
 
-static esp_err_t redirect_settings(httpd_req_t *req)
-{
-    httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/settings");
-    return httpd_resp_send(req, NULL, 0);
-}
-
 static esp_err_t link_error(httpd_req_t *req, esp_err_t err)
 {
+    const char *msg = "Could not send to the printer.";
     if (err == ESP_ERR_TIMEOUT) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "printer busy printing; nothing was sent");
+        msg = "The printer is busy printing; nothing was sent.";
+    } else if (err == ESP_ERR_NOT_FINISHED) {
+        msg = "The printer is paused (XOFF: out of paper or head open?); the command was discarded.";
+    } else if (err == ESP_ERR_INVALID_STATE) {
+        msg = "The printer is not detected.";
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        msg = "The printer is not in a ZPL language; nothing was sent.";
     }
-    if (err == ESP_ERR_NOT_FINISHED) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "printer paused (XOFF: out of paper or head open?); the command was discarded");
-    }
-    if (err == ESP_ERR_INVALID_STATE) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "printer not detected");
-    }
-    if (err == ESP_ERR_NOT_SUPPORTED) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "the printer is not in a ZPL language; nothing was sent");
-    }
-    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "could not send to the printer");
+    return fail(req, "500 Internal Server Error", msg, "/printer");
 }
 
 /*
@@ -980,7 +1307,7 @@ static esp_err_t printer_config_post(httpd_req_t *req)
     }
     zpl_hh_t *hh = malloc(sizeof(*hh));
     if (hh == NULL) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+        return fail(req, "500 Internal Server Error", "Out of memory.", "/printer");
     }
     bool have;
     int64_t age_ms;
@@ -991,8 +1318,8 @@ static esp_err_t printer_config_post(httpd_req_t *req)
     }
     free(hh);
     if (!have) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "the printer's current settings could not be read; nothing was sent");
+        return fail(req, "500 Internal Server Error",
+                    "The printer's current settings could not be read; nothing was sent.", "/printer");
     }
 
     zpl_printer_cfg_t want = cur;
@@ -1006,8 +1333,8 @@ static esp_err_t printer_config_post(httpd_req_t *req)
         }
         if (!zpl_cfg_parse(&cur, (zpl_cfg_field_t)f, v, &x)) {
             char msg[80];
-            snprintf(msg, sizeof(msg), "%s is not a valid value for this printer; nothing was sent", d->key);
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, msg);
+            snprintf(msg, sizeof(msg), "%s is not a valid value for this printer; nothing was sent.", d->key);
+            return fail(req, "400 Bad Request", msg, "/printer");
         }
         if (x != cur.v[f]) {
             want.v[f] = x;
@@ -1015,18 +1342,18 @@ static esp_err_t printer_config_post(httpd_req_t *req)
         }
     }
     if (changed == 0) {
-        return redirect_settings(req);
+        return redirect_to(req, "/printer?done=same");
     }
     char cmd[256];
     if (zpl_cfg_commands(&want, changed, cmd, sizeof(cmd)) == 0) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "could not build the printer commands");
+        return fail(req, "500 Internal Server Error", "Could not build the printer commands.", "/printer");
     }
     esp_err_t err = printer_link_send_zpl(cmd, pdMS_TO_TICKS(CMD_LINK_WAIT_MS), 500);
     if (err != ESP_OK) {
         return link_error(req, err);
     }
     ESP_LOGI(TAG, "printer settings changed (mask 0x%lx)", (unsigned long)changed);
-    return redirect_settings(req);
+    return redirect_to(req, "/printer?done=sent");
 }
 
 /* POST /printer_action: one-shot printer commands (calibrate, feed, counters, saved and factory settings). */
@@ -1046,7 +1373,7 @@ static esp_err_t printer_action_post(httpd_req_t *req)
     form_get(body, "action", action, sizeof(action));
     const char *zpl = zpl_action_command(action);
     if (zpl == NULL) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unknown printer action");
+        return fail(req, "400 Bad Request", "Unknown printer action.", "/printer");
     }
     /*
      * Factory defaults (and possibly the saved settings) change the
@@ -1063,7 +1390,10 @@ static esp_err_t printer_action_post(httpd_req_t *req)
     if (port_may_change) {
         printer_link_request_redetect();
     }
-    return redirect_settings(req);
+    /* action is one zpl_action_command knows, so it is safe in the URL */
+    char location[48];
+    snprintf(location, sizeof(location), "/printer?done=%s", action);
+    return redirect_to(req, location);
 }
 
 static esp_err_t favicon_get(httpd_req_t *req)
@@ -1071,13 +1401,6 @@ static esp_err_t favicon_get(httpd_req_t *req)
     httpd_resp_set_type(req, "image/svg+xml");
     httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");
     return httpd_resp_send(req, s_favicon, sizeof(s_favicon) - 1);
-}
-
-static esp_err_t redirect_home(httpd_req_t *req)
-{
-    httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/");
-    return httpd_resp_send(req, NULL, 0);
 }
 
 static esp_err_t redetect_post(httpd_req_t *req)
@@ -1089,7 +1412,45 @@ static esp_err_t redetect_post(httpd_req_t *req)
         return cross_site(req);
     }
     printer_link_request_redetect();
-    return redirect_home(req);
+    return redirect_to(req, "/printer?done=redetect");
+}
+
+/* POST /wifi_join: try another network, keeping the current one if it fails (wifi_prov_join). */
+static esp_err_t wifi_join_post(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    if (!same_origin(req)) {
+        return cross_site(req);
+    }
+    char body[BODY_MAX + 1];
+    if (!read_form(req, body)) {
+        return ESP_FAIL;
+    }
+    char ssid[SETTINGS_SSID_MAX] = "";
+    char pass[SETTINGS_PASS_MAX] = "";
+    form_get(body, "ssid", ssid, sizeof(ssid));
+    form_get(body, "pass", pass, sizeof(pass));
+    memset(body, 0, sizeof(body));
+    if (ssid[0] == '\0') {
+        return fail(req, "400 Bad Request", "No network chosen.", "/bridge#wifi");
+    }
+    if (pass[0] != '\0' && strlen(pass) < 8) {
+        memset(pass, 0, sizeof(pass));
+        return fail(req, "400 Bad Request", "WPA passwords are at least 8 characters.", "/bridge#wifi");
+    }
+    esp_err_t err = wifi_prov_join(ssid, pass);
+    memset(pass, 0, sizeof(pass));
+    if (err == ESP_ERR_INVALID_STATE) {
+        return fail(req, "409 Conflict", "A join is already running, or Wi-Fi is not connected.", "/bridge#wifi");
+    }
+    if (err != ESP_OK) {
+        return fail(req, "400 Bad Request", "That network name or password is too long.", "/bridge#wifi");
+    }
+    ESP_LOGI(TAG, "joining WiFi network \"%s\" from the web page", ssid);
+    /* the status page polls, so it shows the join's outcome while the bridge is still reachable here */
+    return redirect_to(req, "/");
 }
 
 static esp_err_t forget_post(httpd_req_t *req)
@@ -1102,7 +1463,15 @@ static esp_err_t forget_post(httpd_req_t *req)
     }
     settings_clear_wifi();
     ESP_LOGW(TAG, "WiFi credentials cleared from the web page, rebooting");
-    httpd_resp_sendstr(req, "WiFi forgotten. Rebooting into setup mode.");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "<p>Wi-Fi forgotten. The bridge is restarting in setup mode: join the open network <b>%s</b> "
+             "and open <a href='" AP_HOME "'>" AP_HOME "</a> to choose a network.</p>",
+             wifi_prov_ap_ssid());
+    httpd_resp_sendstr_chunk(req, buf);
+    send_page_end(req);
     restart_soon();
     return ESP_OK;
 }
@@ -1135,6 +1504,9 @@ void web_start(void)
         {.uri = "/api/status", .method = HTTP_GET, .handler = status_get},
         {.uri = "/favicon.svg", .method = HTTP_GET, .handler = favicon_get},
         {.uri = "/settings", .method = HTTP_GET, .handler = settings_get_page},
+        {.uri = "/printer", .method = HTTP_GET, .handler = printer_get_page},
+        {.uri = "/bridge", .method = HTTP_GET, .handler = bridge_get_page},
+        {.uri = "/wifi_join", .method = HTTP_POST, .handler = wifi_join_post},
         {.uri = "/config", .method = HTTP_POST, .handler = config_post},
         {.uri = "/redetect", .method = HTTP_POST, .handler = redetect_post},
         {.uri = "/forget", .method = HTTP_POST, .handler = forget_post},
