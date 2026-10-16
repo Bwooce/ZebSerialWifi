@@ -212,12 +212,22 @@ void wifi_prov_start(void)
         strlcpy((char *)sta.sta.password, pass, sizeof(sta.sta.password));
         sta.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
         sta.sta.pmf_cfg.capable = true;
+        /*
+         * The default fast scan joins the first access point it hears with
+         * this SSID; with several (a mesh, or a far one on the same name)
+         * that can be one at -90 dBm while another is at -30. Scan every
+         * channel and take the strongest.
+         */
+        sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+        sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
         set_mode(WIFI_MODE_STA);
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
         ESP_LOGI(TAG, "connecting to \"%s\"", s_ssid);
         set_state(WIFI_ST_CONNECTING);
         esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
         ESP_ERROR_CHECK(esp_wifi_start());
+        /* USB powered: modem sleep only adds latency (up to a DTIM interval) to every web and print reply */
+        esp_wifi_set_ps(WIFI_PS_NONE);
     } else {
         ESP_LOGI(TAG, "no saved WiFi credentials");
         set_mode(WIFI_MODE_APSTA);
