@@ -56,7 +56,7 @@ static const char PAGE_HEAD[] =
     "td{padding:.15em .6em .15em 0;vertical-align:top;white-space:pre-line}td:first-child{opacity:.7}"
     "form.inline{display:inline-block;width:48%}"
     "h2 svg{width:1.6em;height:1.6em;vertical-align:middle;margin:0 .35em .15em 0}"
-    "fieldset{border:1px solid #8884;margin:1em 0;padding:.5em 1em}label small{opacity:.7}"
+    "fieldset{border:1px solid #8884;margin:1em 0;padding:.5em 1em}label small,td small{opacity:.7}"
     "input[type=checkbox]{width:auto}"
     "</style></head><body>";
 static const char PAGE_TAIL[] = "</body></html>";
@@ -288,6 +288,20 @@ static const char STATUS_BODY[] =
     /* status values include printer replies and SSIDs, so escape everything that goes into the table */
     "function e(s){return String(s).replace(/[&<>\"']/g,function(c){return '&#'+c.charCodeAt(0)+';'})}"
     "function row(k,v){return '<tr><td>'+e(k)+'</td><td>'+e(v)+'</td></tr>'}"
+    /* ^HH values in SI units, the printer's own text after them; D is dots per mm from RESOLUTION */
+    "var D=0,DOTS={'PRINT WIDTH':1,'LABEL LENGTH':1,'LEFT POSITION':1,'TEAR OFF':1,'LABEL TOP':1};"
+    "function len(mm){var a=Math.abs(mm),s=mm<0?'-':'';return s+(a<1000?Math.round(a*10)/10+' mm':"
+    "a<1e6?Math.round(a/100)/10+' m':Math.round(a/1e4)/100+' km')}"
+    "function dpi(d){return d==8?203:d==12?300:d==24?600:Math.round(d*25.4)}"
+    "function si(n,v){var x;"
+    "if(x=/^(\\d+) IPS$/.exec(v))return Math.round(x[1]*25.4)+' mm/s';"
+    "if(x=/^(\\d+) (\\d+)\\/MM/.exec(v))return x[2]+' dots/mm ('+dpi(+x[2])+' dpi), head '+x[1]+' dots = '+len(x[1]/x[2]);"
+    "if(x=/(\\d+)MM$/.exec(v))return x[1]+' mm';"
+    "if(x=/^([\\d,]+(\\.\\d+)?) ?IN$/.exec(v))return len(parseFloat(x[1].replace(/,/g,''))*25.4);"
+    "if(D&&DOTS[n]&&/^[+-]?\\d+$/.test(v))return (+v)+' dots = '+len(v/D);"
+    "return null}"
+    "function srow(k,v){var s=si(k,v);return s==null?row(k,v):"
+    "'<tr><td>'+e(k)+'</td><td>'+e(s)+' <small>'+e(v)+'</small></td></tr>'}"
     "function dur(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);"
     "return (d?d+'d ':'')+(d||h?h+'h ':'')+m+'m'}"
     "function flags(h){var f=[];for(var k in h)if(h[k]===true)f.push(k.replace('_',' '));return f.length?f.join(', '):'ok'}"
@@ -320,9 +334,10 @@ static const char STATUS_BODY[] =
     "async function cfg(r){var st=document.getElementById('cs');st.textContent='Reading...';"
     "try{var c=await(await fetch('/api/printer_config'+(r?'?refresh=1':''))).json();"
     "var m=Object.create(null),seen=Object.create(null),h='',o='';c.pairs.forEach(function(p){if(!(p[0] in m))m[p[0]]=p[1]});"
-    "G.forEach(function(g){var t='';g[1].forEach(function(n){if(n in m){t+=row(n,m[n]);seen[n]=1}});"
+    "var r=/ (\\d+)\\/MM/.exec(m['RESOLUTION']||'');D=r?+r[1]:0;"
+    "G.forEach(function(g){var t='';g[1].forEach(function(n){if(n in m){t+=srow(n,m[n]);seen[n]=1}});"
     "if(t)h+='<h4>'+e(g[0])+'</h4><table>'+t+'</table>'});"
-    "c.pairs.forEach(function(p){if(!seen[p[0]])o+=row(p[0],p[1])});"
+    "c.pairs.forEach(function(p){if(!seen[p[0]])o+=srow(p[0],p[1])});"
     "if(o)h+='<h4>Other</h4><table>'+o+'</table>';"
     "document.getElementById('c').innerHTML=h;"
     "st.textContent=(c.error?c.error+'. ':'')+(c.age_ms>=0?'Read from the printer '+Math.round(c.age_ms/1000)+' s ago.':'')"
@@ -543,30 +558,39 @@ typedef struct {
     zpl_cfg_field_t field;
     const char *label;
     const char *options;
+    bool dots;      /* a number in dots or dot rows: also shown in mm */
 } printer_field_ui_t;
 
 #define FEED_OPTIONS "F=Feed|C=Calibrate|L=Measure length|N=No motion"
 static const printer_field_ui_t s_printer_ui[] = {
-    {ZPL_CFG_DARKNESS, "Darkness", NULL},
-    {ZPL_CFG_SPEED, "Print speed", "2=2 ips|3=3 ips|4=4 ips|5=5 ips|6=6 ips"},
-    {ZPL_CFG_METHOD, "Print method", "D=Direct thermal|T=Thermal transfer"},
-    {ZPL_CFG_MODE, "Print mode", "T=Tear off|P=Peel off|R=Rewind|C=Cutter|D=Delayed cut"},
-    {ZPL_CFG_MEDIA, "Media type", "Y=Gap/notch|M=Mark|N=Continuous"},
-    {ZPL_CFG_SENSOR, "Sensor select", "A=Auto|R=Reflective|T=Transmissive"},
-    {ZPL_CFG_WIDTH, "Print width (dots)", NULL},
-    {ZPL_CFG_LENGTH, "Label length (dots)", NULL},
-    {ZPL_CFG_MAX_LENGTH, "Maximum label length (dots)", NULL},
-    {ZPL_CFG_TEAR_OFF, "Tear-off adjust (dot rows)", NULL},
-    {ZPL_CFG_LABEL_TOP, "Label top (dot rows)", NULL},
-    {ZPL_CFG_LEFT_POS, "Left position (dots)", NULL},
-    {ZPL_CFG_POWER_UP, "Media at power up", FEED_OPTIONS},
-    {ZPL_CFG_HEAD_CLOSE, "Media at head close", FEED_OPTIONS},
+    {ZPL_CFG_DARKNESS, "Darkness", NULL, false},
+    {ZPL_CFG_SPEED, "Print speed", "2=51 mm/s (2 ips)|3=76 mm/s (3 ips)|4=102 mm/s (4 ips)|5=127 mm/s (5 ips)|"
+                                     "6=152 mm/s (6 ips)", false},
+    {ZPL_CFG_METHOD, "Print method", "D=Direct thermal|T=Thermal transfer", false},
+    {ZPL_CFG_MODE, "Print mode", "T=Tear off|P=Peel off|R=Rewind|C=Cutter|D=Delayed cut", false},
+    {ZPL_CFG_MEDIA, "Media type", "Y=Gap/notch|M=Mark|N=Continuous", false},
+    {ZPL_CFG_SENSOR, "Sensor select", "A=Auto|R=Reflective|T=Transmissive", false},
+    {ZPL_CFG_WIDTH, "Print width (dots)", NULL, true},
+    {ZPL_CFG_LENGTH, "Label length (dots)", NULL, true},
+    {ZPL_CFG_MAX_LENGTH, "Maximum label length (dots)", NULL, true},
+    {ZPL_CFG_TEAR_OFF, "Tear-off adjust (dot rows)", NULL, true},
+    {ZPL_CFG_LABEL_TOP, "Label top (dot rows)", NULL, true},
+    {ZPL_CFG_LEFT_POS, "Left position (dots)", NULL, true},
+    {ZPL_CFG_POWER_UP, "Media at power up", FEED_OPTIONS, false},
+    {ZPL_CFG_HEAD_CLOSE, "Media at head close", FEED_OPTIONS, false},
     {ZPL_CFG_BACKFEED, "Backfeed", "N=Default (90% after printing)|A=After printing|B=Before the next label|O=Off|"
                                    "10=10% after|20=20% after|30=30% after|40=40% after|50=50% after|60=60% after|"
-                                   "70=70% after|80=80% after|90=90% after"},
-    {ZPL_CFG_EARLY_WARNING, "Head maintenance early warning", "D=Off|E=On"},
-    {ZPL_CFG_ZPL_MODE, "ZPL mode", "2=ZPL II|1=ZPL"},
+                                   "70=70% after|80=80% after|90=90% after", false},
+    {ZPL_CFG_EARLY_WARNING, "Head maintenance early warning", "D=Off|E=On", false},
+    {ZPL_CFG_ZPL_MODE, "ZPL mode", "2=ZPL II|1=ZPL", false},
 };
+
+/* dots at dpmm dots per mm as millimetres to one decimal place */
+static void fmt_mm(int dots, int dpmm, char *out, size_t out_len)
+{
+    int tenths = (abs(dots) * 10 + dpmm / 2) / dpmm;
+    snprintf(out, out_len, "%s%d.%d", dots < 0 && tenths > 0 ? "-" : "", tenths / 10, tenths % 10);
+}
 
 /* One labelled control, prefilled with the printer's current value. Options the printer cannot take are left out. */
 static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, const printer_field_ui_t *ui)
@@ -579,6 +603,21 @@ static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, c
         int min;
         int max;
         zpl_cfg_range(cur, ui->field, &min, &max);
+        if (ui->dots && cur->dpmm > 0) {
+            char lo[16];
+            char hi[16];
+            char now[16];
+            fmt_mm(min, cur->dpmm, lo, sizeof(lo));
+            fmt_mm(max, cur->dpmm, hi, sizeof(hi));
+            fmt_mm(cur->v[ui->field], cur->dpmm, now, sizeof(now));
+            snprintf(buf, sizeof(buf),
+                     "<label>%s <small>(%d to %d, %s to %s mm; now <span id=mm_%s>%s mm</span>)</small></label>"
+                     "<input name=%s type=number min=%d max=%d step=1 value=%s oninput=\"document.getElementById("
+                     "'mm_%s').textContent=(this.value/%d).toFixed(1)+' mm'\">",
+                     ui->label, min, max, lo, hi, d->key, now, d->key, min, max, cur_text, d->key, cur->dpmm);
+            httpd_resp_sendstr_chunk(req, buf);
+            return;
+        }
         snprintf(buf, sizeof(buf),
                  "<label>%s <small>(%d to %d)</small></label>"
                  "<input name=%s type=number min=%d max=%d step=1 value=%s>",
