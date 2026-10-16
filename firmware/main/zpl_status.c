@@ -1,6 +1,7 @@
 #include "zpl_status.h"
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -230,46 +231,186 @@ size_t zpl_sc_command(char *out, size_t out_len, uint32_t baud)
     return (size_t)n;
 }
 
-bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len)
+/* Column where the name starts in the GX430t's ^HH layout: two spaces and a 20-character value field. */
+#define HH_NAME_COL 22
+
+static bool is_leader(uint8_t c)
 {
-    static const char key[] = "HANDSHAKE";
-    const size_t klen = sizeof(key) - 1;
+    return c == ' ' || c == '.';
+}
+
+/*
+ * Copy p[0, n) into out with surrounding spaces trimmed. A dot leader inside
+ * the text ("2104k............R:") becomes one space and a trailing one is
+ * dropped, but text that is only dots ("...") is kept as it is.
+ */
+static void copy_trimmed(const uint8_t *p, size_t n, char *out, size_t out_len)
+{
+    while (n > 0 && p[0] == ' ') {
+        p++;
+        n--;
+    }
+    while (n > 0 && p[n - 1] == ' ') {
+        n--;
+    }
+    size_t content = n;
+    while (content > 0 && is_leader(p[content - 1])) {
+        content--;
+    }
+    if (content > 0 && n - content >= 2) {
+        n = content;  /* trailing dot leader */
+    }
+    size_t o = 0;
+    for (size_t i = 0; i < n && o + 1 < out_len; i++) {
+        if (p[i] == '.' && i + 2 < n && p[i + 1] == '.' && i > 0 && p[i - 1] != '.') {
+            size_t j = i;
+            while (j < n && is_leader(p[j])) {
+                j++;
+            }
+            if (j < n && j - i >= 3) {
+                out[o++] = ' ';
+                i = j - 1;
+                continue;
+            }
+        }
+        out[o++] = (char)p[i];
+    }
+    if (out_len > 0) {
+        out[o] = '\0';
+    }
+}
+
+/*
+ * Split one ^HH line (without CR/LF) into name and value. The fixed column
+ * layout is tried first because values can hold runs of spaces ("<~>  7EH")
+ * and dots ("..."); the dot-leader layout of older firmware is the fallback.
+ */
+static bool hh_split_line(const uint8_t *p, size_t n, char *name, size_t name_len, char *value,
+                          size_t value_len)
+{
+    while (n > 0 && (p[0] == STX || p[0] == ETX)) {
+        p++;
+        n--;
+    }
+    while (n > 0 && (p[n - 1] == STX || p[n - 1] == ETX || p[n - 1] == ' ' || p[n - 1] == '\0')) {
+        n--;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] < 0x20 || p[i] > 0x7e) {
+            return false;  /* wrong baud or binary noise, not a configuration line */
+        }
+    }
+    size_t value_end;
+    size_t name_start;
+    if (n > HH_NAME_COL && p[0] == ' ' && p[1] == ' ' && p[2] != ' ' && is_leader(p[HH_NAME_COL - 1]) &&
+        !is_leader(p[HH_NAME_COL])) {
+        value_end = HH_NAME_COL;
+        name_start = HH_NAME_COL;
+    } else {
+        /* the last run of two or more dots that runs straight into the name */
+        size_t run_start = 0;
+        name_start = 0;
+        for (size_t i = 1; i + 1 < n; i++) {
+            if (p[i] == '.' && p[i + 1] == '.') {
+                size_t j = i;
+                while (j < n && p[j] == '.') {
+                    j++;
+                }
+                if (j < n && p[j] != ' ') {
+                    run_start = i;
+                    name_start = j;
+                }
+                i = j - 1;
+            }
+        }
+        if (name_start == 0) {
+            return false;
+        }
+        value_end = run_start;
+    }
+    copy_trimmed(p, value_end, value, value_len);
+    copy_trimmed(p + name_start, n - name_start, name, name_len);
+    return value[0] != '\0' && name[0] != '\0';
+}
+
+/*
+ * Call fn for each line of buf, stopping early when it returns true. A last
+ * line with neither a line end nor the closing ETX was cut off and is skipped.
+ */
+static bool for_each_line(const uint8_t *buf, size_t len, bool (*fn)(const uint8_t *, size_t, void *), void *ctx)
+{
     size_t line = 0;
     for (size_t i = 0; i <= len; i++) {
         if (i < len && buf[i] != '\r' && buf[i] != '\n') {
             continue;
         }
-        /* line is buf[line, i) */
-        bool has_key = false;
-        for (size_t j = line; j + klen <= i; j++) {
-            if (memcmp(buf + j, key, klen) == 0) {
-                has_key = true;
-                break;
-            }
+        if (i == len && memchr(buf + line, ETX, i - line) == NULL) {
+            break;
         }
-        if (has_key) {
-            size_t s = line;
-            while (s < i && (buf[s] == ' ' || buf[s] == 0x02)) {
-                s++;
-            }
-            size_t e = s;
-            while (e < i && !(buf[e] == '.' && e + 1 < i && buf[e + 1] == '.')) {
-                e++;
-            }
-            while (e > s && buf[e - 1] == ' ') {
-                e--;
-            }
-            size_t n = e - s;
-            if (n == 0 || n + 1 > out_len) {
-                return false;
-            }
-            memcpy(out, buf + s, n);
-            out[n] = '\0';
+        if (i > line && fn(buf + line, i - line, ctx)) {
             return true;
         }
         line = i + 1;
     }
     return false;
+}
+
+static bool hh_add_line(const uint8_t *p, size_t n, void *ctx)
+{
+    zpl_hh_t *hh = ctx;
+    if (hh->count >= ZPL_HH_MAX_PAIRS) {
+        return true;
+    }
+    zpl_hh_pair_t *pair = &hh->pair[hh->count];
+    if (hh_split_line(p, n, pair->name, sizeof(pair->name), pair->value, sizeof(pair->value))) {
+        hh->count++;
+    }
+    return false;
+}
+
+bool zpl_hh_parse(const uint8_t *buf, size_t len, zpl_hh_t *out)
+{
+    out->count = 0;
+    for_each_line(buf, len, hh_add_line, out);
+    return out->count > 0;
+}
+
+const char *zpl_hh_get(const zpl_hh_t *hh, const char *name)
+{
+    for (int i = 0; i < hh->count; i++) {
+        if (strcmp(hh->pair[i].name, name) == 0) {
+            return hh->pair[i].value;
+        }
+    }
+    return NULL;
+}
+
+typedef struct {
+    char *out;
+    size_t out_len;
+    bool found;
+} handshake_ctx_t;
+
+static bool hh_handshake_line(const uint8_t *p, size_t n, void *ctx)
+{
+    handshake_ctx_t *c = ctx;
+    char name[ZPL_HH_NAME_LEN];
+    char value[ZPL_HH_VALUE_LEN];
+    if (!hh_split_line(p, n, name, sizeof(name), value, sizeof(value)) || strstr(name, "HANDSHAKE") == NULL) {
+        return false;
+    }
+    if (strlen(value) + 1 <= c->out_len) {
+        strcpy(c->out, value);
+        c->found = true;
+    }
+    return true;
+}
+
+bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len)
+{
+    handshake_ctx_t c = {.out = out, .out_len = out_len, .found = false};
+    for_each_line(buf, len, hh_handshake_line, &c);
+    return c.found;
 }
 
 bool zpl_handshake_is_xon(const char *value)
@@ -280,4 +421,463 @@ bool zpl_handshake_is_xon(const char *value)
         }
     }
     return false;
+}
+
+/*
+ * Editable settings. Commands and ranges are from the Zebra "ZPL II, ZBI 2,
+ * Set-Get-Do, Mirror, WML Programming Guide" (P1134473-11EN Rev A); each
+ * entry in zpl_cfg_commands names its command.
+ */
+static const zpl_cfg_desc_t s_cfg_desc[ZPL_CFG_COUNT] = {
+    [ZPL_CFG_DARKNESS] = {"darkness", "DARKNESS", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_SPEED] = {"speed", "PRINT SPEED", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_METHOD] = {"method", "PRINT METHOD", ZPL_CFG_LETTER, "DT"},
+    [ZPL_CFG_MODE] = {"mode", "PRINT MODE", ZPL_CFG_LETTER, "TPRCD"},
+    [ZPL_CFG_MEDIA] = {"media", "MEDIA TYPE", ZPL_CFG_LETTER, "YMN"},
+    [ZPL_CFG_SENSOR] = {"sensor", "SENSOR SELECT", ZPL_CFG_LETTER, "ART"},
+    [ZPL_CFG_ZPL_MODE] = {"zpl", "ZPL MODE", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_WIDTH] = {"width", "PRINT WIDTH", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_LENGTH] = {"length", "LABEL LENGTH", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_MAX_LENGTH] = {"max_length", "MAXIMUM LENGTH", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_TEAR_OFF] = {"tear_off", "TEAR OFF", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_LABEL_TOP] = {"label_top", "LABEL TOP", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_LEFT_POS] = {"left_pos", "LEFT POSITION", ZPL_CFG_INT, NULL},
+    [ZPL_CFG_POWER_UP] = {"power_up", "MEDIA POWER UP", ZPL_CFG_LETTER, "FCLN"},
+    [ZPL_CFG_HEAD_CLOSE] = {"head_close", "HEAD CLOSE", ZPL_CFG_LETTER, "FCLN"},
+    [ZPL_CFG_BACKFEED] = {"backfeed", "BACKFEED", ZPL_CFG_PERCENT_OR_LETTER, "NABO"},
+    [ZPL_CFG_EARLY_WARNING] = {"early_warning", "EARLY WARNING", ZPL_CFG_LETTER, "ED"},
+};
+
+const zpl_cfg_desc_t *zpl_cfg_desc(zpl_cfg_field_t f)
+{
+    return (unsigned)f < ZPL_CFG_COUNT ? &s_cfg_desc[f] : NULL;
+}
+
+typedef struct {
+    const char *text;
+    int value;
+} text_map_t;
+
+/* ^HH spellings of letter settings. Only the ones seen on a G-series label or in its manual. */
+static const text_map_t s_method_map[] = {
+    {"DIRECT-THERMAL", 'D'}, {"THERMAL-TRANS.", 'T'}, {"THERMAL-TRANS", 'T'}, {NULL, 0}};
+static const text_map_t s_mode_map[] = {
+    {"TEAR OFF", 'T'}, {"PEEL OFF", 'P'}, {"REWIND", 'R'}, {"CUTTER", 'C'}, {"DELAYED CUT", 'D'}, {NULL, 0}};
+static const text_map_t s_media_map[] = {{"GAP/NOTCH", 'Y'}, {"MARK", 'M'}, {"CONTINUOUS", 'N'}, {NULL, 0}};
+static const text_map_t s_sensor_map[] = {
+    {"AUTO", 'A'}, {"REFLECTIVE", 'R'}, {"TRANSMISSIVE", 'T'}, {NULL, 0}};
+static const text_map_t s_zpl_map[] = {{"ZPL II", 2}, {"ZPL", 1}, {NULL, 0}};
+static const text_map_t s_feed_map[] = {
+    {"FEED", 'F'}, {"CALIBRATION", 'C'}, {"LENGTH", 'L'}, {"NO MOTION", 'N'}, {NULL, 0}};
+/* the guide's default N (normal, 90 % after printing) shows as DEFAULT on the label */
+static const text_map_t s_backfeed_map[] = {
+    {"DEFAULT", 'N'}, {"AFTER", 'A'}, {"BEFORE", 'B'}, {"OFF", 'O'}, {NULL, 0}};
+static const text_map_t s_early_map[] = {{"MAINT. OFF", 'D'}, {"MAINT. ON", 'E'}, {NULL, 0}};
+
+static bool map_text(const text_map_t *map, const char *text, int *out)
+{
+    for (; map->text != NULL; map++) {
+        if (strcmp(map->text, text) == 0) {
+            *out = map->value;
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Parse an optionally signed decimal integer at s. Stops at the first
+ * non-digit and points *end there. At most 6 digits.
+ */
+static bool parse_int_prefix(const char *s, int *out, const char **end)
+{
+    int sign = 1;
+    if (*s == '+' || *s == '-') {
+        sign = *s == '-' ? -1 : 1;
+        s++;
+    }
+    int v = 0;
+    int digits = 0;
+    while (*s >= '0' && *s <= '9') {
+        if (++digits > 6) {
+            return false;
+        }
+        v = v * 10 + (*s - '0');
+        s++;
+    }
+    if (digits == 0) {
+        return false;
+    }
+    *out = sign * v;
+    *end = s;
+    return true;
+}
+
+static bool parse_int_exact(const char *s, int *out)
+{
+    const char *end;
+    return parse_int_prefix(s, out, &end) && *end == '\0';
+}
+
+/* "15.0" -> 150, "39" -> 390; non-negative, one decimal place read, the rest ignored. */
+static bool parse_tenths_prefix(const char *s, int *out, const char **end)
+{
+    int whole;
+    if (*s < '0' || *s > '9' || !parse_int_prefix(s, &whole, end)) {
+        return false;
+    }
+    int tenths = 0;
+    s = *end;
+    if (*s == '.') {
+        s++;
+        if (*s >= '0' && *s <= '9') {
+            tenths = *s - '0';
+        }
+        while (*s >= '0' && *s <= '9') {
+            s++;
+        }
+    }
+    *out = whole * 10 + tenths;
+    *end = s;
+    return true;
+}
+
+static bool decode_field(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const char *text, int *out)
+{
+    const char *end;
+    int t;
+    switch (f) {
+    case ZPL_CFG_DARKNESS:
+        /* "15.0": ~SD only takes whole steps, so round to the nearest */
+        if (!parse_tenths_prefix(text, &t, &end) || *end != '\0') {
+            return false;
+        }
+        *out = (t + 5) / 10;
+        return true;
+    case ZPL_CFG_SPEED:
+        /* "4 IPS" */
+        return parse_int_prefix(text, out, &end) && strcmp(end, " IPS") == 0;
+    case ZPL_CFG_MAX_LENGTH:
+        /* "39.0IN   975MM": ^ML takes dot rows; inches x 25.4 x dots/mm, as in the guide's ^LL formula */
+        if (cfg->dpmm <= 0 || !parse_tenths_prefix(text, &t, &end) || strncmp(end, "IN", 2) != 0) {
+            return false;
+        }
+        *out = (t * 254 * cfg->dpmm + 50) / 100;
+        return true;
+    case ZPL_CFG_WIDTH:
+    case ZPL_CFG_LENGTH:
+    case ZPL_CFG_TEAR_OFF:
+    case ZPL_CFG_LABEL_TOP:
+    case ZPL_CFG_LEFT_POS:
+        return parse_int_exact(text, out);
+    case ZPL_CFG_METHOD:
+        return map_text(s_method_map, text, out);
+    case ZPL_CFG_MODE:
+        return map_text(s_mode_map, text, out);
+    case ZPL_CFG_MEDIA:
+        return map_text(s_media_map, text, out);
+    case ZPL_CFG_SENSOR:
+        return map_text(s_sensor_map, text, out);
+    case ZPL_CFG_ZPL_MODE:
+        return map_text(s_zpl_map, text, out);
+    case ZPL_CFG_POWER_UP:
+    case ZPL_CFG_HEAD_CLOSE:
+        return map_text(s_feed_map, text, out);
+    case ZPL_CFG_BACKFEED:
+        /* a percentage shows as "60%" */
+        if (parse_int_prefix(text, out, &end) && strcmp(end, "%") == 0) {
+            return true;
+        }
+        return map_text(s_backfeed_map, text, out);
+    case ZPL_CFG_EARLY_WARNING:
+        return map_text(s_early_map, text, out);
+    default:
+        return false;
+    }
+}
+
+void zpl_cfg_from_hh(const zpl_hh_t *hh, zpl_printer_cfg_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    /* "1280 12/MM FULL": printhead width in dots, then dots per mm */
+    const char *res = zpl_hh_get(hh, "RESOLUTION");
+    const char *end;
+    int dots;
+    int dpmm;
+    if (res != NULL && parse_int_prefix(res, &dots, &end) && *end == ' ' && parse_int_prefix(end + 1, &dpmm, &end) &&
+        strncmp(end, "/MM", 3) == 0 && dots > 0 && dpmm > 0) {
+        out->head_dots = dots;
+        out->dpmm = dpmm;
+    }
+    for (int f = 0; f < ZPL_CFG_COUNT; f++) {
+        const char *text = zpl_hh_get(hh, s_cfg_desc[f].hh_name);
+        int v;
+        if (text != NULL && decode_field(out, (zpl_cfg_field_t)f, text, &v) &&
+            zpl_cfg_value_valid(out, (zpl_cfg_field_t)f, v)) {
+            out->v[f] = v;
+            out->known |= 1u << f;
+        }
+    }
+}
+
+void zpl_cfg_range(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int *min, int *max)
+{
+    *min = 0;
+    *max = 0;
+    switch (f) {
+    case ZPL_CFG_DARKNESS:
+        *min = 0;   /* ~SD##: 00 to 30 */
+        *max = 30;
+        break;
+    case ZPL_CFG_SPEED:
+        /*
+         * ^PR p: 1 (600 dpi only) to 14, and the printer limits it to what it
+         * can do. Zebra's GX430t (12 dots/mm) specification gives 4 ips; the
+         * 8 dots/mm G-series models reach 5 or 6.
+         */
+        *min = 2;
+        *max = cfg->dpmm == 12 ? 4 : 6;
+        break;
+    case ZPL_CFG_ZPL_MODE:
+        *min = 1;   /* ^SZ: 1 = ZPL, 2 = ZPL II */
+        *max = 2;
+        break;
+    case ZPL_CFG_WIDTH:
+        *min = 2;   /* ^PW: 2 to the width of the label (printhead width when known) */
+        *max = cfg->head_dots > 0 ? cfg->head_dots : 32000;
+        break;
+    case ZPL_CFG_LENGTH:
+        *min = 1;   /* ^LL: 1 to 32000 */
+        *max = 32000;
+        break;
+    case ZPL_CFG_MAX_LENGTH:
+        /* ^ML: the dpi times two, up to the maximum label length (^LL's 32000 here) */
+        *min = cfg->dpmm > 0 ? cfg->dpmm * 25 * 2 : 2;
+        *max = 32000;
+        break;
+    case ZPL_CFG_TEAR_OFF:
+    case ZPL_CFG_LABEL_TOP:
+        *min = -120;    /* ~TA###, ^LTx: -120 to 120 */
+        *max = 120;
+        break;
+    case ZPL_CFG_LEFT_POS:
+        *min = -9999;   /* ^LSa: -9999 to 9999 */
+        *max = 9999;
+        break;
+    case ZPL_CFG_BACKFEED:
+        *min = 10;      /* ~JS percentage: 10 to 90 in steps of 10 */
+        *max = 90;
+        break;
+    default:
+        break;
+    }
+}
+
+bool zpl_cfg_value_valid(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int v)
+{
+    const zpl_cfg_desc_t *d = zpl_cfg_desc(f);
+    if (d == NULL) {
+        return false;
+    }
+    int min;
+    int max;
+    zpl_cfg_range(cfg, f, &min, &max);
+    switch (d->kind) {
+    case ZPL_CFG_INT:
+        return v >= min && v <= max;
+    case ZPL_CFG_PERCENT_OR_LETTER:
+        if (v >= min && v <= max && v % 10 == 0) {
+            return true;
+        }
+        /* fall through */
+    case ZPL_CFG_LETTER:
+        return v > 0 && v < 128 && strchr(d->letters, v) != NULL;
+    default:
+        return false;
+    }
+}
+
+bool zpl_cfg_parse(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const char *text, int *out)
+{
+    const zpl_cfg_desc_t *d = zpl_cfg_desc(f);
+    if (d == NULL) {
+        return false;
+    }
+    int v;
+    if (d->kind != ZPL_CFG_INT && text[0] >= 'A' && text[0] <= 'Z' && text[1] == '\0') {
+        v = text[0];
+    } else if (d->kind == ZPL_CFG_LETTER || !parse_int_exact(text, &v)) {
+        return false;
+    }
+    if (!zpl_cfg_value_valid(cfg, f, v)) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+void zpl_cfg_format(zpl_cfg_field_t f, int v, char *out, size_t out_len)
+{
+    const zpl_cfg_desc_t *d = zpl_cfg_desc(f);
+    bool letter = d != NULL && (d->kind == ZPL_CFG_LETTER || (d->kind == ZPL_CFG_PERCENT_OR_LETTER && v >= 'A' &&
+                                                               v <= 'Z'));
+    if (letter) {
+        snprintf(out, out_len, "%c", v);
+    } else {
+        snprintf(out, out_len, "%d", v);
+    }
+}
+
+typedef struct {
+    char *out;
+    size_t cap;
+    size_t len;
+    bool ok;
+} appender_t;
+
+static void append(appender_t *a, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+
+static void append(appender_t *a, const char *fmt, ...)
+{
+    if (!a->ok) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(a->out + a->len, a->cap - a->len, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= a->cap - a->len) {
+        a->ok = false;
+        return;
+    }
+    a->len += (size_t)n;
+}
+
+static bool has(uint32_t mask, zpl_cfg_field_t f)
+{
+    return (mask & (1u << f)) != 0;
+}
+
+size_t zpl_cfg_commands(const zpl_printer_cfg_t *want, uint32_t changed, char *out, size_t out_len)
+{
+    if (out_len == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    const uint32_t all = (1u << ZPL_CFG_COUNT) - 1;
+    if (changed == 0 || (changed & ~all) != 0 || (changed & ~want->known) != 0) {
+        return 0;
+    }
+    for (int f = 0; f < ZPL_CFG_COUNT; f++) {
+        if (has(changed, (zpl_cfg_field_t)f) && !zpl_cfg_value_valid(want, (zpl_cfg_field_t)f, want->v[f])) {
+            return 0;
+        }
+    }
+    /* ^MF sets both actions at once, so both have to be known */
+    bool mf = has(changed, ZPL_CFG_POWER_UP) || has(changed, ZPL_CFG_HEAD_CLOSE);
+    if (mf && !(has(want->known, ZPL_CFG_POWER_UP) && has(want->known, ZPL_CFG_HEAD_CLOSE))) {
+        return 0;
+    }
+    const int *v = want->v;
+    appender_t a = {.out = out, .cap = out_len, .len = 0, .ok = true};
+
+    /* ~ commands act as soon as they arrive, so they go on their own ahead of the format */
+    if (has(changed, ZPL_CFG_DARKNESS)) {
+        append(&a, "~SD%02d", v[ZPL_CFG_DARKNESS]);           /* ~SD## Set Darkness, 00 to 30 */
+    }
+    if (has(changed, ZPL_CFG_TEAR_OFF)) {
+        /* ~TA### Tear-off Adjust: three characters or the command is ignored */
+        int t = v[ZPL_CFG_TEAR_OFF];
+        if (t < 0) {
+            append(&a, "~TA-%02d", -t);
+        } else {
+            append(&a, "~TA%03d", t);
+        }
+    }
+    if (has(changed, ZPL_CFG_BACKFEED)) {
+        /* ~JSb Change Backfeed Sequence: A, B, N, O or 10 to 90 */
+        int b = v[ZPL_CFG_BACKFEED];
+        if (b >= 'A' && b <= 'Z') {
+            append(&a, "~JS%c", b);
+        } else {
+            append(&a, "~JS%d", b);
+        }
+    }
+
+    uint32_t caret = changed & ~((1u << ZPL_CFG_DARKNESS) | (1u << ZPL_CFG_TEAR_OFF) | (1u << ZPL_CFG_BACKFEED));
+    if (caret != 0) {
+        append(&a, "^XA");
+        if (has(changed, ZPL_CFG_SPEED)) {
+            append(&a, "^PR%d", v[ZPL_CFG_SPEED]);               /* ^PRp Print Rate */
+        }
+        if (has(changed, ZPL_CFG_METHOD)) {
+            append(&a, "^MT%c", v[ZPL_CFG_METHOD]);              /* ^MTa Media Type: T or D */
+        }
+        if (has(changed, ZPL_CFG_MODE)) {
+            append(&a, "^MM%c", v[ZPL_CFG_MODE]);                /* ^MMa Print Mode */
+        }
+        if (has(changed, ZPL_CFG_MEDIA)) {
+            append(&a, "^MN%c", v[ZPL_CFG_MEDIA]);               /* ^MNa Media Tracking */
+        }
+        if (has(changed, ZPL_CFG_SENSOR)) {
+            append(&a, "^JS%c", v[ZPL_CFG_SENSOR]);              /* ^JSa Sensor Select */
+        }
+        if (has(changed, ZPL_CFG_WIDTH)) {
+            append(&a, "^PW%d", v[ZPL_CFG_WIDTH]);               /* ^PWa Print Width */
+        }
+        if (has(changed, ZPL_CFG_LENGTH)) {
+            append(&a, "^LL%d", v[ZPL_CFG_LENGTH]);              /* ^LLy Label Length */
+        }
+        if (has(changed, ZPL_CFG_MAX_LENGTH)) {
+            append(&a, "^ML%d", v[ZPL_CFG_MAX_LENGTH]);          /* ^MLa Maximum Label Length */
+        }
+        if (has(changed, ZPL_CFG_LABEL_TOP)) {
+            append(&a, "^LT%d", v[ZPL_CFG_LABEL_TOP]);           /* ^LTx Label Top */
+        }
+        if (has(changed, ZPL_CFG_LEFT_POS)) {
+            append(&a, "^LS%d", v[ZPL_CFG_LEFT_POS]);            /* ^LSa Label Shift */
+        }
+        if (mf) {
+            /* ^MFp,h Media Feed at power-up and after closing the head */
+            append(&a, "^MF%c,%c", v[ZPL_CFG_POWER_UP], v[ZPL_CFG_HEAD_CLOSE]);
+        }
+        if (has(changed, ZPL_CFG_EARLY_WARNING)) {
+            /* ^JH Early Warning Settings: G-series takes only f, early warning maintenance */
+            append(&a, "^JH,,,,,%c", v[ZPL_CFG_EARLY_WARNING]);
+        }
+        if (has(changed, ZPL_CFG_ZPL_MODE)) {
+            append(&a, "^SZ%d", v[ZPL_CFG_ZPL_MODE]);            /* ^SZa Set ZPL Mode, last in the format */
+        }
+        append(&a, "^XZ");
+    }
+    append(&a, "^XA^JUS^XZ");                                     /* ^JUS Configuration Update: save */
+    if (!a.ok) {
+        out[0] = '\0';
+        return 0;
+    }
+    return a.len;
+}
+
+const char *zpl_action_command(const char *action)
+{
+    static const struct {
+        const char *name;
+        const char *zpl;
+    } actions[] = {
+        {"calibrate", "~JC"},                   /* ~JC Set Media Sensor Calibration */
+        {"config_label", "~WC"},                /* ~WC Print Configuration Label */
+        {"feed", "~PH"},                        /* ~PH Slew to Home Position: feeds one blank label */
+        {"reset_counter1", "~RO1"},             /* ~ROc Reset Advanced Counters: 1 */
+        {"reset_counter2", "~RO2"},             /* ~ROc: 2 */
+        {"reset_head_cleaned", "~ROC"},         /* ~ROc: C, head cleaned counter (G-series supported) */
+        {"reload_saved", "^XA^JUR^XZ"},         /* ^JUR recall the last saved settings */
+        /* ^JUF reloads factory settings but they are lost at power-off unless saved, hence ^JUS */
+        {"factory_defaults", "^XA^JUF^JUS^XZ"},
+    };
+    for (size_t i = 0; i < sizeof(actions) / sizeof(actions[0]); i++) {
+        if (strcmp(actions[i].name, action) == 0) {
+            return actions[i].zpl;
+        }
+    }
+    return NULL;
 }

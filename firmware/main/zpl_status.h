@@ -51,9 +51,118 @@ size_t zpl_sc_command(char *out, size_t out_len, uint32_t baud);
 
 /*
  * Find the handshake line in ^HH (configuration dump) output and copy its
- * value, e.g. "XON/XOFF" from "  XON/XOFF.........HOST HANDSHAKE".
+ * value, e.g. "XON/XOFF" from "  XON/XOFF            HOST HANDSHAKE" or
+ * the dot-leader form "  XON/XOFF.........HOST HANDSHAKE".
  */
 bool zpl_hh_handshake(const uint8_t *buf, size_t len, char *out, size_t out_len);
 
 /* True if a handshake value (SGD or ^HH form) includes XON/XOFF. */
 bool zpl_handshake_is_xon(const char *value);
+
+/*
+ * ^HH (configuration label as text) lines. The GX430t sends two spaces, the
+ * value left-justified in a 20-character field, then the name, e.g.
+ * "  15.0                DARKNESS"; older firmware puts a dot leader
+ * between value and name instead. Long values are truncated.
+ */
+#define ZPL_HH_MAX_PAIRS 80
+#define ZPL_HH_NAME_LEN 24
+#define ZPL_HH_VALUE_LEN 28
+
+typedef struct {
+    char name[ZPL_HH_NAME_LEN];
+    char value[ZPL_HH_VALUE_LEN];
+} zpl_hh_pair_t;
+
+typedef struct {
+    int count;
+    zpl_hh_pair_t pair[ZPL_HH_MAX_PAIRS];
+} zpl_hh_t;
+
+/* Split ^HH output into name/value pairs, in printer order. False if no line parsed. */
+bool zpl_hh_parse(const uint8_t *buf, size_t len, zpl_hh_t *out);
+
+/* Value for an exact name, or NULL. */
+const char *zpl_hh_get(const zpl_hh_t *hh, const char *name);
+
+/*
+ * Printer settings the web page can change. Each maps to one ^HH line and
+ * one ZPL command (see zpl_cfg_commands for the command and guide reference).
+ */
+typedef enum {
+    ZPL_CFG_DARKNESS,       /* ~SD, 0..30 */
+    ZPL_CFG_SPEED,          /* ^PR, ips */
+    ZPL_CFG_METHOD,         /* ^MT, D/T */
+    ZPL_CFG_MODE,           /* ^MM, T/P/R/C/D */
+    ZPL_CFG_MEDIA,          /* ^MN, Y/M/N */
+    ZPL_CFG_SENSOR,         /* ^JS, A/R/T */
+    ZPL_CFG_ZPL_MODE,       /* ^SZ, 1/2 */
+    ZPL_CFG_WIDTH,          /* ^PW, dots */
+    ZPL_CFG_LENGTH,         /* ^LL, dots */
+    ZPL_CFG_MAX_LENGTH,     /* ^ML, dots */
+    ZPL_CFG_TEAR_OFF,       /* ~TA, -120..120 */
+    ZPL_CFG_LABEL_TOP,      /* ^LT, -120..120 */
+    ZPL_CFG_LEFT_POS,       /* ^LS, -9999..9999 */
+    ZPL_CFG_POWER_UP,       /* ^MF first parameter, F/C/L/N */
+    ZPL_CFG_HEAD_CLOSE,     /* ^MF second parameter, F/C/L/N */
+    ZPL_CFG_BACKFEED,       /* ~JS, N/A/B/O or 10..90 */
+    ZPL_CFG_EARLY_WARNING,  /* ^JH f parameter, E/D */
+    ZPL_CFG_COUNT
+} zpl_cfg_field_t;
+
+typedef enum {
+    ZPL_CFG_INT,            /* signed decimal within a range */
+    ZPL_CFG_LETTER,         /* one of `letters` */
+    ZPL_CFG_PERCENT_OR_LETTER, /* one of `letters`, or 10..90 in steps of 10 (~JS) */
+} zpl_cfg_kind_t;
+
+typedef struct {
+    const char *key;        /* form field name */
+    const char *hh_name;    /* ^HH line name */
+    zpl_cfg_kind_t kind;
+    const char *letters;    /* accepted letters, LETTER and PERCENT_OR_LETTER kinds */
+} zpl_cfg_desc_t;
+
+const zpl_cfg_desc_t *zpl_cfg_desc(zpl_cfg_field_t f);
+
+/*
+ * Settings decoded from ^HH. Letter settings hold the ZPL letter ('D'),
+ * percentages the number; a letter code never equals a multiple of ten
+ * between 10 and 90, so ~JS values cannot collide.
+ */
+typedef struct {
+    int v[ZPL_CFG_COUNT];
+    uint32_t known;         /* bit (1u << field) set when v[field] was read and is in range */
+    int dpmm;               /* dots per mm from RESOLUTION, 0 if unknown */
+    int head_dots;          /* printhead width in dots from RESOLUTION, 0 if unknown */
+} zpl_printer_cfg_t;
+
+/* Decode the editable settings. Text this code does not recognise leaves the field unknown. */
+void zpl_cfg_from_hh(const zpl_hh_t *hh, zpl_printer_cfg_t *out);
+
+/* Accepted range of an INT field for this printer (dpmm and head width narrow some). */
+void zpl_cfg_range(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int *min, int *max);
+
+bool zpl_cfg_value_valid(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, int v);
+
+/* Parse form text strictly (no spaces or trailing junk) and range-check it. */
+bool zpl_cfg_parse(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const char *text, int *out);
+
+/* Form text for a value: what zpl_cfg_parse reads back as the same value. */
+void zpl_cfg_format(zpl_cfg_field_t f, int v, char *out, size_t out_len);
+
+/*
+ * Build the ZPL that applies the fields in `changed` (bits as in `known`)
+ * from want, then saves with ^JUS: ~ commands first, each on its own, then
+ * one ^XA...^XZ for the ^ commands, then ^XA^JUS^XZ. Returns the length, or
+ * 0 if nothing changed, a changed field is unknown or out of range, or out
+ * is too small.
+ */
+size_t zpl_cfg_commands(const zpl_printer_cfg_t *want, uint32_t changed, char *out, size_t out_len);
+
+/*
+ * ZPL for a one-shot printer action by name ("calibrate", "config_label",
+ * "feed", "reset_counter1", "reset_counter2", "reset_head_cleaned",
+ * "reload_saved", "factory_defaults"), or NULL for an unknown name.
+ */
+const char *zpl_action_command(const char *action);

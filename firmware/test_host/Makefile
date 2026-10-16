@@ -6,13 +6,13 @@ ifneq ($(LLVM_CLANG),)
 CC = $(LLVM_CLANG)
 endif
 endif
-CFLAGS = -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I../main
+CFLAGS = -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I../main -DFIXTURE_DIR='"$(CURDIR)/fixtures"'
 SRCS = test_main.c ../main/zpl_status.c ../main/urlcodec.c ../main/netcfg.c
 
 all: build/test_main
 	./build/test_main
 
-build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h ../main/netcfg.h
+build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h ../main/netcfg.h fixtures/gx430t_hh.bin
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(SRCS)
 
