@@ -21,6 +21,7 @@ static const char *TAG = "printer";
 /* The GX430t's ^HH dump is 2522 bytes: 2.6 s at 9600 baud */
 #define HH_TIMEOUT_MS 5000
 #define HH_BUF 4096
+#define HI_TIMEOUT_MS 1000
 #define CMD_DRAIN_MS 3000
 #define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
@@ -47,6 +48,7 @@ static bool s_hs_valid;
 static zpl_hs_t s_hs;
 static int64_t s_hs_time_us;
 static char s_handshake[16];
+static char s_model[32];
 /* 64-bit counters are two words on this core: update and read them under s_count_mux */
 static portMUX_TYPE s_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_tx_bytes;
@@ -308,6 +310,24 @@ static bool read_handshake(char *out, size_t out_len)
     return false;
 }
 
+/* Ask ~HI for the model name; keeps the previous name if no reply parses. */
+static void read_model(void)
+{
+    uint8_t buf[96];
+    char model[sizeof(s_model)];
+    uart_flush_input(PORT);
+    send_str("~HI");
+    size_t len = collect(buf, sizeof(buf), HI_TIMEOUT_MS, etx_done);
+    if (!zpl_hi_model(buf, len, model, sizeof(model))) {
+        ESP_LOGW(TAG, "no model in %u bytes of ~HI reply", (unsigned)len);
+        return;
+    }
+    ESP_LOGI(TAG, "printer model %s", model);
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    strlcpy(s_model, model, sizeof(s_model));
+    xSemaphoreGive(s_status_lock);
+}
+
 static void publish_handshake(const char *hs)
 {
     xSemaphoreTake(s_status_lock, portMAX_DELAY);
@@ -449,6 +469,7 @@ static bool detect(void)
         s_detected = false;
         return false;
     }
+    read_model();
     s_detected = true;
     if (s_echo) {
         s_echo = false;
@@ -614,6 +635,7 @@ void printer_link_get_status(printer_status_t *out)
     out->hs = s_hs;
     out->hs_age_ms = s_hs_time_us < 0 ? -1 : (esp_timer_get_time() - s_hs_time_us) / 1000;
     strlcpy(out->handshake, s_handshake, sizeof(out->handshake));
+    strlcpy(out->model, s_model, sizeof(out->model));
     taskENTER_CRITICAL(&s_count_mux);
     out->tx_bytes = s_tx_bytes;
     out->rx_bytes = s_rx_bytes;

@@ -35,6 +35,13 @@ bool zpl_hs_parse(const uint8_t *buf, size_t len, zpl_hs_t *out);
  */
 bool zpl_sgd_value(const uint8_t *buf, size_t len, char *out, size_t out_len);
 
+/*
+ * Model name from a ~HI reply ("<STX>GX430t-300dpi,V56.17.16Z,12,2104KB<ETX>"),
+ * the first field with any "-<n>dpi" suffix removed. Returns false unless a
+ * complete STX...ETX frame with a printable, non-empty first field is found.
+ */
+bool zpl_hi_model(const uint8_t *buf, size_t len, char *out, size_t out_len);
+
 #define ZPL_BAUD_MAX_CANDIDATES 6
 
 /*

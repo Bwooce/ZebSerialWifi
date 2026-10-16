@@ -1,8 +1,9 @@
 /*
- * ZebSerialWifi: WiFi to RS232 bridge for a Zebra GK430t on a XIAO ESP32-C6.
+ * ZebSerialWifi: WiFi to RS232 bridge for a Zebra ZPL printer on a XIAO ESP32-C6.
  * Raw TCP 9100 <-> UART1 (MAX3232), advertised over mDNS as zebserial.local.
  */
 #include <stdio.h>
+#include <string.h>
 #include "board.h"
 #include "bridge.h"
 #include "esp_app_desc.h"
@@ -23,6 +24,10 @@ static const char *TAG = "main";
 
 #define FACTORY_RESET_HOLD_MS 5000
 #define STATUS_TICK_MS 100
+#define PDL_SERVICE "_pdl-datastream"
+
+/* model in the printer TXT records; generic until the printer answers ~HI */
+static char s_mdns_model[32];
 
 static void mdns_setup(void)
 {
@@ -36,16 +41,38 @@ static void mdns_setup(void)
     mdns_txt_item_t txt[] = {
         {"txtvers", "1"},
         {"qtotal", "1"},
-        {"ty", "Zebra GK430t"},
-        {"product", "(Zebra GK430t)"},
+        {"ty", "Zebra ZPL Printer"},
+        {"product", "(Zebra ZPL Printer)"},
         {"usb_MFG", "Zebra"},
-        {"usb_MDL", "GK430t"},
+        {"usb_MDL", "ZPL Printer"},
         {"note", "ZebSerialWifi"},
     };
-    mdns_service_add(instance, "_pdl-datastream", "_tcp", CONFIG_ZEB_TCP_PORT, txt,
+    mdns_service_add(instance, PDL_SERVICE, "_tcp", CONFIG_ZEB_TCP_PORT, txt,
                      sizeof(txt) / sizeof(txt[0]));
     mdns_service_add(instance, "_http", "_tcp", 80, NULL, 0);
     ESP_LOGI(TAG, "mDNS: %s.local", net.hostname);
+}
+
+/* Put the model the printer reported into the TXT records print drivers match on. */
+static void mdns_set_model(const char *model)
+{
+    char ty[48];
+    char product[48];
+    snprintf(ty, sizeof(ty), "Zebra %s", model);
+    snprintf(product, sizeof(product), "(Zebra %s)", model);
+    strlcpy(s_mdns_model, model, sizeof(s_mdns_model));  /* also on failure, so it warns once, not every tick */
+    esp_err_t err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "ty", ty);
+    if (err == ESP_OK) {
+        err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "product", product);
+    }
+    if (err == ESP_OK) {
+        err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "usb_MDL", model);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS model update failed: %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "mDNS model: %s", model);
 }
 
 static void status_task(void *arg)
@@ -61,6 +88,9 @@ static void status_task(void *arg)
 
         printer_status_t p;
         printer_link_get_status(&p);
+        if (p.model[0] != '\0' && strcmp(p.model, s_mdns_model) != 0) {
+            mdns_set_model(p.model);
+        }
         switch (wifi_prov_state()) {
         case WIFI_ST_AP:
             board_led_set_mode(LED_AP);

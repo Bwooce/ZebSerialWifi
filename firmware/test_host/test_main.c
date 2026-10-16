@@ -122,6 +122,42 @@ static void test_hs_needs_three_frames(void)
     CHECK(!parse_str(S1_OK S2_OK "\x02" "1234,0", &hs));
 }
 
+static void test_hi_model(void)
+{
+    char m[32];
+    /* captured from the bench GX430t through the bridge, 2026-10-16 */
+    const char *gx = "\x02" "GX430t-300dpi,V56.17.16Z,12,2104KB" "\x03" "\r\n";
+    CHECK(zpl_hi_model((const uint8_t *)gx, strlen(gx), m, sizeof(m)));
+    CHECK(strcmp(m, "GX430t") == 0);
+
+    /* no resolution suffix: the whole first field */
+    const char *plain = "\x02" "ZD420,V84.20.18Z,8,8192KB" "\x03";
+    CHECK(zpl_hi_model((const uint8_t *)plain, strlen(plain), m, sizeof(m)));
+    CHECK(strcmp(m, "ZD420") == 0);
+
+    /* a dash that is not "-<digits>dpi" stays */
+    const char *dash = "\x02" "ZT410-dpi,V1,8,1KB" "\x03";
+    CHECK(zpl_hi_model((const uint8_t *)dash, strlen(dash), m, sizeof(m)));
+    CHECK(strcmp(m, "ZT410-dpi") == 0);
+
+    /* leading noise before the frame is skipped */
+    const char *noisy = "\r\n" "\x02" "GK420t,V61.17.17Z,8,8176KB" "\x03";
+    CHECK(zpl_hi_model((const uint8_t *)noisy, strlen(noisy), m, sizeof(m)));
+    CHECK(strcmp(m, "GK420t") == 0);
+
+    /* loopback echo, missing ETX, empty field, control bytes, too long */
+    const char *echo = "~HI";
+    CHECK(!zpl_hi_model((const uint8_t *)echo, strlen(echo), m, sizeof(m)));
+    const char *cut = "\x02" "GX430t-300dpi,V56";
+    CHECK(!zpl_hi_model((const uint8_t *)cut, strlen(cut), m, sizeof(m)));
+    const char *empty = "\x02" ",V56.17.16Z" "\x03";
+    CHECK(!zpl_hi_model((const uint8_t *)empty, strlen(empty), m, sizeof(m)));
+    const char *ctrl = "\x02" "GX\x01" "430t,V1" "\x03";
+    CHECK(!zpl_hi_model((const uint8_t *)ctrl, strlen(ctrl), m, sizeof(m)));
+    char small[6];
+    CHECK(!zpl_hi_model((const uint8_t *)gx, strlen(gx), small, sizeof(small)));
+}
+
 static void test_sgd_value(void)
 {
     char v[32];
@@ -758,6 +794,7 @@ int main(void)
     test_hs_rejects_short_frames();
     test_hs_needs_three_frames();
     test_sgd_value();
+    test_hi_model();
     test_url_decode();
     test_form_get();
     test_baud_candidates();

@@ -19,6 +19,7 @@ typedef struct {
     zpl_hs_t hs;
     int64_t hs_age_ms;        /* ms since the last good ~HS, -1 if never */
     char handshake[16];       /* comm.handshake as last read, "" if unknown */
+    char model[32];           /* from ~HI, e.g. "GX430t"; "" until a printer has answered */
     uint64_t tx_bytes;
     uint64_t rx_bytes;
     int tx_gpio;

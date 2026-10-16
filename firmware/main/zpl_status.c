@@ -197,6 +197,46 @@ bool zpl_sgd_value(const uint8_t *buf, size_t len, char *out, size_t out_len)
     return true;
 }
 
+bool zpl_hi_model(const uint8_t *buf, size_t len, char *out, size_t out_len)
+{
+    const uint8_t *stx = memchr(buf, STX, len);
+    if (stx == NULL) {
+        return false;
+    }
+    size_t rest = len - (size_t)(stx + 1 - buf);
+    const uint8_t *etx = memchr(stx + 1, ETX, rest);
+    if (etx == NULL) {
+        return false;
+    }
+    const uint8_t *comma = memchr(stx + 1, ',', (size_t)(etx - stx - 1));
+    const uint8_t *end = comma != NULL ? comma : etx;
+    size_t n = (size_t)(end - stx - 1);
+    if (n == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (stx[1 + i] < 0x20 || stx[1 + i] > 0x7e) {
+            return false;
+        }
+    }
+    /* "-300dpi": the resolution, which is not part of the model name */
+    if (n > 3 && memcmp(end - 3, "dpi", 3) == 0) {
+        const uint8_t *dash = end - 4;
+        while (dash > stx + 1 && *dash >= '0' && *dash <= '9') {
+            dash--;
+        }
+        if (dash > stx + 1 && *dash == '-' && dash < end - 4) {
+            n = (size_t)(dash - stx - 1);
+        }
+    }
+    if (n + 1 > out_len) {
+        return false;
+    }
+    memcpy(out, stx + 1, n);
+    out[n] = '\0';
+    return true;
+}
+
 void zpl_baud_candidates(uint32_t saved, uint32_t out[ZPL_BAUD_MAX_CANDIDATES], size_t *n)
 {
     static const uint32_t standard[] = {115200, 9600, 19200, 38400, 57600};

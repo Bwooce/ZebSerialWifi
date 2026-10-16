@@ -296,7 +296,7 @@ static const char STATUS_BODY[] =
     "row('WiFi',s.wifi.ssid+' ('+s.wifi.rssi+' dBm)')+"
     "row('Address',s.wifi.hostname+'.local, '+s.wifi.ip+(s.wifi.static_ip?' (static)':' (DHCP)'))+"
     "row('IPv6',s.wifi.ip6.length?s.wifi.ip6.join('\\n'):'none')+"
-    "row('Printer',p.detected?('detected at '+p.baud+' baud'):('not detected (trying '+p.baud+')'))+"
+    "row('Printer',p.detected?((p.model?p.model+', ':'')+'detected at '+p.baud+' baud'):('not detected (trying '+p.baud+')'))+"
     "row('Status',p.hs_valid?flags(p.hs)+' ('+Math.round(p.hs_age_ms/1000)+' s ago)':'unknown')+"
     "row('Handshake',p.handshake||'unknown')+"
     "row('UART pins','TX GPIO'+p.tx_gpio+', RX GPIO'+p.rx_gpio)+"
@@ -414,6 +414,8 @@ static esp_err_t status_get(httpd_req_t *req)
     settings_get_options(&opt);
     char handshake_esc[sizeof(p.handshake) * 6];
     json_escape(p.handshake, handshake_esc, sizeof(handshake_esc));
+    char model_esc[sizeof(p.model) * 6];
+    json_escape(p.model, model_esc, sizeof(model_esc));
     char hostname_esc[sizeof(net.hostname) * 6];
     json_escape(net.hostname, hostname_esc, sizeof(hostname_esc));
     char ip6[WIFI_PROV_IP6_MAX][46];
@@ -434,7 +436,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"hostname\":\"%s\",\"static_ip\":%s,"
              "\"ip6\":%s},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
-             "\"printer\":{\"detected\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
+             "\"printer\":{\"detected\":%s,\"model\":\"%s\",\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
              "\"hs_valid\":%s,\"hs_age_ms\":%lld,\"hs\":{\"paper_out\":%s,\"pause\":%s,\"head_up\":%s,"
              "\"ribbon_out\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
              "\"formats_in_buffer\":%d},\"tx_bytes\":%llu,\"rx_bytes\":%llu},"
@@ -442,7 +444,8 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), hostname_esc, net.static_ip ? "true" : "false", ip6_json,
-             (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false", (unsigned long)p.baud, handshake_esc,
+             (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
+             model_esc, (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
              p.hs.paper_out ? "true" : "false", p.hs.pause ? "true" : "false", p.hs.head_up ? "true" : "false",
              p.hs.ribbon_out ? "true" : "false", p.hs.buffer_full ? "true" : "false",
