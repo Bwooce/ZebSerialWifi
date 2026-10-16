@@ -39,6 +39,7 @@ ghost_lug_dx = 0;        // moves only the ghost legs (and their keep-out) in X
 ghost_plate_d = -1;      // plate ghost depth (-1 = fl_plate_d)
 ghost_board_dy = 0;      // moves the RS232 board + DB9 ghosts (with their legs) in Y
 ghost_board_dx = 0;      // moves the RS232 board + DB9 ghosts in X (the corner pins locate it in X)
+ghost_mh_dx = 0;         // moves only the PCB ghost's mounting holes in X (pin clearance control)
 ghost_mh_dy = 0;         // moves only the PCB ghost's mounting holes in Y (pin clearance control)
 ghost_board_dz = 0;      // moves only the RS232 board ghost (PCB, pin zone, header) in Z
 ghost_lid_dz = 0;        // raises the lid in check_traylid (snap engagement with the lid held high)
@@ -155,7 +156,7 @@ pin_engage = 1.5;
 pin_boss_d = 4.0;
 
 /* [Corner pins: tray pins through the HW-044 mounting holes] */
-// The pins locate the board in X. In Y they have more clearance (a lens-shaped pin), so they never fight the flange
+// The pins locate the board in X (as the side walls do, both at 0.2). In Y they have more clearance (a lens-shaped pin), so they never fight the flange
 // datum (lips 0.1 in front, lid front wall at zero gap behind) and tolerate an error in the hole position; the tray
 // rear wall, bs_clr behind the PCB, is the backstop that the old rib was.
 mh_pin_clr = 0.2;        // per side in X: pin 2.0 across X in the 2.4 hole
@@ -806,7 +807,7 @@ module ghost_db9() {
 module ghost_rs232() {
     gcol("royalblue") difference() {
         box(-board_w / 2, board_w / 2, y_pcb0, y_pcb1, -pcb_t, 0);
-        mirror_x_both() translate([mh_x, mh_y + ghost_mh_dy, -pcb_t - 1]) cylinder(d = mh_d, h = pcb_t + 2);
+        for (s = [-1, 1]) translate([s * mh_x + ghost_mh_dx, mh_y + ghost_mh_dy, -pcb_t - 1]) cylinder(d = mh_d, h = pcb_t + 2);
     }
     // through-hole pin zone under the board (kept 1.25 from the edges), cut back around the corner-pin bosses
     // (plus the board's play at the pins): no pins are assumed within the bosses

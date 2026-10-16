@@ -48,11 +48,16 @@ ctl "holes +0.4 Y"                 check_tray    none -D ghost_mh_dy=0.4
 ctl "holes -0.4 Y"                 check_tray    none -D ghost_mh_dy=-0.4
 ctl "holes +0.5 Y (corner pins)"   check_tray    hit  -D ghost_mh_dy=0.5
 ctl "holes -0.5 Y (corner pins)"   check_tray    hit  -D ghost_mh_dy=-0.5
-# board sideways: the corner pins locate it in X (0.2 per side)
+# board sideways: the side walls and the corner pins both locate it in X (0.2 per side), so the whole-board move
+# hits both; the holes-only move tests the pins alone
 ctl "board +X 0.15"                check_tray    none -D ghost_board_dx=0.15
 ctl "board -X 0.15"                check_tray    none -D ghost_board_dx=-0.15
-ctl "board +X 0.3 (corner pins)"   check_tray    hit  -D ghost_board_dx=0.3
-ctl "board -X 0.3 (corner pins)"   check_tray    hit  -D ghost_board_dx=-0.3
+ctl "board +X 0.3 (walls, pins)"   check_tray    hit  -D ghost_board_dx=0.3
+ctl "board -X 0.3 (walls, pins)"   check_tray    hit  -D ghost_board_dx=-0.3
+ctl "holes +X 0.15"                check_tray    none -D ghost_mh_dx=0.15
+ctl "holes -X 0.15"                check_tray    none -D ghost_mh_dx=-0.15
+ctl "holes +X 0.3 (corner pins)"   check_tray    hit  -D ghost_mh_dx=0.3
+ctl "holes -X 0.3 (corner pins)"   check_tray    hit  -D ghost_mh_dx=-0.3
 # board-lock leg-tail keep-out (estimated position +-1.5): the ledges start 0.5 behind it, the side wall 0.5 outside
 ctl "leg keep-out +0.4 Y"          check_tray    none -D ghost_lug_dy=0.4
 ctl "leg keep-out +0.6 Y (ledge)"  check_tray    hit  -D ghost_lug_dy=0.6

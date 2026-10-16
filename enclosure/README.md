@@ -192,7 +192,9 @@ onto them.
   12.15, and on the two corner-pin bosses (4.4 mm, under the solder side around each hole). A 0.4 mm gusset fills the
   corner between the floor and the front skin, keeping 1.2 mm square to the bottom front chamfer.
 - **Corner pins** (`mh_*`), from the tray bosses up through the holes:
-  - 2.0 mm across X (0.2 clearance per side). They locate the board in X.
+  - 2.0 mm across X (0.2 clearance per side). The tray side walls are also 0.2 from the PCB edges, so walls and
+    pins both locate the board in X. What the pins add is a location that does not depend on the PCB's edge width,
+    and they keep the board from walking sideways on the ledges before the lid is on.
   - In Y they are lens-shaped: the pin is the part of the 2.0 circle that stays inside the hole when the hole moves
     0.45 mm either way in Y (`mh_pin_clr_y`). So they never fight the flange datum (lips 0.1 in front, lid front wall
     at zero gap behind), and a hole up to 0.45 mm off its nominal Y still drops on.
@@ -453,7 +455,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the leg-tail keep-out on the floor top (the tails reach it)
 - the lid rim on the tray rim, and the shield stop block's rear face on the Dupont bend zone
 
-**Controls** (`./controls.sh`, 61 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` line such as a
+**Controls** (`./controls.sh`, 65 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` line such as a
 failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each
 moves one ghost (or one feature) and states whether a check must find real overlap (any piece of at least 0.01 mm³)
 or none. I looked at where each positive control hits, not only that it hits:
@@ -462,14 +464,16 @@ or none. I looked at where each positive control hits, not only that it hits:
 |-------|-------|--------|
 | board + DB9 forward 0.05 | tray, lid | none (lips 0.1 in front) |
 | board + DB9 forward 0.15 | tray / lid | hits the bottom lip / the top lip |
-| board + DB9 forward 1.2 | tray | hits the bottom lip |
+| board + DB9 forward 1.2 | tray | hits the bottom lip (and the pins, and the pin zone in the front skin) |
 | board + DB9 back 0.2 | tray | none (rear wall 0.25 behind) |
 | board + DB9 back 0.2 | lid | hits the lid front wall (the datum, zero gap) |
 | board + DB9 back 0.3 | tray | hits the rear wall |
 | mounting holes ±0.4 in Y | tray | none |
 | mounting holes ±0.5 in Y | tray | hits the corner pins |
 | board + DB9 ±0.15 in X | tray | none |
-| board + DB9 ±0.3 in X | tray | hits the corner pins |
+| board + DB9 ±0.3 in X | tray | hits the side walls, the ledges and the corner pins |
+| mounting holes ±0.15 in X | tray | none |
+| mounting holes ±0.3 in X | tray | hits the corner pins |
 | leg-tail keep-out +0.4 / +0.6 in Y | tray | none / hits the side ledges |
 | leg-tail keep-out +0.4 / +0.6 in X | tray | none / hits the side wall |
 | RS232 PCB alone up 0.2 / 0.3 (`ghost_board_dz`) | lid | none / hits both corner pressers (0.25 above) |
@@ -486,14 +490,14 @@ or none. I looked at where each positive control hits, not only that it hits:
 | front wall without its joint reliefs (`fw_relief=false`) | lid | hits the D3/D5 pad zones |
 | Dupont keep-out ±X 1 / down 1 | lid | none |
 | Dupont keep-out −Y 1 / +Y 1 / up 1 | lid | hits the shield stop block / the rear wall / the ceiling |
-| flange plate 0.5 deeper (`ghost_plate_d` 5.6) | lid / lid path | hits the front wall |
-| revision 2 lid (`fl_plate_d` 0.38) against the 5.1 plate | lid | hits: the fault revision 2 fixed |
-| snap pockets 0.3 too tight (`clip_clr` −0.3) | tray / lid | hits |
-| pressers into the tray wall (`press_wall_clr` −0.1) | tray / lid | hits |
+| flange plate 0.5 deeper (`ghost_plate_d` 5.6) | lid / lid path | hits the front wall (71 mm³) |
+| revision 2 lid (`fl_plate_d` 0.38) against the 5.1 plate | lid | hits (266 mm³): the fault revision 2 fixed |
+| snap pockets 0.3 too tight (`clip_clr` −0.3) | tray / lid | hits the snap pockets (and the USB tongue, whose width uses `clip_clr`) |
+| pressers into the tray wall (`press_wall_clr` −0.1) | tray / lid | hits both corner pressers |
 | lid held up 0.3 (`ghost_lid_dz`) | tray / lid | none: the hooks are still under the catch window tops |
-| lid held up 0.4, or 0.3 with the old 0.1 window | tray / lid | hits (hook over the window top) |
+| lid held up 0.4, or 0.3 with the old 0.1 window | tray / lid | hits all four hooks (hook over the window top) |
 | logo at 25 mm / 20 mm | `check_logo` | none / hits |
-| test block 0.5 under the XIAO rear edge (`ctl_undercut`) | lid / lid path | none / hits |
+| test block 0.5 under the XIAO rear edge (`ctl_undercut`) | lid / lid path | none / hits (2.4 mm³) |
 
 For `check_lid_path`, the control `-D ctl_undercut=true` adds a test block to the lid 0.5 mm under the XIAO's rear
 edge. It is clear in the closed position (`check_lid` stays empty) but the swept check finds it.
@@ -567,6 +571,9 @@ mm above the PCB underside with 25 mm of wire turning space. Everything below is
   on the XIAO, adjust `shield_stop_clr`.
 - **Board hold-down is four points:** two lips at the front and two corner pressers at the rear. A board that bows
   between them is not pressed in the middle.
+- **Pin engagement upside down:** hanging on the printer, the board can drop away from the tray by the presser gap
+  (0.25) plus the snap-window play (0.35). That leaves about 0.5 mm of the 1.1 mm straight pin in the holes. The side
+  walls still locate the board in X, so this only matters if the walls are printed oversize.
 - **Lip strength:** the lips are 1.2 mm thick and also bend across layer lines if the flange is pulled forward hard.
   They only carry plug extraction force, but do not lever the case off the DB9 by the lips.
 - **Light gap at the snaps:** the catch windows open into the space under the board. A sliver of light shows below
