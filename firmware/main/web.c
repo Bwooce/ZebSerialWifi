@@ -975,14 +975,19 @@ static void send_printer_form(httpd_req_t *req)
             httpd_resp_sendstr_chunk(req, "</fieldset>");
         }
         /* the bridge depends on these, so they are shown, not offered */
-        static const char *const serial[] = {"BAUD", "DATA BITS", "PARITY", "HOST HANDSHAKE", "PROTOCOL"};
+        /* names as the Status page's FN table gives them */
+        static const char *const serial[][2] = {{"BAUD", "serial speed"}, {"DATA BITS", "data bits"},
+                                                {"PARITY", "parity"}, {"HOST HANDSHAKE", "handshake"},
+                                                {"PROTOCOL", "protocol"}};
         httpd_resp_sendstr_chunk(req, "<p><small>Serial port:");
+        bool first = true;
         for (size_t i = 0; i < sizeof(serial) / sizeof(serial[0]); i++) {
-            const char *v = zpl_hh_get(hh, serial[i]);
+            const char *v = zpl_hh_get(hh, serial[i][0]);
             if (v != NULL) {
                 html_escape(v, esc, sizeof(esc));
-                snprintf(buf, sizeof(buf), "%s %s %s", i ? "," : "", serial[i], esc);
+                snprintf(buf, sizeof(buf), "%s %s %s", first ? "" : ",", serial[i][1], esc);
                 httpd_resp_sendstr_chunk(req, buf);
+                first = false;
             }
         }
         httpd_resp_sendstr_chunk(req, ". The bridge sets these; its speed is under Serial link on the "
@@ -1202,9 +1207,11 @@ static void send_firmware_section(httpd_req_t *req, const char *hostname)
         "if(!f){m.textContent='Choose the .bin file first.';return}"
         "var x=new XMLHttpRequest();x.open('POST','/update');"
         "x.upload.onprogress=function(e){if(e.lengthComputable)m.textContent='Uploading '+Math.round(100*e.loaded/e.total)+' %'};"
-        "x.onload=function(){m.textContent=x.responseText;if(x.status==200)setTimeout(function(){location.reload()},20000)};"
-        "x.onerror=function(){m.textContent='The upload failed.'};"
-        "this.disabled=true;x.send(f)}"
+        "var b=this;"
+        "x.onload=function(){m.textContent=x.responseText;if(x.status==200)setTimeout(function(){location.reload()},20000);"
+        "else b.disabled=false};"
+        "x.onerror=function(){m.textContent='The upload failed.';b.disabled=false};"
+        "b.disabled=true;x.send(f)}"
         "</script>");
 }
 

@@ -40,6 +40,9 @@ static TaskHandle_t s_line_task;          /* the task that started it */
 static atomic_flag s_line_busy = ATOMIC_FLAG_INIT;
 static volatile uint32_t s_hook_dropped;  /* queue full, or two tasks logging at once */
 static volatile uint32_t s_send_dropped;  /* not sent after SEND_RETRIES */
+/* copies for remote_log_get_status, which runs on the web server task: iot_log is called from the sender only */
+static volatile bool s_listener;
+static volatile uint32_t s_sent;
 static volatile bool s_running;           /* iot_log initialised */
 
 /* Queue s_line[0..len) if its level passes. Hook only, under s_line_busy. */
@@ -101,8 +104,9 @@ void remote_log_init(void)
 static void configure(void)
 {
     if (s_running) {
-        iot_log_deinit();
         s_running = false;
+        s_listener = false;
+        iot_log_deinit();
     }
     settings_rlog_t cfg;
     settings_get_rlog(&cfg);
@@ -152,6 +156,8 @@ static void sender_task(void *arg)
             continue;
         }
         iot_log_poll();  /* mDNS discovery, at most every 60 to 300 s */
+        s_listener = iot_log_listener_active();
+        s_sent = iot_log_get_sent_count();
         size_t len;
         char *item = xRingbufferReceive(s_queue, &len, pdMS_TO_TICKS(1000));
         if (item == NULL) {
@@ -201,7 +207,7 @@ void remote_log_apply(void)
 void remote_log_get_status(remote_log_status_t *out)
 {
     out->enabled = s_on;
-    out->listener = s_running && iot_log_listener_active();
-    out->sent = iot_log_get_sent_count();
+    out->listener = s_running && s_listener;
+    out->sent = s_sent;
     out->dropped = s_send_dropped + s_hook_dropped;
 }

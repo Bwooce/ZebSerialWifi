@@ -96,6 +96,7 @@ static uint8_t s_hh_buf[HH_BUF];
 static zpl_hh_t s_cfg;
 static int64_t s_cfg_time_us = -1;
 static volatile uint32_t s_target_baud = 115200;
+static bool s_started;
 /* TX ring free space right after driver install, i.e. what "empty" reads as (less than TX_BUF: item headers) */
 static size_t s_tx_free_empty;
 
@@ -816,6 +817,7 @@ esp_err_t printer_link_init(int tx_gpio, int rx_gpio)
 
 void printer_link_start(void)
 {
+    s_started = true;
     xTaskCreate(link_task, "printer_link", 6144, NULL, 5, NULL);
 }
 
@@ -926,6 +928,10 @@ void printer_link_want_status(void)
 
 void printer_link_set_target_baud(uint32_t baud)
 {
+    if (!s_started) {
+        s_target_baud = baud;  /* the saved setting at boot: not a change, so the learned cap stays */
+        return;
+    }
     if (baud != s_target_baud) {
         s_target_baud = baud;
         settings_set_baud_cap("", 0);  /* a new target gets a fresh try, even at a rate that failed before */

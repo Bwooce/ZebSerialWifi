@@ -207,6 +207,9 @@ static void join_trial_cb(void *arg)
             if (set_sta_config(ssid, pass) == ESP_OK) {
                 esp_wifi_connect();
             }
+            /* the trial used part of the fallback window: give the old network the whole of it again */
+            esp_timer_stop(s_fallback_timer);
+            esp_timer_start_once(s_fallback_timer, (uint64_t)STA_TIMEOUT_MS * 1000);
         }
         memset(pass, 0, sizeof(pass));
     }
@@ -249,7 +252,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "got IPv6 " IPV6STR, IPV62STR(e->ip6_info.ip));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *d = data;
-        if (s_join_state == WIFI_JOIN_TRYING) {
+        /* leaving the old network on purpose (reason 8) says nothing about the one being tried */
+        if (s_join_state == WIFI_JOIN_TRYING && d->reason != WIFI_REASON_ASSOC_LEAVE) {
             s_join_reason = d->reason;
         }
         if (s_state == WIFI_ST_CONNECTED) {
