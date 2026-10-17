@@ -105,11 +105,16 @@ ctl "diode +X 1"                   check_lid     none -D 'ghost_diode_d=[1,0,0]'
 ctl "diode +Y 2"                   check_lid     none -D 'ghost_diode_d=[0,2,0]'
 ctl "diode +Y 2.8 (rear wall)"     check_lid     hit  -D 'ghost_diode_d=[0,2.8,0]'
 ctl "diode off"                    check_lid     none -D diode_on=false
-# Dupont housing + wire-bend zone (keep-out), moved 1 mm: the ones that stay clear, and what the others meet
+# the diode body is rigid, so check_lid_path sweeps it: a lid block under the body, outside every keep-out, must be
+# clear when closed and hit on the way down
+ctl "lid block under the diode"    check_lid      none -D ctl_diode_undercut=true
+ctl "lid block under the diode"    check_lid_path hit  -D '$fn=16' -D ctl_diode_undercut=true
+# Dupont housing + wire-bend zone (keep-out, with the wire zones' extension of it from X -9 to the corridor), moved
+# 1 mm: the ones that stay clear, and what the others meet
 ctl "dupont +X 1"                  check_lid      none -D 'ghost_dupont_d=[1,0,0]'
 ctl "dupont -X 1"                  check_lid      none -D 'ghost_dupont_d=[-1,0,0]'
 ctl "dupont down 1"                check_lid      none -D 'ghost_dupont_d=[0,0,-1]'
-ctl "dupont -Y 1 (stop rib web)"   check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
+ctl "dupont -Y 1 (rib, stop blk)"  check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
 ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
 # revision 4: the housing keep-out, the bend zone and the 5V/GND zone run dupont_rear_clr behind the housing, and
 # the rear wall is 0.73 behind that; the revision 3 rear face (bs_clr behind the PCB) must hit

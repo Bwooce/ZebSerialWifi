@@ -51,6 +51,7 @@ coupon_z = 18.0;         // the lid coupon is the lid below this Z (walls, front
 ctl_usbpad_full = false; // positive control: the USB shell pad over the whole shell top, across the 5V/GND corridor
 fw_relief = true;        // front wall reliefs at the 5V/GND/3V3 joints (false = positive control)
 ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO rear edge, clear when closed
+ctl_diode_undercut = false; // the same under the RX diode body, outside every keep-out: clear when closed
 ctl_rear_rev3 = false;   // positive control: the interior rear face back at revision 3's place (bs_clr behind the PCB)
 fw_wings = false;        // positive control: revision 3's lid front wall, full width behind the plate (the "wings")
 p9_notch = true;         // the pin 9 wire's notch in the backstop (false = positive control)
@@ -760,6 +761,7 @@ module lid(xcap = true) union() {
             end_stop();
             for (c = lc_ys) mirror_x_both() lid_clip_finger(c);
             if (ctl_undercut) box(-4.5, -2.5, yx1 - 1, yx1 + 0.2 + eps, zx0 - 1.5, zx0 - 0.5);   // under the unused D6 pad
+            if (ctl_diode_undercut) box(7.6, 8.0, 26.9, 27.9, 10.4, 11.0);
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
@@ -1054,7 +1056,8 @@ module wire_zones() {
         // the 5V/GND corridor across the XIAO top, from the front edge back to the rear of the bend zone, and the
         // bend zone's extension over it (+X) and back over the pin 9 riser (-X)
         box(wch_cx - gwch_hw, wch_cx + gwch_hw, yx0, hdr_room, zx1, z_ceil - eps);
-        box(p9_on ? p9_run_x - wire_pass / 2 : -hdr_hw - bend_side, wch_cx + gwch_hw, yx1, hdr_room, dupont_top, z_ceil - eps);
+        translate(ghost_dupont_d)    // moves with the bend zone it extends
+            box(p9_on ? p9_run_x - wire_pass / 2 : -hdr_hw - bend_side, wch_cx + gwch_hw, yx1, hdr_room, dupont_top, z_ceil - eps);
         translate(ghost_rear_d) {
             // over the rear edge strip from the D5 joint to the D3 joint (D5 wire, diode anode lead), up to the ceiling
             box(rear_jx0, rear_jx1, sh_y1, yx1 + eps, zx1, z_ceil - eps);

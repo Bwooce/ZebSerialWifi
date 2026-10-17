@@ -163,7 +163,7 @@ should work." The RX diode is soldered right at the XIAO's D3 pad. In revisions 
   - `box()` now asserts that its bounds are in order. An inverted box renders as nothing, silently, and revision 4
     lost one of the XIAO's two button ghosts that way.
   - `build.sh` and `controls.sh` fail on OpenSCAD `WARNING` lines as well as errors.
-  - There are 95 controls (revision 4: 85).
+  - There are 97 controls (revision 4: 85).
 - **Renders:** section cut faces of the case took the colour of the last ghost drawn, because coplanar cut faces merge
   in OpenSCAD 2026's manifold renderer. Ghosts are now cut 0.02 mm behind the case's cut face, so the case keeps its
   colour. `show_zones = false` hides the magenta keep-outs in a view and `show_lid = false` hides the lid; the checks
@@ -466,8 +466,8 @@ The green ghost wires show one feasible route, and the interference check confir
 (`section_plan_wires_only.png`, `xiao_lid_off.png`). Which header pin carries which signal is not modelled; the wires
 can cross in the bend zone.
 
-- **Moved 1 mm** (`ghost_dupont_d`): ±X and down stay clear. −Y meets the −X stop rib and web (the bend zone runs up
-  to their rear faces), +Y meets the rear wall (the keep-out ends 0.73 mm from it; +Y 0.5 stays clear), and up meets
+- **Moved 1 mm** (`ghost_dupont_d`, which moves the bend zone's extension too): ±X and down stay clear. −Y meets the
+  −X stop rib and web and the shield stop block (the bend zone runs up to their rear faces), +Y meets the rear wall (the keep-out ends 0.73 mm from it; +Y 0.5 stays clear), and up meets
   the ceiling (the zone runs to it by definition).
 
 ### The RX diode
@@ -484,12 +484,16 @@ same room.
   lead leaves the top, up to z 18.3, at the housing top, where the RXD wire from the housing joins it.
 - **Keep-out:** the body grown by 0.3 mm (`diode_clr`) all round, both leads grown by 0.3 mm, and the D3 joint zone:
   X 5.08..8.38, Y 25.08..28.38, z 12.2..18.0 for the body, the cathode lead to z 19.0. It is part of the wire zones, so
-  `check_lid` and `check_tray` enforce it, and the diode itself is swept in `check_lid_path`.
+  `check_lid` and `check_tray` enforce it, and the diode itself is swept in `check_lid_path` (a lid block under the
+  body, `ctl_diode_undercut`, is the positive control).
 - **Nearest case features:** the shield stop block's rear corner (X 7.53, Y 25.08) is 0.18 mm from the keep-out and
   0.48 mm from the body. The rear wall is 2.6 mm behind the keep-out, and the ceiling 4.4 mm above it. The
   corridor wires run over it at z 19.9 and up.
-- **Other placements:** `diode_dir` turns the body (for example `[0, 1, 0]` lying back along the housing, which needs
-  `diode_c` lower and further back) and `diode_c` moves it; the checks then say whether it still fits.
+- **Other placements:** `diode_dir` turns the body and `diode_c` moves it (the derived default centre only suits
+  `[0, 0, 1]`, so give `diode_c` with any other direction). The checks then say whether the diode clears the case, but
+  not whether it clears the Dupont housing, the header or the XIAO: ghosts are never checked against each other.
+  Lying along X behind the XIAO's rear edge (`diode_dir = [1, 0, 0]`, `diode_c = [9, 26.73, 13.3]`) clears the case,
+  under the corridor wires; lying back along Y beside the housing does not fit (it hits the rear wall).
 - `section_diode.png` (Y 24..27, from the front, keep-outs hidden), `section_diode_zones.png` (the same with them) and
   `diode_iso.png` (lid off) show it.
 
@@ -642,7 +646,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the shield stop block's and the −X stop rib and web's rear faces (Y 25.08) on the bend zone and its extensions
 - the pin 9 wire's riser on the sides of the backstop notch (the notch is exactly `wire_pass` wide)
 
-**Controls** (`./controls.sh`, 95 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` or `WARNING`
+**Controls** (`./controls.sh`, 97 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` or `WARNING`
 line, a failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each
 moves one ghost (or one feature) and states whether a check must find real overlap (any piece of at least 0.01 mm³)
 or none. I looked at where each positive control hits, not only that it hits:
@@ -681,8 +685,9 @@ or none. I looked at where each positive control hits, not only that it hits:
 | diode +X 1, +Y 2 | lid | none |
 | diode +Y 2.8 | lid | hits the rear wall |
 | no diode (`diode_on=false`) | lid | none |
-| Dupont keep-out ±X 1 / down 1 | lid | none |
-| Dupont keep-out −Y 1 / up 1 | lid | hits the −X stop rib and web / the ceiling |
+| test block under the diode body (`ctl_diode_undercut`) | lid / lid path | none / hits (0.15 mm³) |
+| Dupont keep-out (with the bend zone's extension in the wire zones) ±X 1 / down 1 | lid | none |
+| Dupont keep-out −Y 1 / up 1 | lid | hits the −X stop rib and web and the shield stop block / the ceiling |
 | Dupont keep-out +Y 0.5 / +Y 1 | tray, lid | none / hits the rear wall |
 | revision 3 rear face (`ctl_rear_rev3`) | tray / lid | hits the rear wall (Dupont rear room 41 mm³, pin 9 riser 26 mm³) / 370 mm³ |
 | pin 9 wire keep-out down 0.4 / 0.6 | tray | none / hits the floor under the joint |
