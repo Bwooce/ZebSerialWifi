@@ -275,6 +275,7 @@ static void listen_task(void *arg)
         close(sock);
         STATS_UPDATE(s_stats.active = false);
         printer_link_release();
+        printer_link_want_status();  /* a printer that sleeps is not polled: read its state after the job */
         ESP_LOGI(TAG, "client %s done: %llu bytes to printer, %llu back, %lld ms", s_stats.client_ip,
                  (unsigned long long)(s_stats.bytes_to_printer - in0),
                  (unsigned long long)(s_stats.bytes_from_printer - out0), (long long)(now_ms() - t0));

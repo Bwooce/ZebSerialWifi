@@ -493,7 +493,9 @@ static const char STATUS_SCRIPT[] =
     "row('Firmware',s.version+' '+s.built)}"
     "catch(x){if(J=='trying')id('j').innerHTML='<p class=note>No reply from the bridge. If it joined the new network, '+"
     "'connect to that network and open http://'+e(H)+'.local/</p>'}}"
-    "upd();setInterval(upd,2000);"
+    /* a hidden tab stops asking: each /api/status request has a printer that sleeps asked again */
+    "upd();setInterval(function(){if(!document.hidden)upd()},2000);"
+    "document.addEventListener('visibilitychange',function(){if(!document.hidden)upd()});"
     /* ^HH names by group, as the Printer page groups its form; names this list does not know go under Other */
     "var G=[['Print',['DARKNESS','PRINT SPEED','PRINT METHOD','PRINT MODE','PRINT WIDTH','LABEL LENGTH','TEAR OFF',"
     "'LABEL TOP','LEFT POSITION','BACKFEED']],"

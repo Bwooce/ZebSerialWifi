@@ -310,7 +310,7 @@ static bool scan(void)
  * an SGD getvar: Zebra printers send no ~HS reply while paper or ribbon is
  * out, the head is open or it is too hot, but still answer SGD.
  */
-static bool probe_alive(void)
+static bool probe_alive_publish(bool publish_miss)
 {
     bool ok = false;
     if (s_lang != ZPL_LANG_OTHER && probe_hs()) {
@@ -323,13 +323,20 @@ static bool probe_alive(void)
             ok = true;
         }
     }
-    xSemaphoreTake(s_status_lock, portMAX_DELAY);
-    s_answering = ok;
-    if (ok) {
-        s_reply_us = esp_timer_get_time();
+    if (ok || publish_miss) {
+        xSemaphoreTake(s_status_lock, portMAX_DELAY);
+        s_answering = ok;
+        if (ok) {
+            s_reply_us = esp_timer_get_time();
+        }
+        xSemaphoreGive(s_status_lock);
     }
-    xSemaphoreGive(s_status_lock);
     return ok;
+}
+
+static bool probe_alive(void)
+{
+    return probe_alive_publish(true);
 }
 
 /* Long enough for a full HH_BUF at the current baud (10 bits a byte), plus 2 s for the printer to start. */
@@ -687,7 +694,8 @@ static void retry_language(void)
  */
 static void poll_once(int *fails)
 {
-    bool ok = probe_alive();
+    /* a miss on the first try at a printer that sleeps is not published: the LED would flash "no printer" */
+    bool ok = probe_alive_publish(!s_sleeps);
     if (!ok && s_sleeps) {
         vTaskDelay(pdMS_TO_TICKS(SLEEPY_WAKE_MS));
         ok = probe_alive();
@@ -737,15 +745,22 @@ static void link_task(void *arg)
     int poll_fails = 0;
     int64_t next_us = 0;
     int64_t last_poll_us = 0;
+    int64_t skip_until_us = 0;  /* output held by XOFF: no probe until then, on either path */
     bool stack_logged = false;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(200));
         int64_t now = esp_timer_get_time();
-        /* a printer that sleeps is not polled on a timer, only when its status is wanted */
-        bool due = s_detected && s_sleeps
+        /*
+         * A printer that sleeps is not polled on a timer, only when its
+         * status is wanted. One that stopped answering is polled on the
+         * timer as before, so a printer switched off, reset to another baud
+         * or replaced is still found: one that was only asleep answers, and
+         * the timer stops again.
+         */
+        bool due = s_detected && s_sleeps && s_answering
                        ? s_status_wanted && now - last_poll_us >= (int64_t)SLEEPY_MIN_POLL_MS * 1000
                        : now >= next_us;
-        if (!s_redetect && !due) {
+        if (!s_redetect && (!due || now < skip_until_us)) {
             continue;
         }
         if (!printer_link_acquire(0)) {
@@ -773,6 +788,7 @@ static void link_task(void *arg)
             ESP_LOGD(TAG, "TX queued, skipping the ~HS poll");
             int64_t finish = esp_timer_get_time();
             next_us = finish + (int64_t)SCAN_RETRY_MS * 1000;
+            skip_until_us = next_us;
         } else {
             poll_once(&poll_fails);
             int64_t finish = esp_timer_get_time();

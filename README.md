@@ -17,7 +17,8 @@ It is a Seeed XIAO ESP32-C6 and a MAX3232 RS-232 module in a small 3D-printed ca
 - **Printer status:** it asks the printer for its status (`~HS`) every 30 s while no job is printing. A printer
   with an Energy Star or sleep timeout switched on (SGD `power.energy_star.enable` or `power.sleep.enable`, for
   example on the ZD421) would never get to sleep that way, so it is asked only while the Status page is open or
-  something reads `/api/status`, at most every 30 s. The GX430t has neither setting and is polled.
+  something reads `/api/status`, at most every 30 s, and once after each job. If it stops answering it is polled
+  as before, so a printer switched off or replaced is still noticed. The GX430t has neither setting and is polled.
 - **Web pages:** Status (printer state, configuration, the bridge's own state), Printer (the printer's settings and
   actions such as feed and calibrate) and Bridge (Wi-Fi, network, serial link and remote log).
 - **Wi-Fi:** first set-up through its own access point; later changes from the Bridge page. A new network is tried for
