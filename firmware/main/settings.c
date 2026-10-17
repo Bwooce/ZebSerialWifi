@@ -115,21 +115,16 @@ void settings_get_rlog(settings_rlog_t *out)
 {
     out->enabled = true;
     out->level = 3;
-    out->unicast_ip = 0;
     nvs_handle_t h;
     if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) {
         return;
     }
     uint8_t u8;
-    uint32_t u32;
     if (nvs_get_u8(h, "rlog_on", &u8) == ESP_OK) {
         out->enabled = u8 != 0;
     }
     if (nvs_get_u8(h, "rlog_lvl", &u8) == ESP_OK && u8 >= SETTINGS_RLOG_LEVEL_MIN && u8 <= SETTINGS_RLOG_LEVEL_MAX) {
         out->level = u8;
-    }
-    if (nvs_get_u32(h, "rlog_ip", &u32) == ESP_OK) {
-        out->unicast_ip = u32;
     }
     nvs_close(h);
 }
@@ -149,7 +144,9 @@ esp_err_t settings_set_rlog(const settings_rlog_t *rlog)
         err = nvs_set_u8(h, "rlog_lvl", rlog->level);
     }
     if (err == ESP_OK) {
-        err = nvs_set_u32(h, "rlog_ip", rlog->unicast_ip);
+        /* earlier builds kept a fixed receiver address here; the log is multicast only now */
+        esp_err_t e = nvs_erase_key(h, "rlog_ip");
+        err = e == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : e;
     }
     if (err == ESP_OK) {
         err = nvs_commit(h);

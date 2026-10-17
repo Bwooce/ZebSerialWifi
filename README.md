@@ -263,12 +263,13 @@ Holding the XIAO's BOOT button for 5 s clears the Wi-Fi and network settings and
 ## Remote log
 
 The Bridge page's Remote log section sends a copy of the log to an [iot_log](https://github.com/Bwooce/esp-iot-log)
-receiver. It is on by default, but nothing is sent until mDNS finds a receiver on the network. An optional receiver
-IPv4 address also sends straight to that machine, for networks that lose multicast. The Status page shows whether a
-receiver was found.
+receiver. It is on by default, but nothing is sent until mDNS finds a receiver on the network; there is no address to
+set. The Status page shows whether a receiver was found.
 
-"Found" only means mDNS answered: on the network this was developed on, mDNS found the receiver but none of the
-multicast copies reached it, and unicast did. If the receiver shows nothing, enter its address.
+"Found" only means mDNS answered. Access points with multicast-to-unicast conversion (or IGMP snooping) forward the
+log group only to clients whose membership report they have seen. A receiver that joined long ago, or roamed to
+another access point since, can be left out, while mDNS (link-local multicast, never filtered) keeps working. The
+iot_log receiver re-joins the group every 60 s, which keeps it listed.
 
 ## Case
 
@@ -283,5 +284,5 @@ project and its settings. The unit plugs straight into the printer's serial sock
 | Printer prints but never answers | A DTR handshake mode, or a fault such as ribbon out |
 | "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within a few minutes. The D5 pull-up stops it at the source. |
 | Printer page: "No complete reply to ^HH" | The printer has stopped running formats (seen once with the head not fully latched). Close the head properly and turn the printer off and on. |
-| Remote log: receiver found, but no lines arrive | The network drops the bridge's multicast; set the receiver address on the Bridge page |
+| Remote log: receiver found, but no lines arrive | The access point no longer forwards the group to the receiver: update the iot_log receiver (it re-joins every 60 s) |
 | No 5 V on pin 9 at the module | The gender changer does not carry pin 9, or a bad connection; measure at the printer's own socket |

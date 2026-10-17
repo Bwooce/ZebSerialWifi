@@ -1272,26 +1272,19 @@ static esp_err_t bridge_get_page(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, buf);
     settings_rlog_t rlog;
     settings_get_rlog(&rlog);
-    char rlog_ip[16] = "";
-    if (rlog.unicast_ip != 0) {
-        ip_str(rlog.unicast_ip, rlog_ip);
-    }
     snprintf(buf, sizeof(buf),
              "<fieldset id=rlog><legend>Remote log</legend>"
              "<label class=check><input type=checkbox name=rlog value=1%s> Send the bridge's log to an "
              "<a href='https://github.com/Bwooce/esp-iot-log'>iot_log</a> receiver "
-             "<small>(only while one is found on the network, or to the address below)</small></label>"
+             "<small>(only while one is found on the network)</small></label>"
              "<label for=rlog_lvl>Level</label><select id=rlog_lvl name=rlog_lvl>"
              "<option value=1%s>Errors</option><option value=2%s>Warnings and errors</option>"
-             "<option value=3%s>Everything (information, warnings and errors)</option></select>"
-             "<label for=rlog_ip>Receiver address <small>(optional: also send straight to this IPv4 address, "
-             "for networks that lose multicast)</small></label>"
-             "<input id=rlog_ip name=rlog_ip value='%s' placeholder='192.168.1.20'></fieldset>"
+             "<option value=3%s>Everything (information, warnings and errors)</option></select></fieldset>"
              "<p><small>Changing the hostname, the address or the pins restarts the bridge.</small></p>"
              "<button type=submit>Save</button></form>"
              "<p><small>Holding the BOOT button for 5 s clears the Wi-Fi and network settings.</small></p>",
              rlog.enabled ? " checked" : "", rlog.level == 1 ? " selected" : "", rlog.level == 2 ? " selected" : "",
-             rlog.level == 3 ? " selected" : "", rlog_ip);
+             rlog.level == 3 ? " selected" : "");
     httpd_resp_sendstr_chunk(req, buf);
     send_firmware_section(req, net.hostname);
     return send_page_end(req);
@@ -1348,13 +1341,6 @@ static esp_err_t config_post(httpd_req_t *req)
         long lvl = strtol(v, NULL, 10);
         rlog.level = (lvl < SETTINGS_RLOG_LEVEL_MIN || lvl > SETTINGS_RLOG_LEVEL_MAX) ? 0 : (uint8_t)lvl;
     }
-    if (form_get(body, "rlog_ip", v, sizeof(v))) {
-        rlog.unicast_ip = 0;
-        if (v[0] != '\0' && !netcfg_ipv4_parse(v, &rlog.unicast_ip)) {
-            return fail(req, "400 Bad Request", "The remote log receiver address is not a valid IPv4 address.",
-                        "/bridge");
-        }
-    }
     net.static_ip = form_get(body, "static", v, sizeof(v)) && strcmp(v, "1") == 0;
     if (net.static_ip) {
         const char *keys[] = {"ip", "mask", "gw", "dns"};
@@ -1383,7 +1369,7 @@ static esp_err_t config_post(httpd_req_t *req)
         return fail(req, "500 Internal Server Error", "Could not save the settings.", "/bridge");
     }
     printer_link_set_target_baud(opt.target_baud);
-    if (rlog.enabled != old_rlog.enabled || rlog.level != old_rlog.level || rlog.unicast_ip != old_rlog.unicast_ip) {
+    if (rlog.enabled != old_rlog.enabled || rlog.level != old_rlog.level) {
         remote_log_apply();
     }
 

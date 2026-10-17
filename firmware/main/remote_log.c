@@ -41,7 +41,6 @@ static atomic_flag s_line_busy = ATOMIC_FLAG_INIT;
 static volatile uint32_t s_hook_dropped;  /* queue full, or two tasks logging at once */
 static volatile uint32_t s_send_dropped;  /* not sent after SEND_RETRIES */
 static volatile bool s_running;           /* iot_log initialised */
-static bool s_unicast;                    /* a receiver address is set */
 
 /* Queue s_line[0..len) if its level passes. Hook only, under s_line_busy. */
 static void queue_line(size_t len)
@@ -115,18 +114,10 @@ static void configure(void)
     }
     settings_net_t net;
     settings_get_net(&net);
-    char unicast[16] = "";
-    if (cfg.unicast_ip != 0) {
-        snprintf(unicast, sizeof(unicast), "%lu.%lu.%lu.%lu", (unsigned long)(cfg.unicast_ip >> 24),
-                 (unsigned long)((cfg.unicast_ip >> 16) & 0xFF), (unsigned long)((cfg.unicast_ip >> 8) & 0xFF),
-                 (unsigned long)(cfg.unicast_ip & 0xFF));
-    }
     iot_log_config_t lc = IOT_LOG_CONFIG_DEFAULT();
     lc.device_name = net.hostname;      /* copied by iot_log_init */
     lc.level = (iot_log_level_t)cfg.level;
     lc.serial_mirror = false;           /* the lines came from the serial log already */
-    lc.unicast_ip = unicast;
-    s_unicast = unicast[0] != '\0';
     if (iot_log_init(&lc) != 0) {
         ESP_LOGW(TAG, "iot_log did not start");
         return;
@@ -181,7 +172,7 @@ static void sender_task(void *arg)
                 break;
             }
             /* retry only a send that failed: with no receiver at all the line is just dropped */
-            if (attempt == SEND_RETRIES || !(s_unicast || iot_log_listener_active())) {
+            if (attempt == SEND_RETRIES || !iot_log_listener_active()) {
                 s_send_dropped++;
                 break;
             }

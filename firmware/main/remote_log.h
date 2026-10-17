@@ -2,7 +2,8 @@
 /*
  * Copies of the ESP_LOG output sent to an iot_log receiver
  * (github.com/Bwooce/esp-iot-log): multicast once mDNS finds a receiver
- * on the network, and unicast to a fixed address if one is set.
+ * on the network. No address is configured: a receiver that can hear the
+ * group gets the log.
  */
 #include <stdbool.h>
 #include <stdint.h>

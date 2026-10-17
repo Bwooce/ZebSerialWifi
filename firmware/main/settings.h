@@ -78,7 +78,6 @@ esp_err_t settings_set_flag(const char *key, bool value);
 typedef struct {
     bool enabled;
     uint8_t level;              /* 1 errors, 2 warnings, 3 info (iot_log levels) */
-    uint32_t unicast_ip;        /* IPv4, host byte order; 0 = only to a receiver found by mDNS */
 } settings_rlog_t;
 
 #define SETTINGS_RLOG_LEVEL_MIN 1
