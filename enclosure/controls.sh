@@ -1,8 +1,9 @@
 #!/bin/sh
 # Positive and negative controls for the interference checks: each line moves a ghost and says whether the named
 # check must find real overlap ("hit": a piece of at least 0.01 mm3, thicker than 0.005 mm in every axis) or none.
-# Prints PASS / FAIL per line and exits non-zero on any FAIL. An OpenSCAD error (an ERROR line such as a failed assert,
-# or a non-zero exit that is not just "Current top level object is empty.") is reported as got "error" and fails.
+# Prints PASS / FAIL per line and exits non-zero on any FAIL. An OpenSCAD error (an ERROR or WARNING line, a failed
+# assert, or a non-zero exit that is not just "Current top level object is empty.") is reported as got "error" and
+# fails.
 # Usage: ./controls.sh
 set -u
 cd "$(dirname "$0")"
@@ -15,9 +16,9 @@ ctl() {   # name check expect -D ...
   rm -f "$TMP/o.stl"
   st=0
   "$OSC" --backend=manifold "$@" -D "part=\"$chk\"" -o "$TMP/o.stl" zebserial_case.scad > "$TMP/o.log" 2>&1 || st=$?
-  if grep -qE '^ERROR:|Assertion|Execution aborted' "$TMP/o.log" ||
+  if grep -qE '^ERROR:|^WARNING:|Assertion|Execution aborted' "$TMP/o.log" ||
      { [ "$st" -ne 0 ] && ! grep -q 'Current top level object is empty' "$TMP/o.log"; }; then
-    got="error (exit $st: $(grep -m1 -E '^ERROR:|Assertion' "$TMP/o.log" | cut -c1-80))"
+    got="error (exit $st: $(grep -m1 -E '^ERROR:|^WARNING:|Assertion' "$TMP/o.log" | cut -c1-80))"
   elif [ -s "$TMP/o.stl" ]; then
     got=$(python3 -I stlinfo.py --hits "$TMP/o.stl")
   else
@@ -66,9 +67,7 @@ ctl "leg keep-out +0.6 X (wall)"   check_tray    hit  -D ghost_lug_dx=0.6
 # RS232 PCB alone up (corner pressers press_gap 0.25 above its top)
 ctl "pcb up 0.2"                   check_lid     none -D ghost_board_dz=0.2
 ctl "pcb up 0.3 (corner pressers)" check_lid     hit  -D ghost_board_dz=0.3
-# corner pressers: moved 0.4 forward they reach the 5V/GND joints on the XIAO rear edge
-ctl "pressers 0.4 fwd (5V/GND)"    check_lid     hit  -D cp_front=1.2
-# XIAO: pads 0.25 above, tongue 0.05 below, -X wall and +X stop rib 0.2, front wall 0.2 in front, shield stop 0.3
+# XIAO: pads 0.25 above, tongue 0.05 below, +X wall and -X stop rib 0.2, front wall 0.2 in front, shield stop 0.3
 # behind the shield; the USB slot sides are 0.2 off the shell either way in Y
 ctl "xiao up 0.05"                 check_lid     none -D 'ghost_offset=[0,0,0.05]'
 ctl "xiao up 0.2"                  check_lid     none -D 'ghost_offset=[0,0,0.2]'
@@ -77,21 +76,40 @@ ctl "xiao down 0.04"               check_tray    none -D 'ghost_offset=[0,0,-0.0
 ctl "xiao down 0.06 (tongue)"      check_tray    hit  -D 'ghost_offset=[0,0,-0.06]'
 ctl "xiao +X 0.15"                 check_lid     none -D 'ghost_offset=[0.15,0,0]'
 ctl "xiao -X 0.15"                 check_lid     none -D 'ghost_offset=[-0.15,0,0]'
-ctl "xiao +X 0.3 (stop rib)"       check_lid     hit  -D 'ghost_offset=[0.3,0,0]'
-ctl "xiao -X 0.3 (-X wall)"        check_lid     hit  -D 'ghost_offset=[-0.3,0,0]'
+ctl "xiao +X 0.3 (+X wall)"        check_lid     hit  -D 'ghost_offset=[0.3,0,0]'
+ctl "xiao -X 0.3 (stop rib)"       check_lid     hit  -D 'ghost_offset=[-0.3,0,0]'
 ctl "xiao fwd 0.15"                check_lid     none -D 'ghost_offset=[0,-0.15,0]'
 ctl "xiao back 0.15"               check_lid     none -D 'ghost_offset=[0,0.15,0]'
 ctl "xiao back 0.15"               check_tray    none -D 'ghost_offset=[0,0.15,0]'
 ctl "xiao fwd 0.3 (front wall)"    check_lid     hit  -D 'ghost_offset=[0,-0.3,0]'
 ctl "xiao back 0.35 (shield stop)" check_lid     hit  -D 'ghost_offset=[0,0.35,0]'
-# wire keep-outs: the shield pad ring across the D3/D5 channel, and the front wall without its joint reliefs
-ctl "shield ring over the channel" check_lid     hit  -D ctl_ring_full=true
-ctl "front wall without reliefs"   check_lid     hit  -D fw_relief=false
+# wire keep-outs: the USB shell pad across the 5V/GND corridor, and the front wall without its 5V/GND/3V3 relief
+ctl "USB pad over the corridor"    check_lid     hit  -D ctl_usbpad_full=true
+ctl "front wall without relief"    check_lid     hit  -D fw_relief=false
+# revision 5: the 5V/GND corridor, 5.0 wide, is 0.3 off the shield stop block and the USB pad; a
+# corridor keep-out wider than the case's must hit
+ctl "corridor zone 0.4 wider"      check_lid     hit  -D ghost_wch_hw=2.9
+ctl "corridor zone 0.2 wider"      check_lid     none -D ghost_wch_hw=2.7
+# revision 5: the rear-edge D3/D5 zones (joints, the strip over the rear edge, the diode) against the shield stop
+# block (0.3 +X of the D3 joint zone) and the -X stop rib (3.76 -X of the D5 joint zone)
+ctl "rear zones +X 0.2"            check_lid     none -D 'ghost_rear_d=[0.2,0,0]'
+ctl "rear zones +X 0.4 (stop blk)" check_lid     hit  -D 'ghost_rear_d=[0.4,0,0]'
+ctl "rear zones -X 3.6"            check_lid     none -D 'ghost_rear_d=[-3.6,0,0]'
+ctl "rear zones -X 3.9 (stop rib)" check_lid     hit  -D 'ghost_rear_d=[-3.9,0,0]'
+# revision 5: the RX diode keep-out (DO-41 body + 0.3, both leads + 0.3) beside the Dupont housing: nearest is the
+# shield stop block's rear corner (0.18 radially from the keep-out, 0.48 from the body): -Y 0.2 stays clear, -Y 0.4
+# must hit the block; +X has room, the rear wall is 2.6 behind the keep-out
+ctl "diode -Y 0.2"                 check_lid     none -D 'ghost_diode_d=[0,-0.2,0]'
+ctl "diode -Y 0.4 (stop block)"    check_lid     hit  -D 'ghost_diode_d=[0,-0.4,0]'
+ctl "diode +X 1"                   check_lid     none -D 'ghost_diode_d=[1,0,0]'
+ctl "diode +Y 2"                   check_lid     none -D 'ghost_diode_d=[0,2,0]'
+ctl "diode +Y 2.8 (rear wall)"     check_lid     hit  -D 'ghost_diode_d=[0,2.8,0]'
+ctl "diode off"                    check_lid     none -D diode_on=false
 # Dupont housing + wire-bend zone (keep-out), moved 1 mm: the ones that stay clear, and what the others meet
 ctl "dupont +X 1"                  check_lid      none -D 'ghost_dupont_d=[1,0,0]'
 ctl "dupont -X 1"                  check_lid      none -D 'ghost_dupont_d=[-1,0,0]'
 ctl "dupont down 1"                check_lid      none -D 'ghost_dupont_d=[0,0,-1]'
-ctl "dupont -Y 1 (shield stop)"    check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
+ctl "dupont -Y 1 (stop rib web)"   check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
 ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
 # revision 4: the housing keep-out, the bend zone and the 5V/GND zone run dupont_rear_clr behind the housing, and
 # the rear wall is 0.73 behind that; the revision 3 rear face (bs_clr behind the PCB) must hit
@@ -101,8 +119,6 @@ ctl "dupont +Y 1 (rear wall)"      check_lid      hit  -D 'ghost_dupont_d=[0,1,0
 ctl "dupont +Y 1 (rear wall)"      check_tray     hit  -D 'ghost_dupont_d=[0,1,0]'
 ctl "rev 3 rear face (lid)"        check_lid      hit  -D ctl_rear_rev3=true
 ctl "rev 3 rear face (tray)"       check_tray     hit  -D ctl_rear_rev3=true
-# revision 4: D3/D5 channel 6 mm wide; the revision 3 channel (5 mm) must hit the 6 mm keep-out
-ctl "rev 3 channel vs 6 mm zone"   check_lid      hit  -D wch_hw=2.5 -D ghost_wch_hw=3.0
 # revision 4: pin 9 wire keep-out (joint 2.5 deep, 0.5 above the floor; run 2.0 under the board, 1.0 above the
 # floor; riser in the backstop notch, exactly wire_pass wide, against the rear wall)
 ctl "pin 9 wire down 0.4"          check_tray     none -D 'ghost_p9_d=[0,0,-0.4]'

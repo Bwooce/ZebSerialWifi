@@ -5,7 +5,7 @@
 // Coordinate frame (assembly):
 //   X  across the case. Seen from the component side (+Z) with the DB9 towards you, +X is to the right.
 //      In use the board hangs upside down (solder side and tray floor up); +X is then the printer's parallel-port
-//      side and the XIAO's USB-C comes out of the -X wall (see README).
+//      side, and the XIAO's USB-C comes out of the +X wall (revision 5; see README).
 //   Y  0 at the DB9 flange FRONT face = case front face (flush), +Y towards the rear (the header end).
 //      The flange sits in the front opening; its plate back (Y fl_plate_d) bears on the lid front wall.
 //   Z  0 at the RS232 PCB TOP (component) surface, +Z towards the components and the lid. The tray floor is -Z.
@@ -25,6 +25,8 @@
 part = "assembly";
 show_ghosts = true;
 show_pin_zone = true;    // the red through-hole pin zone ghost (hide it to see the leg-tail keep-out in a render)
+show_zones = true;       // the magenta wire / diode keep-outs in the views (the checks always include them)
+show_lid = true;         // the lid in the assembly view (hide it to look at the XIAO, the wires and the diode)
 // "none", or a slab: "x" keeps section_pos-section_t < x < section_pos (view from +X),
 // "y" keeps section_pos < y < section_pos+section_t (view from the front),
 // "z" keeps section_pos-section_t < z < section_pos (plan, view from above)
@@ -46,15 +48,17 @@ ghost_lid_dz = 0;        // raises the lid in check_traylid (snap engagement wit
 coupon_floor = true;     // fit coupons: the tray coupon is the whole tray with the middle of the floor cut out,
 coupon_z = 18.0;         // the lid coupon is the lid below this Z (walls, front wall, top lip, corner pressers, snaps,
                          // the whole USB relief: a cut through the relief leaves 0.1 mm slivers)
-ctl_ring_full = false;   // positive control: the shield pad ring over the whole shield, across the D3/D5 wire channel
-fw_relief = true;        // front wall reliefs at the D3/D5 joints (false = positive control)
+ctl_usbpad_full = false; // positive control: the USB shell pad over the whole shell top, across the 5V/GND corridor
+fw_relief = true;        // front wall reliefs at the 5V/GND/3V3 joints (false = positive control)
 ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO rear edge, clear when closed
 ctl_rear_rev3 = false;   // positive control: the interior rear face back at revision 3's place (bs_clr behind the PCB)
 fw_wings = false;        // positive control: revision 3's lid front wall, full width behind the plate (the "wings")
 p9_notch = true;         // the pin 9 wire's notch in the backstop (false = positive control)
 ghost_p9_d = [0, 0, 0];  // positive control: moves the pin 9 wire keep-out
 ghost_jack_d = [0, 0, 0];   // positive control: moves the jack screw hardware keep-outs
-ghost_wch_hw = -1;       // D3/D5 channel keep-out half width (-1 = wch_hw; a positive control sets it apart from the case)
+ghost_wch_hw = -1;       // 5V/GND corridor keep-out half width (-1 = wch_hw; a positive control sets it apart from the case)
+ghost_rear_d = [0, 0, 0];   // positive control: moves the rear-edge D3/D5 joint zones, the rear wire zone and the diode
+ghost_diode_d = [0, 0, 0];  // positive control: moves only the diode (ghost and keep-out, leads and D3 joint end too)
 
 /* [Measured by the user (calipers)] */
 board_w = 32.0;          // HW-044 board width (along the DB9 face, X)
@@ -71,15 +75,16 @@ mh_inset = 2.0;          // rear PCB edge to the hole centres
 // the user's first measurement, "the back of the flange plate screw holes is 5.1 mm from the front flat face"
 // (YL-97 DB9; the HW-044's female DB9 is assumed to be the same).
 fl_plate_d = 5.1;        // flange front face to the plate back = the lid front wall bearing face
-// XIAO position: lying on the DB9 body, turned so its length runs along X with the USB-C out of the -X wall.
-// -1 = derived: the USB end pcb_clr from the -X inner wall (X), the front edge pcb_clr behind the lid front wall (Y)
+// XIAO position: lying on the DB9 body, turned so its length runs along X with the USB-C out of the +X wall
+// (revision 5; revisions 3 and 4 had it out of the -X wall, and the RX diode at D3 hit the lid front wall).
+// -1 = derived: the USB end pcb_clr from the +X inner wall (X), the front edge pcb_clr behind the lid front wall (Y)
 xiao_x0 = -1;            // X of the XIAO's USB-end PCB edge
-xiao_front_y = -1;       // Y of the XIAO's front PCB edge (the D0..D6 pad column)
+xiao_front_y = -1;       // Y of the XIAO's front PCB edge (the 5V..D7 pad column)
 
 /* [XIAO ESP32-C6, Seeed data] */
 // Seeed XIAO ESP32-C6 v1.0 KiCad PCB (enclosure/reference/xiao_esp32c6) and its STEP model.
-// d = distance from the USB end of the PCB (+X in the case); w = offset across the width from the XIAO centre line,
-// +w towards the 5V/GND column, which faces the rear (+Y) of the case.
+// d = distance from the USB end of the PCB (along -X in the case); w = offset across the width from the XIAO centre
+// line, +w towards the 5V/GND column, which faces the front (-Y) of the case: X = USB end - d, Y = centre line - w.
 xiao_l = 20.955;
 xiao_w = 17.78;
 xiao_pcb_t = 1.2;        // measured
@@ -100,11 +105,13 @@ ufl_d = [18.25, 20.85];
 ufl_h = 2.5;             // with a mated plug
 btn_w = [5.3, 7.9];      // BOOT / RESET buttons, both sides (|w|)
 btn_d = [0.3, 1.9];
-// Pad indices counted from the USB end, 1..7.
-// Front column (-w, faces the DB9):  D0 D1 D2 D3 D4 D5 D6
-// Rear column (+w, faces the header): 5V GND 3V3 D10 D9 D8 D7
-used_pads_front = [4, 6];    // D3, D5 (firmware board.c: UART on GPIO21 / GPIO23; RX behind a Schottky diode)
-used_pads_rear = [1, 2];     // 5V, GND
+// Pad indices counted from the USB end (+X), 1..7.
+// Front column (+w, faces the DB9 / lid front wall): 5V GND 3V3 D10 D9 D8 D7
+// Rear column (-w, faces the header and the Dupont plug): D0 D1 D2 D3 D4 D5 D6
+used_pads_front = [1, 2];    // 5V (module VCC and the pin 9 wire), GND
+pullup_pad = 3;              // 3V3: room for an optional 10k pull-up from D3 (joint zone and front wall relief only;
+                             // 0 = none). It does not drive the design.
+used_pads_rear = [4, 6];     // D3 (RX, through the diode), D5 (TX) (firmware board.c: UART on GPIO21 / GPIO23)
 
 /* [Right-angle DB9 female (HW-044), assumed the same as the measured YL-97 male part] */
 fl_w = 30.8;             // flange width
@@ -172,8 +179,8 @@ mh_pin_top = -0.1;       // pin top relative to the PCB top: just below it, so t
                          // (a protruding pin would need a bore that breaks out of the presser's front face)
 mh_pin_lead = 0.4;       // 45 degree lead-in at the pin top
 mh_boss_d = 4.4;         // tray boss under the solder side around the pin root (the board sits on it)
-// Lid corner pressers over the holes: they hold the board's rear corners down. Their front edge stays behind the
-// XIAO's rear-edge 5V/GND solder joints.
+// Lid corner pressers over the holes: they hold the board's rear corners down. (In revisions 3 and 4 their front edge
+// had to stay behind the XIAO's rear-edge 5V/GND joints; the rear-edge joints are now D3/D5, nowhere near them.)
 cp_front = 0.8;          // presser front face in front of the hole centre
 cp_inner = 2.0;          // presser inner face from the hole centre (towards the middle)
 cp_bore_clr = 0.3;       // bore over the pin, per side and above its top (only if the pin top reaches the presser)
@@ -199,9 +206,10 @@ bs_top = -0.2;           // backstop ledge top, relative to the PCB top (it bear
 
 /* [Pin 9 power wire (revision 4)] */
 // The bridge is powered from the printer: a wire from the DB9 pin 9 pad (solder side, -Z) to the XIAO 5V pad. It
-// runs under the board to the rear edge, up through a notch in the backstop behind the PCB, and forward over the
-// -X corner presser into the 5V/GND wire zone. The -X edge is nearer, but the PCB is 0.2 from the side wall there,
-// and the -X wall carries the snap windows, the USB-C slot, tongue and relief; the leg tail is in the way under it.
+// runs under the board to the rear edge, up through a notch in the backstop behind the PCB, up to the ceiling beside
+// the -X corner presser, then +X over the Dupont housing with the module wires and forward through the 5V/GND
+// corridor to the 5V pad on the XIAO's front edge (revision 5). The -X edge is nearer, but the PCB is 0.2 from the
+// side wall there, the side wall carries the snap windows, and the leg tail is in the way under it.
 p9_on = true;
 p9_x = -4.155;           // pin 9 pad: the -X end of the 4-pin row (DE-9 pitch 2.77, connector centred on X 0)
 p9_y = 7.1;              // ESTIMATE from the annotated photo: the 4-pin row about 1.5 in front of the leg tails
@@ -211,6 +219,22 @@ wire_d = 1.4;            // jumper wire outside diameter (26 AWG Dupont type); w
 wire_pass = 2.0;         // passage width for one wire, and the run's depth under the board
 p9_run_x = -8.0;         // X of the run under the board and of the riser behind the PCB rear edge: clear of the
                          // header joints (X -3.81), the corner-pin boss (from X -11.05) and the presser (from -11.25)
+
+/* [RX diode at the D3 pad (revision 5)] */
+// The RX line has a Schottky diode at the XIAO: anode at the D3 pad, cathode to the module's RXD wire. Not measured:
+// the keep-out assumes the worse case, a DO-41 1N5817/1N5819. Default placement: standing up beside the Dupont
+// housing's +X end, behind the XIAO rear edge, its anode lead bent forward and down onto the D3 pad and its cathode
+// lead up at the housing top, where the RXD wire from the housing joins it. The keep-out is the body grown by
+// diode_clr, the two leads grown by diode_clr, and the D3 joint zone; the interference checks enforce it.
+diode_on = true;
+diode_d = 2.7;           // body diameter (DO-41)
+diode_l = 5.2;           // body length (DO-41)
+diode_lead_d = 0.8;      // lead diameter (DO-41)
+diode_clr = 0.3;         // keep-out margin round the body and the leads
+diode_lead_out = 0.6;    // straight lead out of each body end before the bend
+diode_dir = [0, 0, 1];   // body axis, anode end to cathode end ([0, 0, 1]: standing up, anode down)
+diode_c = [-1, -1, -1];  // body centre; [-1, -1, -1] = derived: diode_clr off the housing's +X face and behind the
+                         // XIAO rear edge, its anode end diode_lead_out + diode_clr above the XIAO top
 
 /* [DB9 jack screw hardware (revision 4)] */
 // The user fits the DB9's jack screws / hex posts. Their tails and nuts stand behind the flange plate at the two
@@ -283,35 +307,41 @@ lc_above = 4.0;          // finger free length above the split (slots into the l
 lc_below = 5.0;          // finger length below the split
 lc_side_gap = 0.5;       // slot width either side of the finger in the lid wall
 lc_pry = 0.9;            // gap under the finger tip for a screwdriver (keeps min_wall above the bottom chamfer)
-lc_front_y = 6.3;        // first lid clip centre (Y): its lid slot ends 1.7 in front of the -X USB slot
-lc_rear_from_back = 3.6; // second lid clip centre, distance from the interior rear face (slot 1.2 behind the USB slot)
+lc_front_y = 6.3;        // first lid clip centre (Y): its lid slot ends 1.7 in front of the USB slot (now in +X; the
+                         // clips are mirrored on both walls, so the clearance is the same as in revision 4)
+lc_rear_from_back = 3.6; // second lid clip centre, distance from the interior rear face (slot 3.0 behind the USB slot)
 ledge_w = 1.2;           // board support ledge, from the wall inner face
 ledge_front_skip = 7.0;  // ledges start at least this far behind the PCB front edge, and behind the leg-tail keep-out
 press_wall_clr = 0.2;    // lid presser to the tray wall below the split
 press_gap = 0.25;        // presser bottom above the RS232 PCB top
 press_root = 1.5;        // presser root: grows out of the lid walls over this height above the split, 45 degree top
-// XIAO capture, all rigid: below on the DB9 body (front) and the tray tongue under the USB-C shell (-X end); above,
-// lid pads on the RF shield and the USB-C shell and a block over the rear edge strip; X, the -X wall and the +X end
+// XIAO capture, all rigid: below on the DB9 body (front) and the tray tongue under the USB-C shell (+X end); above,
+// lid pads on the RF shield and the USB-C shell and a block over the rear edge strip; X, the +X wall and the -X end
 // stop rib; Y, the lid front wall and the USB slot sides at the front, the shield stop block and the USB slot sides
 // at the rear.
 front_rest_min = 2.0;    // the XIAO must lie at least this far on the DB9 body (it is the only front support)
 xpad_gap = 0.25;         // lid pads to the RF shield top, the USB-C shell top and the rear edge strip
 xpad_inset = 0.5;        // pads inset from the shield / shell outline
-xpad_wall = 1.6;         // the shield pad is a ring of this wall (cut by the D3/D5 wire channel)
+xpad_wall = 1.6;         // the shield pad is a ring of this wall
 xlead = 0.4;             // 45 degree lead-ins on the front wall and the shield stop block at XIAO height
 shield_stop_clr = 0.3;   // shield stop block to the shield's rear face
 tongue_gap = 0.05;       // tray tongue cradle to the USB shell bottom (support under the USB end)
 tongue_side_clr = 0.3;   // cradle to the shell's rounded ends in Y: the slot sides, not the cradle, locate the XIAO
 tongue_tip = 0.5;        // minimum width of the tongue's top edges beside the cradle
-// +X end stop rib, bearing on the XIAO's antenna-end PCB edge in the gap between the U.FL socket (w -5.6..-3.0)
-// and the ceramic antenna (w 0.5..5.7), and running forward into the lid front wall
-stop_w0 = -1.25;         // old strut centre (w): the rib ends stop_w / 2 behind it, short of the antenna
-stop_w = 3.0;
+// -X end stop rib (revision 5; the +X rib of revisions 3 and 4 turned round), bearing on the XIAO's antenna-end PCB
+// edge from just behind the ceramic antenna (w 0.52..5.72, now on the front side) back to the rear edge, past the
+// U.FL socket (w -5.6..-3.0). The antenna stops it reaching the front wall, so a web at its rear end ties it to the
+// -X side wall: with the ceiling that holds it against the plug insertion force.
+stop_ant_clr = 0.27;     // rib front end behind the antenna (as revision 4's rib end)
 stop_t = 1.6;            // rib thickness in X
+stop_web_t = 1.6;        // web thickness in Y, at the rib's rear end, out to the -X side wall
 stop_z_clr = 0.1;        // rib bottom above the DB9 body top where it runs over the body
-stop_lead = 0.4;         // 45 degree lead-in on the rib's bottom inner edge (pushes a misplaced XIAO towards -X)
-// D3/D5 wires cross over the XIAO in a channel between their pads (room for the RX diode as well)
-wch_hw = 3.0;            // channel half width (revision 3: 2.5): two wires and the RX diode side by side
+stop_lead = 0.4;         // 45 degree lead-in on the rib's bottom inner edge (pushes a misplaced XIAO towards +X)
+// 5V/GND corridor (revision 5): the module VCC and GND wires and the pin 9 wire leave the Dupont housing top, run +X
+// over the housing and forward over the XIAO between the shield pad ring and the USB shell pad, and come down onto
+// the 5V/GND pads on the front edge. It replaces revisions 3 and 4's D3/D5 channel over the shield.
+wch_c = -1;              // corridor centre X; -1 = midway between the 5V and GND pads
+wch_hw = 2.5;            // corridor half width: three 1.4 mm wires abreast (4.2) with 0.8 to spare
 
 $fn = 48;
 eps = 0.01;
@@ -325,15 +355,15 @@ x_in = board_w / 2 + pcb_clr;
 x_out = x_in + side_t;               // outermost X (at the corner ends of the side faces)
 y_fw1 = lug_pin_on ? lug_hole_y + max(lug_hole_d, pin_boss_d) / 2 + min_wall   // lid front wall rear face
                    : fl_plate_d + front_wall_t;
-// XIAO: USB end at xa0 (-X), antenna end at xa1; front (D0..D6) edge at yx0, rear (5V..D7) edge at yx1
-xa0 = xiao_x0 == -1 ? -x_in + pcb_clr : xiao_x0;
-xa1 = xa0 + xiao_l;
+// XIAO: antenna end at xa0 (-X), USB end at xa1 (+X); front (5V..D7) edge at yx0, rear (D0..D6) edge at yx1
+xa1 = xiao_x0 == -1 ? x_in - pcb_clr : xiao_x0;
+xa0 = xa1 - xiao_l;
 yx0 = xiao_front_y >= 0 ? xiao_front_y : y_fw1 + pcb_clr;
 yx1 = yx0 + xiao_w;
 xcy = (yx0 + yx1) / 2;               // XIAO centre line (w = 0)
-function dx(d) = xa0 + d;            // d (from the USB end) to X
-function wy(w) = xcy + w;            // w (across the width) to Y
-x_mouth = xa0 - usb_over;            // receptacle mouth (relief floor)
+function dx(d) = xa1 - d;            // d (from the USB end) to X
+function wy(w) = xcy - w;            // w (across the width, + towards the 5V/GND column) to Y
+x_mouth = xa1 + usb_over;            // receptacle mouth (relief floor)
 y_body1 = y_fb + body_d;             // back of the DB9 rear body
 body_overlap = y_body1 - yx0;        // how far the XIAO front edge lies on the body top
 front_on_body = body_overlap >= front_rest_min - 0.01;
@@ -392,21 +422,39 @@ ledge_y0 = max(y_pcb0 + ledge_front_skip,
                leg_pocket_on ? leg_y + leg_py + leg_boss_wall : leg_y + leg_ko_y + mh_pin_clr_y + 0.05);
 lc_ys = [lc_front_y, y_in1 - lc_rear_from_back];
 pocket = lc_t + lc_gap;
-// D3/D5 wire channel over the XIAO (X)
+// pads, and the 5V/GND corridor over the XIAO (X)
 function pad_x(i) = dx(xiao_pad1 + (i - 1) * xiao_pitch);
-wch_c = (pad_x(min(used_pads_front)) + pad_x(max(used_pads_front))) / 2;
-wch0 = wch_c - wch_hw;
-wch1 = wch_c + wch_hw;
+front_pads = pullup_pad > 0 ? concat(used_pads_front, [pullup_pad]) : used_pads_front;   // front-edge joints
+front_jx0 = min([for (i = front_pads) pad_x(i)]) - joint_half;   // X span of the front-edge joint zones
+front_jx1 = max([for (i = front_pads) pad_x(i)]) + joint_half;
+wch_cx = wch_c >= 0 ? wch_c : (pad_x(used_pads_front[0]) + pad_x(used_pads_front[1])) / 2;
+wch0 = wch_cx - wch_hw;
+wch1 = wch_cx + wch_hw;
 gwch_hw = ghost_wch_hw < 0 ? wch_hw : ghost_wch_hw;
+// rear-edge D3/D5 wire zone over the rear edge strip (X), from the D5 joint to the D3 joint
+rear_jx0 = min([for (i = used_pads_rear) pad_x(i)]) - joint_half;
+rear_jx1 = max([for (i = used_pads_rear) pad_x(i)]) + joint_half;
+d3_x = pad_x(used_pads_rear[0]);     // the diode's anode pad
 // jack screw hardware keep-out, behind each flange hole, and the front wall cut-back over it
 jack_ys = jack_y0 < 0 ? fl_plate_d : jack_y0;
 jack_cut_z = hole_z + jack_d / 2 + jack_clr;
 // shield outline (X, Y)
-sh_x0 = dx(shield_d0);  sh_x1 = dx(shield_d1);
-sh_y0 = wy(-shield_w / 2);  sh_y1 = wy(shield_w / 2);
-// +X end stop rib
-st_x0 = xa1 + pcb_clr;
-st_y1 = wy(stop_w0 + stop_w / 2);
+sh_x0 = dx(shield_d1);  sh_x1 = dx(shield_d0);
+sh_y0 = wy(shield_w / 2);  sh_y1 = wy(-shield_w / 2);
+// -X end stop rib: X st_x0..st_x1, from just behind the antenna (Y st_y0) back to the XIAO rear edge
+st_x1 = xa0 - pcb_clr;
+st_x0 = st_x1 - stop_t;
+st_y0 = wy(ant_w[0]) + stop_ant_clr;
+// shield stop block behind the shield's rear face, between the D3 joint zone and the corridor
+ss_x0 = rear_jx1 + 0.3;
+ss_x1 = min(sh_x1, wch0 - 0.3);
+// RX diode: unit axis, body centre, its anode (-) and cathode (+) ends, and the anode joint on the D3 pad
+dio_u = diode_dir / norm(diode_dir);
+dio_r = diode_d / 2 + diode_clr;     // keep-out radius
+dio_c = diode_c[0] == -1 ? [hdr_hw + dio_r, yx1 + dio_r, zx1 + diode_lead_out + diode_clr + diode_l / 2] : diode_c;
+dio_a = dio_c - dio_u * diode_l / 2;
+dio_k = dio_c + dio_u * diode_l / 2;
+dio_joint = [d3_x, yx1 - 0.6, zx1 + 0.4];
 
 // ---- exterior outline (plan), CCW seen from above
 side_sag = sag_frac * (y_out1 - y_cf);
@@ -442,8 +490,8 @@ tongue_w = usb_slot_w / 2 - clip_clr / 2;
 tongue_r = usb_h / 2 + tongue_gap;
 tongue_top = let(dd = tongue_w - tongue_tip - usb_a - tongue_side_clr)
     dd >= tongue_r ? zx1 - tongue_gap : max(zx1 - tongue_gap, usb_cz - sqrt(tongue_r * tongue_r - dd * dd));
-// relief depth: the -X side face (bowed) to the receptacle mouth, at the relief's shallowest point
-usb_relief_depth = min([for (y = [xcy - usb_recess_w / 2, xcy, xcy + usb_recess_w / 2]) surf_x(y)]) + x_mouth;
+// relief depth: the +X side face (bowed) to the receptacle mouth, at the relief's shallowest point
+usb_relief_depth = min([for (y = [xcy - usb_recess_w / 2, xcy, xcy + usb_recess_w / 2]) surf_x(y)]) - x_mouth;
 // logo on the floor flat (the bottom face inside the 45 degree edge chamfer)
 logo_h = logo_w * logo_svg_h / logo_svg_w;
 logo_cy = (y_cf + y_rear_face) / 2;
@@ -468,15 +516,21 @@ assert(logo_mode == "none" || logo_mode == "inlay" || logo_mode == "deboss", "lo
 echo(str("ZEBCASE XIAO on the DB9 body ", body_overlap, " mm; rear edge to the Dupont housing ", hdr_y0 - yx1,
          " mm; front edge ", yx0 - y_fw1, " behind the lid front wall"));
 assert(hdr_y0 - yx1 >= xiao_hdr_min - 1e-6, "the XIAO rear edge is too close to the Dupont housing");
-echo(str("ZEBCASE WARNING (check): the D3/D5 pads lie on the DB9 body (front edge Y ", yx0, ".. body end ", y_body1,
-         "): their joints must be on the top side, with nothing under the XIAO there"));
+echo(str("ZEBCASE WARNING (check): the front-edge 5V/GND", pullup_pad > 0 ? "/3V3" : "", " joints (X ", front_jx0, "..", front_jx1,
+         ", Y ", yx0, ") lie over the DB9 body's +X end and the +X jack screw hardware (top z ", hole_z + jack_d / 2,
+         ", ", zx0 - hole_z - jack_d / 2, " under the XIAO): top-side joints only, with nothing under the XIAO there"));
 echo(str("ZEBCASE CORNER PINS at X +-", mh_x, " Y ", mh_y, ": ", mh_pin_dx, " across X, ", mh_pin_dy, " across Y, top z ",
          mh_pin_top, "; pressers from Y ", cp_y0, ", ", press_gap, " above the PCB"));
 echo(str("ZEBCASE leg-tail keep-out (estimate +-", leg_keepout, "): X +-", lug_hx - leg_ko_x, "..", lug_hx + leg_ko_x,
          " Y ", leg_y - leg_ko_y, "..", leg_y + leg_ko_y, "; ledges from Y ", ledge_y0));
 echo(str("ZEBCASE SUPPORT XIAO: on the DB9 body (", body_overlap, ") and the tongue (gap ", tongue_gap,
-         ", top edges at z ", tongue_top, "); pads ", xpad_gap, " over the shield, USB shell and rear strip; +X stop rib X ",
-         st_x0, " Y ", y_fw1, "..", st_y1, "; shield stop Y ", sh_y1 + shield_stop_clr, "; wire channel X ", wch0, "..", wch1));
+         ", top edges at z ", tongue_top, "); pads ", xpad_gap, " over the shield, USB shell and rear strip; -X stop rib X ",
+         st_x0, "..", st_x1, " Y ", st_y0, "..", yx1, " (antenna to Y ", wy(ant_w[0]), "); shield stop X ", ss_x0, "..", ss_x1,
+         " Y ", sh_y1 + shield_stop_clr, "..", yx1, "; 5V/GND corridor X ", wch0, "..", wch1));
+echo(str("ZEBCASE PADS: front 5V X ", pad_x(1), ", GND ", pad_x(2), ", 3V3 ", pad_x(3), " (Y ", yx0, "); rear D3 X ", pad_x(4),
+         ", D5 ", pad_x(6), " (Y ", yx1, "); front joints X ", front_jx0, "..", front_jx1, ", rear joints X ", rear_jx0, "..", rear_jx1));
+if (diode_on) echo(str("ZEBCASE DIODE: ", diode_d, " x ", diode_l, " body, centre ", dio_c, ", axis ", dio_u, "; keep-out radius ",
+                       dio_r, ", body ends ", dio_a, " (anode) / ", dio_k, " (cathode); anode joint on D3 at ", dio_joint));
 echo(str("ZEBCASE LIPS: |X| <= ", lip_x, ", ", lip_proud, " proud of Y 0, gap ", lip_gap, "; top lip z ", lip_t_bot, " (D-shell top ",
          ds_top, "), bottom lip to z ", lip_b_top, " (D-shell bottom ", ds_bot, ")"));
 if (lip_t_bot < ds_top + lip_ds_clr || lip_b_top > ds_bot - lip_ds_clr)
@@ -488,8 +542,8 @@ if (dupont_on) echo(str("ZEBCASE DUPONT: housing X +-", hdr_hw, " Y ", hdr_y0, "
                         " to the ceiling at ", z_ceil));
 if (p9_on) echo(str("ZEBCASE PIN 9 WIRE: pad X ", p9_x, " Y ", p9_y, " (estimate); run under the board at X ", p9_run_x,
                     " +-", wire_pass / 2, ", z ", -pcb_t - wire_pass, "..", -pcb_t, " (floor top ", z_floor,
-                    "); riser behind the PCB Y ", y_pcb1, "..", y_pcb1 + wire_pass, " up to the 5V/GND zone; ",
-                    wire_pass - wire_d, " spare round a ", wire_d, " wire"));
+                    "); riser behind the PCB Y ", y_pcb1, "..", y_pcb1 + wire_pass, " up to the ceiling, then +X over the ",
+                    "housing to the 5V/GND corridor; ", wire_pass - wire_d, " spare round a ", wire_d, " wire"));
 assert(!p9_on || wire_pass >= wire_d + 0.4 - 1e-6, "wire_pass leaves under 0.4 mm round the pin 9 wire (wire_d)");
 if (jack_on) echo(str("ZEBCASE JACK HARDWARE: X +-", fl_hole_pitch / 2, " z ", hole_z, ", d ", jack_d, ", Y ", jack_ys, "..",
                       jack_ys + jack_l, "; front wall cut back beside the DB9 body up to z ", jack_cut_z));
@@ -498,9 +552,13 @@ if (leg_pocket_on && leg_pocket_bot < z_bot + 0.8)
     echo(str("ZEBCASE WARNING: the leg-tail pocket bottom (z ", leg_pocket_bot, ") comes within 0.8 mm of the tray floor bottom"));
 
 // ---------------------------------------------------------------- helpers
+// Bounds must be in order: an inverted cube renders as nothing, silently (revision 4 lost a button ghost that way).
 module box(x0, x1, y0, y1, z0, z1) {
+    assert(x1 >= x0 && y1 >= y0 && z1 >= z0, str("box with inverted bounds ", [x0, x1, y0, y1, z0, z1]));
     translate([x0, y0, z0]) cube([x1 - x0, y1 - y0, z1 - z0]);
 }
+// box from two corners in any order (for d / w ranges, which run along -X / -Y)
+module cbox(a, b) box(min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1]), min(a[2], b[2]), max(a[2], b[2]));
 module mirror_x_both() { children(); mirror([1, 0, 0]) children(); }
 // Polygon in the XZ plane extruded along Y from y0 to y1.
 module xz_prism(pts, y0, y1) {
@@ -590,7 +648,7 @@ module tray(logo = logo_mode) union() {
         for (c = lc_ys) mirror_x_both() lid_clip_tray_cut(c);
         usb_recess_cut();
         // the tongue ends square under the relief: its rounded corners would leave knife-edge wedges on the tongue
-        box(-x_out - 1, x_mouth - usb_mouth_inset, xcy - tongue_w - 1, xcy + tongue_w + 1, usb_cz - usb_recess_h / 2, split_z + 20);
+        box(x_mouth + usb_mouth_inset, x_out + 1, xcy - tongue_w - 1, xcy + tongue_w + 1, usb_cz - usb_recess_h / 2, split_z + 20);
         if (logo != "none") logo_body(1);        // inlay pocket or deboss in the floor
     }
   }
@@ -614,10 +672,10 @@ module corner_pin() {
     }
 }
 
-// Tongue in the -X wall that fills the lid USB slot under the receptacle, with a cradle under the shell's rounded ends
+// Tongue in the +X wall that fills the lid USB slot under the receptacle, with a cradle under the shell's rounded ends
 module usb_tongue() difference() {
-    box(-x_out, -x_in, xcy - tongue_w, xcy + tongue_w, split_z - eps, tongue_top);
-    yz_extrude(-x_out - 1, -x_in + 1) hull() for (s = [-1, 1]) translate([s * tongue_side_clr, 0]) usb_stadium(tongue_gap);
+    box(x_in, x_out, xcy - tongue_w, xcy + tongue_w, split_z - eps, tongue_top);
+    yz_extrude(x_in - 1, x_out + 1) hull() for (s = [-1, 1]) translate([s * tongue_side_clr, 0]) usb_stadium(tongue_gap);
 }
 
 // Bottom retention lip, in front of the PCB front edge and the flange bottom margin; it grows from the tray front
@@ -667,10 +725,10 @@ module lid_clip_finger(c) {
               [xi - lc_hook, lc_hook_top], [xi + eps, lc_hook_top]], c - hw, c + hw);
 }
 
-// plug overmould relief in the -X side face, its floor flush with the receptacle mouth
+// plug overmould relief in the +X side face, its floor flush with the receptacle mouth
 module usb_recess_cut() {
     r = min(usb_recess_r, usb_recess_h / 2 - 0.01);
-    yz_extrude(-x_out - 1, x_mouth - usb_mouth_inset) translate([xcy, usb_cz])
+    yz_extrude(x_mouth + usb_mouth_inset, x_out + 1) translate([xcy, usb_cz])
         offset(r = r) square([usb_recess_w - 2 * r, usb_recess_h - 2 * r], center = true);
 }
 
@@ -697,35 +755,39 @@ module lid(xcap = true) union() {
             if (lug_pin_on) mirror_x_both() lug_pin();
             // board pressers over the rear-corner pins
             mirror_x_both() corner_presser();
-            // XIAO capture: pads, +X end stop rib, shield stop block
+            // XIAO capture: pads, shield stop block, -X end stop rib
             if (xcap) xiao_pads();
             end_stop();
             for (c = lc_ys) mirror_x_both() lid_clip_finger(c);
-            if (ctl_undercut) box(-3, -1, yx1 - 1, yx1 + 0.2 + eps, zx0 - 1.5, zx0 - 0.5);
+            if (ctl_undercut) box(-4.5, -2.5, yx1 - 1, yx1 + 0.2 + eps, zx0 - 1.5, zx0 - 0.5);   // under the unused D6 pad
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
         // revision 4: the front wall beside the DB9 body (revision 3's "wings") cut back over the jack screw
-        // hardware, with the plate bearing above it; 45 degree lead-ins on the new bottom front edges
+        // hardware, with the plate bearing above it; 45 degree lead-ins on the new bottom front edges, except behind
+        // the 5V/GND joint relief (revision 5), where the wall is only 1.2 deep and a lead-in would leave 0.9
         if (jack_on && !fw_wings) {
-            mirror_x_both() {
-                box(body_cut_x - eps, x_in + eps, fl_plate_d - 1, y_fw1 + 1, split_z - 1, jack_cut_z);
-                yz_prism([[fl_plate_d - 1, jack_cut_z - 1], [fl_plate_d + jack_lead + 1, jack_cut_z - 1],
-                          [fl_plate_d - 1, jack_cut_z + jack_lead + 1]], body_cut_x - eps, x_in + eps);
+            mirror_x_both() box(body_cut_x - eps, x_in + eps, fl_plate_d - 1, y_fw1 + 1, split_z - 1, jack_cut_z);
+            difference() {
+                union() {
+                    mirror_x_both()
+                        yz_prism([[fl_plate_d - 1, jack_cut_z - 1], [fl_plate_d + jack_lead + 1, jack_cut_z - 1],
+                                  [fl_plate_d - 1, jack_cut_z + jack_lead + 1]], body_cut_x - eps, x_in + eps);
+                    yz_prism([[fl_plate_d - 1, body_h + pcb_clr - 1], [fl_plate_d + jack_lead + 1, body_h + pcb_clr - 1],
+                              [fl_plate_d - 1, body_h + pcb_clr + jack_lead + 1]], -body_cut_x, body_cut_x);
+                }
+                if (fw_relief) box(front_jx0 - 0.3, front_jx1 + 0.3, fl_plate_d - 2, y_fw1 + 2, split_z - 2, z_top);
             }
-            yz_prism([[fl_plate_d - 1, body_h + pcb_clr - 1], [fl_plate_d + jack_lead + 1, body_h + pcb_clr - 1],
-                      [fl_plate_d - 1, body_h + pcb_clr + jack_lead + 1]], -body_cut_x, body_cut_x);
         }
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
         // front wall at XIAO height: a 45 degree lead-in on its rear face, so a XIAO up to xlead too far forward is
-        // pushed back as the lid closes, and reliefs for the D3/D5 solder joints on the XIAO front edge
-        box(-x_in - eps, xa1 + pcb_clr / 2, y_fw1 - xlead, y_fw1 + 1, split_z - 1, zx0);
-        yz_prism([[y_fw1 - xlead, zx0 - eps], [y_fw1 + 1, zx0 - eps], [y_fw1 + 1, zx0 + xlead + 1]], -x_in - eps, xa1 + pcb_clr / 2);
-        if (fw_relief) box(pad_x(min(used_pads_front)) - joint_half - 0.3, pad_x(max(used_pads_front)) + joint_half + 0.3,
-            y_fw1 - 0.8, y_fw1 + 1, split_z - 1, zx1 + 3.3);
-        // USB-C slot in the -X wall: the shell's stadium, open down to the rim so the closing lid passes over the
+        // pushed back as the lid closes, and one relief for the 5V/GND (and 3V3) solder joints on the XIAO front edge
+        box(xa0 - pcb_clr / 2, x_in + eps, y_fw1 - xlead, y_fw1 + 1, split_z - 1, zx0);
+        yz_prism([[y_fw1 - xlead, zx0 - eps], [y_fw1 + 1, zx0 - eps], [y_fw1 + 1, zx0 + xlead + 1]], xa0 - pcb_clr / 2, x_in + eps);
+        if (fw_relief) box(front_jx0 - 0.3, min(front_jx1 + 0.3, x_in + eps), y_fw1 - 0.8, y_fw1 + 1, split_z - 1, zx1 + 3.3);
+        // USB-C slot in the +X wall: the shell's stadium, open down to the rim so the closing lid passes over the
         // receptacle; the tray tongue fills below it
-        yz_extrude(-x_out - 1, -x_in + eps) hull() {
+        yz_extrude(x_in - eps, x_out + 1) hull() {
             usb_stadium(usb_clr);
             translate([xcy - usb_slot_w / 2, split_z - 1]) square([usb_slot_w, usb_cz - split_z + 1]);
         }
@@ -797,58 +859,62 @@ module corner_presser() {
     }
 }
 
-// Rigid pads from the ceiling, xpad_gap above the XIAO: a ring on the RF shield top (its +X side cut away for the
-// D3/D5 wire channel), a block on the USB-C shell's flat top, and the shield stop block over the rear edge strip
-// behind the shield. They hold the XIAO down onto the DB9 body and the tongue.
+// Rigid pads from the ceiling, xpad_gap above the XIAO: a ring on the RF shield top, a block on the USB-C shell's
+// flat top (from the 5V/GND corridor to the +X wall), and the shield stop block over the rear edge strip behind the
+// shield. They hold the XIAO down onto the DB9 body and the tongue.
 module xiao_pads() {
-    x0 = sh_x0 + xpad_inset;  x1 = ctl_ring_full ? sh_x1 - xpad_inset : min(sh_x1 - xpad_inset, wch0 - 0.3);
+    x0 = sh_x0 + xpad_inset;  x1 = sh_x1 - xpad_inset;
     y0 = sh_y0 + xpad_inset;  y1 = sh_y1 - xpad_inset;
     difference() {
         box(x0, x1, y0, y1, zx1 + shield_h + xpad_gap, z_ceil + eps);
-        box(x0 + xpad_wall, x1 + 1, y0 + xpad_wall, y1 - xpad_wall, zx1, z_ceil);
+        box(x0 + xpad_wall, x1 - xpad_wall, y0 + xpad_wall, y1 - xpad_wall, zx1, z_ceil);
     }
-    // USB-C shell top, from the shell's inner end to the -X wall
-    box(-x_in - eps, x_mouth + usb_l - xpad_inset, xcy - usb_a, xcy + usb_a, zx1 + usb_h + xpad_gap, z_ceil + eps);
-    // shield stop: behind the shield's rear face, between the wire channel and the antenna; its bottom is a pad
-    // xpad_gap over the rear edge strip, with a 45 degree lead-in on its front edge
-    sx0 = wch1 + 0.3;  sx1 = dx(ant_d[0]) - 0.2;
+    // USB-C shell top, from the corridor (or, as a positive control, the shell's inner end) to the +X wall
+    box(ctl_usbpad_full ? x_mouth - usb_l + xpad_inset : max(x_mouth - usb_l + xpad_inset, wch1 + 0.3), x_in + eps,
+        xcy - usb_a, xcy + usb_a, zx1 + usb_h + xpad_gap, z_ceil + eps);
+    // shield stop: behind the shield's rear face, between the D3 joint zone and the corridor; its bottom is a pad
+    // xpad_gap over the rear edge strip, with a 45 degree lead-in on its front edge. Above the shield it joins the ring.
     sy0 = sh_y1 + shield_stop_clr;
     difference() {
-        box(sx0, sx1, sy0, yx1, zx1 + xpad_gap, z_ceil + eps);
+        box(ss_x0, ss_x1, sy0, yx1, zx1 + xpad_gap, z_ceil + eps);
         yz_prism([[sy0 - 1, zx1 + xpad_gap - 1], [sy0 + xlead, zx1 + xpad_gap - eps], [sy0 - 1, zx1 + xpad_gap + xlead + 1]],
-                 sx0 - 1, sx1 + 1);
+                 ss_x0 - 1, ss_x1 + 1);
     }
+    box(ss_x0, min(ss_x1, x1), y1 - eps, sy0 + eps, zx1 + shield_h + xpad_gap, z_ceil + eps);
 }
 
-// +X end stop: a rib from the lid front wall along the XIAO's antenna-end edge, pcb_clr off it, ending short of the
-// antenna. Over the DB9 body it stops stop_z_clr above the body top; behind the body it reaches 0.6 below the XIAO.
-// A 45 degree lead-in on its bottom inner edge pushes a XIAO that sits too far +X back as the lid closes.
+// -X end stop: a rib along the XIAO's antenna-end edge, pcb_clr off it, from just behind the antenna back to the
+// rear edge, and a web at its rear end out to the -X side wall. Over the DB9 body it stops stop_z_clr above the body
+// top; behind the body it reaches 0.6 below the XIAO. A 45 degree lead-in on its bottom inner edge pushes a XIAO
+// that sits too far -X back as the lid closes.
 function stop_bottom_front() = body_h + stop_z_clr;
 module end_stop() {
-    x0 = st_x0;  x1 = st_x0 + stop_t;
     yb = y_body1 + pcb_clr;
     difference() {
         union() {
-            box(x0, x1, y_fw1 - eps, st_y1, stop_bottom_front(), z_ceil + eps);
-            if (st_y1 - yb >= 1.2) box(x0, x1, yb, st_y1, zx0 - 0.6, z_ceil + eps);
+            if (st_y0 < yb) box(st_x0, st_x1, st_y0, min(yb, yx1), stop_bottom_front(), z_ceil + eps);
+            if (yx1 - max(st_y0, yb) >= 1.2) box(st_x0, st_x1, max(st_y0, yb), yx1, zx0 - 0.6, z_ceil + eps);
+            box(-x_in - eps, st_x1, yx1 - stop_web_t, yx1, zx0 - 0.6, z_ceil + eps);
         }
-        for (s = [[stop_bottom_front(), y_fw1 - 1, yb], [zx0 - 0.6, yb, st_y1 + 1]]) let(zb = s[0])
-            xz_prism([[x0 - 1, zb - 1], [x0 + stop_lead + 1, zb - 1], [x0 - 1, zb + stop_lead + 1]], s[1], s[2]);
+        for (s = [[stop_bottom_front(), st_y0 - 1, yb], [zx0 - 0.6, yb, yx1 + 1]]) let(zb = s[0]) if (s[2] > s[1])
+            xz_prism([[st_x1 + 1, zb - 1], [st_x1 - stop_lead - 1, zb - 1], [st_x1 + 1, zb + stop_lead + 1]], s[1], s[2]);
     }
 }
 
 // ---------------------------------------------------------------- ghosts
 // Colour + optional section cut, applied per object so cut faces keep their colour.
-module sec() {
+// Ghosts are cut 0.02 behind the case's cut face (as seen): coplanar cut faces of touching objects merge in the
+// render and take one colour (OpenSCAD 2026 with the manifold backend), which painted the case in the wire colour.
+module sec(back = 0) {
     if (section == "none") children();
     else intersection() {
         children();
-        if (section == "x") box(section_pos - section_t, section_pos, -100, 100, -100, 100);
-        else if (section == "z") box(-100, 100, -100, 100, section_pos - section_t, section_pos);
-        else box(-100, 100, section_pos, section_pos + section_t, -100, 100);
+        if (section == "x") box(section_pos - section_t, section_pos - back, -100, 100, -100, 100);
+        else if (section == "z") box(-100, 100, -100, 100, section_pos - section_t, section_pos - back);
+        else box(-100, 100, section_pos + back, section_pos + section_t, -100, 100);
     }
 }
-module gcol(c, a = 1) color(c, a) sec() children();
+module gcol(c, a = 1, back = 0.02) color(c, a) sec(back) children();
 module ghost_db9() {
     gcol("silver") {
         box(-fl_w / 2, fl_w / 2, 0, fl_t, fl_bot, fl_bot + fl_h);
@@ -903,21 +969,45 @@ module ghost_dupont() if (dupont_on) translate(ghost_dupont_d) {
     gcol("cyan", 0.3) box(-hdr_hw - bend_side, hdr_hw + bend_side, yx1, hdr_room, dupont_top, z_ceil - eps);
 }
 
-// XIAO in the case frame: d (from the USB end) along +X, w (across) along +Y
+// XIAO in the case frame: d (from the USB end) along -X, w (across) along -Y
 module ghost_xiao() {
     translate(ghost_offset) {
         gcol("#202020") box(xa0, xa1, yx0, yx1, zx0, zx1);
         gcol("whitesmoke") box(sh_x0, sh_x1, sh_y0, sh_y1, zx1, zx1 + shield_h);
-        gcol("lightgray") yz_extrude(x_mouth, x_mouth + usb_l) usb_stadium(0);
-        gcol("ivory") box(dx(ant_d[0]), dx(ant_d[1]), wy(ant_w[0]), wy(ant_w[1]), zx1, zx1 + 1.1);   // ceramic antenna
-        gcol("gold") box(dx(ufl_d[0]), dx(ufl_d[1]), wy(ufl_w[0]), wy(ufl_w[1]), zx1, zx1 + ufl_h);  // U.FL + plug
-        gcol("dimgray") for (s = [-1, 1]) box(dx(btn_d[0]), dx(btn_d[1]), wy(s * btn_w[0]), wy(s * btn_w[1]), zx1, zx1 + 0.6);
+        gcol("lightgray") yz_extrude(x_mouth - usb_l, x_mouth) usb_stadium(0);
+        gcol("ivory") cbox([dx(ant_d[0]), wy(ant_w[0]), zx1], [dx(ant_d[1]), wy(ant_w[1]), zx1 + 1.1]);   // ceramic antenna
+        gcol("gold") cbox([dx(ufl_d[0]), wy(ufl_w[0]), zx1], [dx(ufl_d[1]), wy(ufl_w[1]), zx1 + ufl_h]);  // U.FL + plug
+        gcol("dimgray") for (s = [-1, 1]) cbox([dx(btn_d[0]), wy(s * btn_w[0]), zx1], [dx(btn_d[1]), wy(s * btn_w[1]), zx1 + 0.6]);
         // solder blobs on the used pads (edge + top)
         gcol("silver") {
-            for (i = used_pads_front) translate([pad_x(i), yx0 + 0.4, zx1]) scale([0.9, 1.3, 0.9]) sphere(r = 1);
-            for (i = used_pads_rear)  translate([pad_x(i), yx1 - 0.4, zx1]) scale([0.9, 1.3, 0.9]) sphere(r = 1);
+            for (i = front_pads)     translate([pad_x(i), yx0 + 0.4, zx1]) scale([0.9, 1.3, 0.9]) sphere(r = 1);
+            for (i = used_pads_rear) translate([pad_x(i), yx1 - 0.4, zx1]) scale([0.9, 1.3, 0.9]) sphere(r = 1);
         }
     }
+}
+
+// RX diode (assumed DO-41): body along dio_u from the anode end dio_a to the cathode end dio_k; the anode lead runs
+// out of the body and bends to the D3 pad, the cathode lead runs out of the far end to meet the RXD wire
+module cyl_between(p, q, d) {
+    v = q - p;  L = norm(v);
+    translate(p) rotate([0, acos(v[2] / L), atan2(v[1], v[0])]) cylinder(d = d, h = L, $fn = 24);
+}
+module capsule(pts, d) for (i = [0 : len(pts) - 2]) hull() {
+    translate(pts[i]) sphere(d = d, $fn = 16);
+    translate(pts[i + 1]) sphere(d = d, $fn = 16);
+}
+dio_ka = dio_k + dio_u * diode_lead_out;     // cathode lead end
+dio_aa = dio_a - dio_u * diode_lead_out;     // anode lead bend
+module ghost_diode() if (diode_on) translate(ghost_rear_d + ghost_diode_d) {
+    gcol("#303030") cyl_between(dio_a, dio_k, diode_d);
+    gcol("lightgray") cyl_between(dio_k - dio_u * 0.9, dio_k - dio_u * 0.4, diode_d + 0.02);   // cathode band
+    gcol("silver") { capsule([dio_k, dio_ka], diode_lead_d); capsule([dio_a, dio_aa, dio_joint], diode_lead_d); }
+}
+// its keep-out: the body and both leads grown by diode_clr
+module diode_zone() if (diode_on) translate(ghost_rear_d + ghost_diode_d) {
+    cyl_between(dio_a - dio_u * diode_clr, dio_k + dio_u * diode_clr, diode_d + 2 * diode_clr);
+    capsule([dio_k, dio_ka], diode_lead_d + 2 * diode_clr);
+    capsule([dio_a, dio_aa, dio_joint], diode_lead_d + 2 * diode_clr);
 }
 
 module wire(pts) {
@@ -926,40 +1016,55 @@ module wire(pts) {
         translate(pts[i + 1]) sphere(d = 1.6, $fn = 12);
     }
 }
-// One feasible route: header pins 0, 1 (-X) -> 5V/GND on the rear edge, -X along the gap in front of the housing;
-// pins 2, 3 -> D3/D5 on the front edge, over the housing, forward through the channel over the shield.
+// One feasible route (revision 5). Header pins 0, 1 (-X) -> 5V/GND on the front edge: up over the housing, +X to the
+// corridor and forward over the USB shell, down onto the pads. Pin 2 -> D5 on the rear edge, forward over the
+// housing front face and down. Pin 3 -> the diode's cathode lead beside the housing. Pin 9 -> 5V: under the board to
+// the rear edge, up behind it to the ceiling, +X over the housing behind the module wires and on with them.
+// Which header pin carries which signal is not modelled: the wires can cross in the bend zone.
 module ghost_wires() {
     function hx(i) = -hdr_hw + 1.27 + i * 2.54;
     T = dupont_on ? dupont_top : hdr_h;   // wires leave the top of the Dupont housing (or the header)
+    zc = zx1 + usb_h + 1.6;               // corridor run height, over the USB shell
     gcol("limegreen") {
-        for (k = [0, 1]) let(px = pad_x(used_pads_rear[k]))
-            wire([[hx(k), hdr_yc, T], [hx(k), hdr_yc, T + 1.6], [-hdr_hw - 1, yx1 + 0.9, T + 0.6],
-                  [px, yx1 + 0.6, zx1 + 3], [px, yx1 - 0.4, zx1 + 0.8]]);
-        // pin 9 -> 5V: under the board to the rear edge, up behind it, forward to the 5V pad
-        if (p9_on) let(px = pad_x(used_pads_rear[0]), zr = -pcb_t - wire_pass / 2, yr = y_pcb1 + wire_pass / 2)
+        for (k = [0, 1]) let(px = pad_x(used_pads_front[k]), cx = wch_cx - k * 1.6, zh = T + 3.2 + k * 1.6)
+            wire([[hx(k), hdr_yc, T], [hx(k), hdr_yc, zh], [cx, hdr_yc - 0.6, zh], [cx, yx1 - 2, zc + 0.6 + k * 1.6],
+                  [cx, yx0 + 4.2, zc], [px, yx0 + 1.4, zx1 + 2.2], [px, yx0 + 0.4, zx1 + 0.8]]);
+        // pin 9 -> 5V: under the board to the rear edge, up behind it, over the housing, forward to the 5V pad
+        if (p9_on) let(px = pad_x(used_pads_front[0]), zr = -pcb_t - wire_pass / 2, yr = y_pcb1 + wire_pass / 2,
+                       zt = z_ceil - 1.0, cx = wch_cx + 1.6, ya = min(yr, hdr_room - 0.8))
             translate(ghost_p9_d) wire([[p9_x, p9_y, -pcb_t - 0.6], [p9_x, p9_y, zr], [p9_run_x, p9_y, zr],
-                  [p9_run_x, yr, zr], [p9_run_x, yr, zx1 + 3], [px, yx1 + 0.6, zx1 + 3], [px, yx1 - 0.4, zx1 + 0.8]]);
-        for (k = [0, 1]) let(px = pad_x(used_pads_front[k]), cx = wch_c + (k - 0.5) * 2)
-            wire([[hx(k + 2), hdr_yc, T], [hx(k + 2), hdr_yc, T + 1.6], [cx, yx1 + 0.9, T + 1.8],
-                  [cx, yx1 - 1, T + 1.8], [cx, yx0 + 3.5, zx1 + shield_h + 1.5], [px, yx0 + 0.8, zx1 + 2], [px, yx0 + 0.4, zx1 + 0.8]]);
+                  [p9_run_x, yr, zr], [p9_run_x, yr, zt], [p9_run_x, ya, zt], [cx, ya, zt], [cx, yx1 - 2, zc + 1.6],
+                  [cx, yx0 + 4.2, zc + 0.4], [px, yx0 + 1.4, zx1 + 2.2], [px, yx0 + 0.4, zx1 + 0.8]]);
+        // TXD -> D5: forward over the housing front face and down onto the pad
+        let(px = pad_x(used_pads_rear[1]))
+            wire([[hx(2), hdr_yc, T], [hx(2), hdr_yc, T + 1.0], [px, yx1 + 0.3, T + 0.9], [px, yx1 - 1.0, zx1 + 3],
+                  [px, yx1 - 0.4, zx1 + 0.8]]);
+        // RXD -> the diode's cathode lead
+        if (diode_on) let(ka = dio_ka + ghost_rear_d + ghost_diode_d)
+            wire([[hx(3), hdr_yc, T], [hx(3), hdr_yc, max(T, ka[2]) + 0.8], ka]);
     }
 }
 
-// Keep-out volumes for the four wires and their joints (the user's requirement): no case feature may enter them
+// Keep-out volumes for the wires, their joints and the diode (the user's requirement): no case feature may enter them
 module wire_zones() {
     gcol("magenta", 0.25) {
-        // over and in front of the D3/D5 pads on the front edge (the lid front wall is relieved here)
-        for (i = used_pads_front)
+        // over and in front of the 5V/GND (and 3V3) pads on the front edge (the lid front wall is relieved here)
+        for (i = front_pads)
             box(pad_x(i) - joint_half, pad_x(i) + joint_half, yx0 - 0.9, sh_y0, zx0, zx1 + 3);
-        // the D3/D5 channel across the XIAO top, front edge to the bend zone
-        box(wch_c - gwch_hw, wch_c + gwch_hw, yx0, yx1 + eps, zx1, z_ceil - eps);
-        // 5V/GND: from the bend zone -X over the rear edge strip to their pads
-        box(pad_x(min(used_pads_rear)) - joint_half, -hdr_hw + eps, yx1 - 2.6, hdr_room, zx1, z_ceil - eps);
-        // under the 5V/GND pads (underside joints; the XIAO overhangs the PCB there)
-        for (i = used_pads_rear)
-            box(pad_x(i) - joint_half, pad_x(i) + joint_half, yx1 - 2.6, yx1 + 0.9, 0.3, zx0 + eps);
+        // the 5V/GND corridor across the XIAO top, from the front edge back to the rear of the bend zone, and the
+        // bend zone's extension over it (+X) and back over the pin 9 riser (-X)
+        box(wch_cx - gwch_hw, wch_cx + gwch_hw, yx0, hdr_room, zx1, z_ceil - eps);
+        box(p9_on ? p9_run_x - wire_pass / 2 : -hdr_hw - bend_side, wch_cx + gwch_hw, yx1, hdr_room, dupont_top, z_ceil - eps);
+        translate(ghost_rear_d) {
+            // over the rear edge strip from the D5 joint to the D3 joint (D5 wire, diode anode lead), up to the ceiling
+            box(rear_jx0, rear_jx1, sh_y1, yx1 + eps, zx1, z_ceil - eps);
+            // the D3/D5 joints, over and under the rear edge (the XIAO overhangs the RS232 PCB there)
+            for (i = used_pads_rear)
+                box(pad_x(i) - joint_half, pad_x(i) + joint_half, yx1 - 2.6, yx1 + 0.9, 0.3, zx1 + 3);
+        }
+        diode_zone();
         // pin 9 wire (revision 4): the joint under the pad, the run under the board to the rear edge, and the
-        // riser behind the PCB rear edge up into the 5V/GND zone, all wire_pass wide
+        // riser behind the PCB rear edge up to the ceiling
         if (p9_on) translate(ghost_p9_d) {
             box(p9_x - p9_joint / 2, p9_x + p9_joint / 2, p9_y - p9_joint / 2, p9_y + p9_joint / 2, -pcb_t - p9_joint_h, -pcb_t);
             box(p9_run_x - wire_pass / 2, p9_x, p9_y - wire_pass / 2, p9_y + wire_pass / 2, -pcb_t - wire_pass, -pcb_t);
@@ -969,17 +1074,18 @@ module wire_zones() {
     }
 }
 
-module ghosts() {
+module ghosts(zones = true) {
     translate([ghost_board_dx, ghost_board_dy, 0]) { ghost_db9(); translate([0, 0, ghost_board_dz]) ghost_rs232(); }
     ghost_xiao();
+    ghost_diode();
     ghost_dupont();
     ghost_wires();
-    wire_zones();
+    if (zones) wire_zones();
 }
 
 // ---------------------------------------------------------------- output
-module tray_c() { color("steelblue") sec() tray(); if (logo_mode == "inlay") color("white") sec() logo_body(); }
-module lid_c()  color("orange") sec() lid();
+module tray_c() { gcol("steelblue", back = 0) tray(); if (logo_mode == "inlay") gcol("white", back = 0) logo_body(); }
+module lid_c()  gcol("orange", back = 0) lid();
 
 if (part == "tray") {
     translate([0, 0, -z_bot]) tray();                              // floor on the bed
@@ -1008,7 +1114,7 @@ if (part == "tray") {
         difference() { offset(r = -r, $fn = 96) offset(r = r, $fn = 96) logo_2d($fn = 96); logo_2d($fn = 96); }
     }
 } else if (part == "assembly") {
-    tray_c(); lid_c(); if (show_ghosts) ghosts();
+    tray_c(); if (show_lid) lid_c(); if (show_ghosts) ghosts(show_zones);
 } else if (part == "plugged") {
     // as it hangs on the printer: tray floor up (case -Z to world +Z), case +Y to world +X (DB9 at the left of a top
     // view), case +X to world +Y (the parallel-port side at the top, the USB-C at the bottom)
@@ -1026,11 +1132,13 @@ if (part == "tray") {
 } else if (part == "check_lid_path") {
     // The lid closes straight down over the parts already in the tray, so it collides on the way if any lid
     // material lies directly below a part: sweep the parts 30 mm downwards and intersect with the closed lid.
-    // (Wires and wire zones are left out: the wires are flexible and the zones are checked by check_lid.)
+    // (Wires and wire zones are left out: the wires are flexible and the zones are checked by check_lid. The diode
+    // body is rigid, so it is swept as well.)
     intersection() {
         lid();
         minkowski() {
-            union() { translate([ghost_board_dx, ghost_board_dy, 0]) { ghost_db9(); translate([0, 0, ghost_board_dz]) ghost_rs232(); } ghost_xiao(); ghost_dupont(); }
+            union() { translate([ghost_board_dx, ghost_board_dy, 0]) { ghost_db9(); translate([0, 0, ghost_board_dz]) ghost_rs232(); }
+                      ghost_xiao(); ghost_diode(); ghost_dupont(); }
             translate([0, 0, -30]) cube([0.001, 0.001, 30]);
         }
     }
