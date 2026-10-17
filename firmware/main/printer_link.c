@@ -25,6 +25,8 @@ static const char *TAG = "printer";
 #define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
 #define POLL_INTERVAL_MS 30000
+/* Polls that read device.languages again after detection could not; 10 min, then a printer without SGD is left alone */
+#define LANG_RETRIES 20
 #define POLL_FAILS_BEFORE_RESCAN 3
 /* while a found printer stays silent, rescan the bauds this often (in missed polls, SCAN_RETRY_MS apart) */
 #define SILENT_RESCAN_EVERY 30
@@ -58,6 +60,8 @@ static int64_t s_reply_us = -1;
 static bool s_answering;
 /* found through SGD while ~HS was silent: configure once ~HS answers */
 static bool s_config_pending;
+/* device.languages reads left to retry from the poll while the language is unknown */
+static int s_lang_retries;
 /* 64-bit counters are two words on this core: update and read them under s_count_mux */
 static portMUX_TYPE s_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_tx_bytes;
@@ -596,6 +600,7 @@ static bool detect(void)
     }
     clear_partial_format();
     probe_language();
+    s_lang_retries = LANG_RETRIES;
     read_model();
     if (s_lang == ZPL_LANG_OTHER) {
         /* EPL, CPCL or line print: ZPL would be ignored or printed, so the port is left as it is */
@@ -627,6 +632,24 @@ static bool detect(void)
 }
 
 /*
+ * A printer busy with a stuck format ignores SGD, so the language read at
+ * detection can fail, leaving it unknown until the next reboot (GX430t,
+ * 2026-10-17). Read it again from the poll once ~HS shows nothing queued.
+ */
+static void retry_language(void)
+{
+    if (s_lang_text[0] != '\0' || s_lang_retries <= 0 || s_lang == ZPL_LANG_OTHER || s_probe_sgd || !s_hs_valid ||
+        s_hs.partial_format || s_hs.formats_in_buffer != 0) {
+        return;
+    }
+    s_lang_retries--;
+    probe_language();
+    if (s_lang_text[0] != '\0') {
+        ESP_LOGI(TAG, "printer language read on a later poll");
+    }
+}
+
+/*
  * Poll a detected printer. A printer that stops answering stays detected:
  * Zebra printers go silent to ~HS with paper out or the head open, and a
  * baud scan then would only send probes at wrong rates. The bauds are
@@ -649,6 +672,7 @@ static void poll_once(int *fails)
             }
             read_model();
         }
+        retry_language();
         return;
     }
     if (++*fails == 1) {
