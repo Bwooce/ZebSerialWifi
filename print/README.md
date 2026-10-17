@@ -1,20 +1,14 @@
 # Print project (Bambu Lab H2D)
 
-**Out of date: both 3MFs predate case revision 4** (enclosure commit d6eb8d0: pin 9 wire path, deeper rear, no
-front-wall wings over the DB9 jack screws; the case is 1.75 mm longer in Y). They were sliced from revision 3 and
-must not be printed as they are. Bambu Studio is not installed on the machine where revision 4 was made, so they were
-not re-sliced there. Re-slice from the current `enclosure/out/` STLs as described under Rebuilding below. The times
-and weights below are for revision 3.
-
-- `zebserial_case.3mf`: the tray and the lid on one plate, already sliced (enclosure commit 8a5cc1c, the HW-044
-  revision). It takes about 1 h 15 min (1 h 14 min 33 s estimated) and uses 17.1 g (17.07 g) of PETG for the case
-  plus 0.3 g (0.29 g) for the logo. The logo is a second part of the tray object on filament 2, so it prints as a
+- `zebserial_case.3mf`: the tray and the lid on one plate, already sliced (enclosure commit 0ec4c89, revision 4).
+  It takes about 1 h 16 min (1 h 16 min 6 s estimated) and uses 17.8 g (17.83 g) of PETG for the case plus 0.3 g
+  (0.29 g) for the logo. The logo is a second part of the tray object on filament 2, so it prints as a
   flush two-colour inlay in the tray floor's first four layers (0.68 mm: the 0.2 mm first layer and three 0.16 mm
   layers). Filament 1 is the case colour and filament 2 the logo colour (white by default); change the colours in
   Bambu Studio to suit the spools loaded.
 - `zebserial_coupon.3mf`: a single-colour fit test. The whole tray has the middle of its floor cut out: front lip,
   corner pins, rear wall and snap pockets. The lid is cut below Z 18: front wall, top lip, corner pressers, snaps and
-  USB slot. It takes about 50 min (49 min 37 s estimated) and uses 10.5 g (10.54 g).
+  USB slot. It takes about 51 min (51 min 18 s estimated) and uses 11.2 g (11.17 g).
 
 Open a file in Bambu Studio and print, or re-slice after changing anything.
 
