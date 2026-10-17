@@ -37,9 +37,9 @@ first.
 | Part | Notes |
 |---|---|
 | Seeed XIAO ESP32-C6 | Any XIAO ESP32-C6. The ceramic antenna is used unless the firmware is built for U.FL. |
-| MAX3232 RS-232 to TTL module, female DB9 | The one used here has "TTL-RS232" on the back, a 4-pin header (GND, RXD, TXD, VCC), parts labelled D1, R1, CP and C1 to C4, and a 16-pin chip. Sellers list it as "MAX3232 RS232 to TTL serial port converter module". There is no model number on the board; `enclosure/README.md` calls it HW-044. See [Clone chips](#clone-chips-and-33-v). |
+| MAX3232 RS-232 to TTL module (HW-044 or a clone of it) | The one used here is an HW-044 clone with a female DB9: "TTL-RS232" on the back, a 4-pin header (GND, RXD, TXD, VCC), parts labelled D1, R1, CP and C1 to C4, and a 16-pin chip. Sellers list it as "MAX3232 RS232 to TTL serial port converter module". The version with a **male** DB9 is better, since it plugs straight into the printer, but it is harder to find; the female version needs the gender changer below. The case in `enclosure/` is designed for the female version. See [Clone chips](#clone-chips-and-33-v). |
 | Schottky diode | For the receive line when the module runs on 5 V. A BAT54 is best; a 1N5817 or 1N5819 works but wants the extra pull-up below. |
-| DB9 gender changer, male to male, straight through | The module and the printer both have female sockets. It must connect all nine pins straight through, including pin 9 if the printer powers the bridge; cheap ones sometimes leave pins out. |
+| DB9 gender changer, male to male, straight through | Only for a female-DB9 module: the module and the printer both have female sockets. Use a good one that connects all nine pins straight through, including pin 9 if the printer powers the bridge; cheap ones sometimes leave pins out or make poor contact. |
 | Optional: 10 kΩ resistor, D3 to 3V3 | Needed with a 1N5817/1N5819 diode at 115200 baud; also makes the automatic pin detection reliable. |
 | Optional: 10 kΩ resistor, D5 to 3V3 | Keeps the transmit line quiet while the XIAO resets. Without it, reset noise can leave the printer in a half-received label format. The firmware clears that, so this is optional. |
 | Case | `enclosure/` (OpenSCAD) and `print/` (sliced for a Bambu Lab H2D, PETG) |
@@ -87,9 +87,27 @@ first.
 
 ### Power
 
-- **From USB:** the XIAO's USB-C, with the module's VCC on the XIAO's 5V pad.
-- **From the printer:** DB9 pin 9 carries +5 V, fused, 0.75 A at most for the whole port (GX420t/GX430t User Guide,
-  Appendix A). It is always on; there is no setting for it. The bridge takes well under that.
+The module always takes its VCC from the XIAO's 5V pad. The 5V pad is fed either by the XIAO's USB-C or by the printer.
+
+**From the printer:** DB9 pin 9 carries +5 V, fused, 0.75 A at most for the whole port (GX420t/GX430t User Guide,
+Appendix A). There is no setting for it, and the bridge takes well under that. Pin 9 is not connected to anything on
+the module, so it needs one extra wire from the pin 9 pad on the back of the module's DB9:
+
+```
+  Zebra printer        gender      MAX3232 module                         XIAO ESP32-C6
+  (DB9 socket)         changer     (DB9 pads, back of the board)
+
+  pin 9  +5 V ──────────── 9 ────── pin 9 pad ─────── extra wire ───────▶ 5V pad ──┐
+                                                                                     │
+                                   header VCC ◀──────────────────────────────────────┘
+
+  pin 5  ground ────────── 5 ────── pin 5 (module GND) ── header GND ───── GND pad
+```
+
+- **The printer only turns pin 9 on once it has fully started.** After the printer is switched on, the bridge stays
+  dark through the printer's own start-up and then boots, so it always starts with a printer that is ready. While the
+  printer is off, the bridge is off too, and its web page is unreachable.
+- **From USB instead:** the XIAO's USB-C, with no pin 9 wire. Useful on the bench and for flashing.
 - With both, the printer's 5 V and the USB 5 V meet on the XIAO's 5V pad. Check the XIAO's schematic before plugging
   in USB to a bridge powered by the printer, or unplug it from the printer first.
 
