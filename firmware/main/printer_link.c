@@ -25,6 +25,10 @@ static const char *TAG = "printer";
 #define ETX_BYTE 0x03
 #define SCAN_RETRY_MS 10000
 #define POLL_INTERVAL_MS 30000
+/* a printer that sleeps is only asked when someone wants its status, at most this often */
+#define SLEEPY_MIN_POLL_MS 30000
+/* gap before a second try when a printer that sleeps does not answer: the first command may only wake it */
+#define SLEEPY_WAKE_MS 1000
 /* Polls that read device.languages again after detection could not; 10 min, then a printer without SGD is left alone */
 #define LANG_RETRIES 20
 #define POLL_FAILS_BEFORE_RESCAN 3
@@ -62,6 +66,13 @@ static bool s_answering;
 static bool s_config_pending;
 /* device.languages reads left to retry from the poll while the language is unknown */
 static int s_lang_retries;
+/*
+ * The printer has an Energy Star or sleep timeout switched on: a poll every
+ * POLL_INTERVAL_MS would keep it awake, so it is only asked for its status
+ * when a web page or /api/status wants it (printer_link_want_status).
+ */
+static bool s_sleeps;
+static volatile bool s_status_wanted;
 /* 64-bit counters are two words on this core: update and read them under s_count_mux */
 static portMUX_TYPE s_count_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_tx_bytes;
@@ -577,6 +588,23 @@ static void probe_language(void)
     xSemaphoreGive(s_status_lock);
 }
 
+/* Does the printer sleep when idle? A printer without the settings answers "?" or nothing. */
+static void read_sleep(void)
+{
+    char v[16];
+    bool sleeps = (sgd_get("power.energy_star.enable", v, sizeof(v)) && zpl_sgd_is_on(v)) ||
+                  (sgd_get("power.sleep.enable", v, sizeof(v)) && zpl_sgd_is_on(v));
+    if (sleeps) {
+        ESP_LOGI(TAG, "printer sleeps when idle: status read only when asked for, at most every %d s",
+                 SLEEPY_MIN_POLL_MS / 1000);
+    } else {
+        ESP_LOGI(TAG, "printer does not sleep: status polled every %d s", POLL_INTERVAL_MS / 1000);
+    }
+    xSemaphoreTake(s_status_lock, portMAX_DELAY);
+    s_sleeps = sleeps;
+    xSemaphoreGive(s_status_lock);
+}
+
 /* Full detection. Caller holds s_lock. */
 static bool detect(void)
 {
@@ -602,6 +630,7 @@ static bool detect(void)
     probe_language();
     s_lang_retries = LANG_RETRIES;
     read_model();
+    read_sleep();
     if (s_lang == ZPL_LANG_OTHER) {
         /* EPL, CPCL or line print: ZPL would be ignored or printed, so the port is left as it is */
         ESP_LOGW(TAG, "printer language is %s, not ZPL: passing jobs through without configuring it", s_lang_text);
@@ -658,7 +687,12 @@ static void retry_language(void)
  */
 static void poll_once(int *fails)
 {
-    if (probe_alive()) {
+    bool ok = probe_alive();
+    if (!ok && s_sleeps) {
+        vTaskDelay(pdMS_TO_TICKS(SLEEPY_WAKE_MS));
+        ok = probe_alive();
+    }
+    if (ok) {
         if (*fails > 0) {
             ESP_LOGI(TAG, "printer answering again");
         }
@@ -702,11 +736,16 @@ static void link_task(void *arg)
     (void)arg;
     int poll_fails = 0;
     int64_t next_us = 0;
+    int64_t last_poll_us = 0;
     bool stack_logged = false;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(200));
         int64_t now = esp_timer_get_time();
-        if (!s_redetect && now < next_us) {
+        /* a printer that sleeps is not polled on a timer, only when its status is wanted */
+        bool due = s_detected && s_sleeps
+                       ? s_status_wanted && now - last_poll_us >= (int64_t)SLEEPY_MIN_POLL_MS * 1000
+                       : now >= next_us;
+        if (!s_redetect && !due) {
             continue;
         }
         if (!printer_link_acquire(0)) {
@@ -718,6 +757,7 @@ static void link_task(void *arg)
             poll_fails = 0;
             int64_t finish = esp_timer_get_time();
             next_us = finish + (int64_t)(s_detected ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            last_poll_us = finish;
             if (!stack_logged) {
                 stack_logged = true;
                 ESP_LOGI(TAG, "stack: %u bytes never used after the first detect",
@@ -737,6 +777,8 @@ static void link_task(void *arg)
             poll_once(&poll_fails);
             int64_t finish = esp_timer_get_time();
             next_us = finish + (int64_t)(s_answering ? POLL_INTERVAL_MS : SCAN_RETRY_MS) * 1000;
+            last_poll_us = finish;
+            s_status_wanted = false;
         }
         printer_link_release();
     }
@@ -849,6 +891,7 @@ void printer_link_get_status(printer_status_t *out)
     strlcpy(out->language, s_lang_text, sizeof(out->language));
     out->zpl = s_lang != ZPL_LANG_OTHER;
     out->answering = s_detected && s_answering;
+    out->sleeps = s_detected && s_sleeps;
     out->reply_age_ms = s_reply_us < 0 ? -1 : (esp_timer_get_time() - s_reply_us) / 1000;
     taskENTER_CRITICAL(&s_count_mux);
     out->tx_bytes = s_tx_bytes;
@@ -858,6 +901,11 @@ void printer_link_get_status(printer_status_t *out)
     out->rx_gpio = s_rx_gpio;
     out->target_baud = s_target_baud;
     xSemaphoreGive(s_status_lock);
+}
+
+void printer_link_want_status(void)
+{
+    s_status_wanted = true;
 }
 
 void printer_link_set_target_baud(uint32_t baud)

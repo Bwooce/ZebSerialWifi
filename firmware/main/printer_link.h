@@ -23,6 +23,7 @@ typedef struct {
     char language[24];        /* SGD device.languages, e.g. "epl_zpl"; "" if unknown */
     bool zpl;                 /* false when the language is not ZPL: no ZPL is sent, settings are unavailable */
     bool answering;           /* detected and answered the last poll (silent with paper out or the head open) */
+    bool sleeps;              /* the printer sleeps when idle: polled only when printer_link_want_status asks */
     int64_t reply_age_ms;     /* ms since the printer last answered, -1 if never */
     uint64_t tx_bytes;
     uint64_t rx_bytes;
@@ -58,6 +59,14 @@ bool printer_link_tx_idle(void);
 void printer_link_abort_tx(void);
 
 void printer_link_get_status(printer_status_t *out);
+
+/*
+ * Someone is looking at the printer's status (a web page or /api/status).
+ * Only matters for a printer that sleeps, which is not polled otherwise: it
+ * is asked at the next idle moment, at most every 30 s, and the reply shows
+ * in a later printer_link_get_status.
+ */
+void printer_link_want_status(void);
 
 /*
  * Baud the printer should be moved to after detection; 0 leaves it where it

@@ -350,6 +350,19 @@ static void test_language_kind(void)
     CHECK(zpl_language_kind(NULL) == ZPL_LANG_UNKNOWN);
 }
 
+static void test_sgd_is_on(void)
+{
+    /* "?" is the bench GX430t's reply to power.sleep.enable and power.energy_star.enable (2026-10-18) */
+    CHECK(!zpl_sgd_is_on("?"));
+    CHECK(zpl_sgd_is_on("on"));
+    CHECK(zpl_sgd_is_on("ON"));
+    CHECK(!zpl_sgd_is_on("off"));
+    CHECK(!zpl_sgd_is_on("o"));
+    CHECK(!zpl_sgd_is_on("one"));
+    CHECK(!zpl_sgd_is_on(""));
+    CHECK(!zpl_sgd_is_on(NULL));
+}
+
 static void test_next_raise(void)
 {
     CHECK(zpl_next_raise(115200, 9600, 0) == 115200);
@@ -994,6 +1007,7 @@ int main(void)
     test_hi_model();
     test_pick_handshake();
     test_language_kind();
+    test_sgd_is_on();
     test_next_raise();
     test_url_decode();
     test_form_get();

@@ -89,6 +89,13 @@ typedef enum {
 zpl_lang_t zpl_language_kind(const char *value);
 
 /*
+ * True when an SGD value means a setting is on, such as power.sleep.enable or
+ * power.energy_star.enable on a printer that can sleep. "?" (a printer
+ * without the setting), "off", empty and NULL are all false.
+ */
+bool zpl_sgd_is_on(const char *value);
+
+/*
  * Next baud to raise the printer to: the highest standard rate up to
  * target that is above current and below cap (the lowest rate known to
  * fail; 0 if none). 0 when there is nothing to try.

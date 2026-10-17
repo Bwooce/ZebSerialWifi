@@ -500,6 +500,14 @@ zpl_lang_t zpl_language_kind(const char *value)
     return has_word(value, "zpl") ? ZPL_LANG_ZPL : ZPL_LANG_OTHER;
 }
 
+bool zpl_sgd_is_on(const char *value)
+{
+    if (value == NULL) {
+        return false;
+    }
+    return tolower((unsigned char)value[0]) == 'o' && tolower((unsigned char)value[1]) == 'n' && value[2] == '\0';
+}
+
 uint32_t zpl_next_raise(uint32_t target, uint32_t current, uint32_t cap)
 {
     static const uint32_t ladder[] = {115200, 57600, 38400, 19200};

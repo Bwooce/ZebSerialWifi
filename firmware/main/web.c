@@ -470,7 +470,8 @@ static const char STATUS_SCRIPT[] =
     "H=w.hostname;join(w);"
     "id('tp').innerHTML="
     "row('Printer',p.detected?((p.model?p.model+', ':'')+(p.answering?'answering':"
-    "'not answering for '+dur(Math.round(p.reply_age_ms/1000))+' (paper or ribbon out, head open, or switched off?)')):"
+    "'not answering for '+dur(Math.round(p.reply_age_ms/1000))+' (paper or ribbon out, head open, or switched off?)')+"
+    "(p.sleeps?', sleeps when idle (asked at most every 30 s while this page is open)':'')):"
     "('not detected (trying '+p.baud+' baud)'))+"
     "(p.language?row('Language',(has(LN,p.language)?LN[p.language]:p.language)+"
     "(p.zpl?'':' (not ZPL: jobs pass through, settings unavailable)')):'')+"
@@ -592,6 +593,7 @@ static esp_err_t status_get(httpd_req_t *req)
     }
     printer_status_t p;
     bridge_stats_t b;
+    printer_link_want_status();  /* a printer that sleeps is only asked while someone is looking */
     printer_link_get_status(&p);
     bridge_get_stats(&b);
     char ip[16];
@@ -650,7 +652,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "{\"wifi\":{\"ssid\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"phy\":\"%s\",\"channel\":%d,\"bssid\":\"%s\",\"hostname\":\"%s\",\"static_ip\":%s,"
              "\"ip6\":%s,\"join\":{\"state\":\"%s\",\"ssid\":\"%s\",\"why\":\"%s\"}},"
              "\"config\":{\"target_baud\":%lu,\"pins\":%d,\"idle_timeout_s\":%u},"
-             "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"model\":\"%s\","
+             "\"printer\":{\"detected\":%s,\"answering\":%s,\"reply_age_ms\":%lld,\"sleeps\":%s,\"model\":\"%s\","
              "\"language\":\"%s\",\"zpl\":%s,\"baud\":%lu,\"handshake\":\"%s\",\"tx_gpio\":%d,\"rx_gpio\":%d,"
              "\"hs_valid\":%s,\"hs_age_ms\":%lld,\"hs\":{\"paper_out\":%s,\"pause\":%s,\"head_up\":%s,"
              "\"ribbon_out\":%s,\"partial_format\":%s,\"buffer_full\":%s,\"corrupt_ram\":%s,\"under_temp\":%s,\"over_temp\":%s,"
@@ -663,7 +665,8 @@ static esp_err_t status_get(httpd_req_t *req)
              ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              join_names[join], join_esc, join_why,
              (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
-             p.answering ? "true" : "false", (long long)p.reply_age_ms, model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
+             p.answering ? "true" : "false", (long long)p.reply_age_ms,
+             p.sleeps ? "true" : "false", model_esc, lang_esc, p.zpl ? "true" : "false", (unsigned long)p.baud, handshake_esc,
              p.tx_gpio, p.rx_gpio, p.hs_valid ? "true" : "false", (long long)p.hs_age_ms,
              p.hs.paper_out ? "true" : "false", p.hs.pause ? "true" : "false", p.hs.head_up ? "true" : "false",
              p.hs.ribbon_out ? "true" : "false", p.hs.partial_format ? "true" : "false",
