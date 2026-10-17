@@ -207,7 +207,7 @@ p9_x = -4.155;           // pin 9 pad: the -X end of the 4-pin row (DE-9 pitch 2
 p9_y = 7.1;              // ESTIMATE from the annotated photo: the 4-pin row about 1.5 in front of the leg tails
 p9_joint = 3.0;          // joint zone around the pad (square)
 p9_joint_h = 2.5;        // joint zone depth below the PCB underside (pin tail, solder, wire end); 0.5 above the floor
-wire_d = 1.4;            // jumper wire outside diameter (26 AWG Dupont type), for the ghost wire
+wire_d = 1.4;            // jumper wire outside diameter (26 AWG Dupont type); wire_pass must leave 0.4 spare
 wire_pass = 2.0;         // passage width for one wire, and the run's depth under the board
 p9_run_x = -8.0;         // X of the run under the board and of the riser behind the PCB rear edge: clear of the
                          // header joints (X -3.81), the corner-pin boss (from X -11.05) and the presser (from -11.25)
@@ -488,7 +488,9 @@ if (dupont_on) echo(str("ZEBCASE DUPONT: housing X +-", hdr_hw, " Y ", hdr_y0, "
                         " to the ceiling at ", z_ceil));
 if (p9_on) echo(str("ZEBCASE PIN 9 WIRE: pad X ", p9_x, " Y ", p9_y, " (estimate); run under the board at X ", p9_run_x,
                     " +-", wire_pass / 2, ", z ", -pcb_t - wire_pass, "..", -pcb_t, " (floor top ", z_floor,
-                    "); riser behind the PCB Y ", y_pcb1, "..", y_pcb1 + wire_pass, " up to the 5V/GND zone"));
+                    "); riser behind the PCB Y ", y_pcb1, "..", y_pcb1 + wire_pass, " up to the 5V/GND zone; ",
+                    wire_pass - wire_d, " spare round a ", wire_d, " wire"));
+assert(!p9_on || wire_pass >= wire_d + 0.4 - 1e-6, "wire_pass leaves under 0.4 mm round the pin 9 wire (wire_d)");
 if (jack_on) echo(str("ZEBCASE JACK HARDWARE: X +-", fl_hole_pitch / 2, " z ", hole_z, ", d ", jack_d, ", Y ", jack_ys, "..",
                       jack_ys + jack_l, "; front wall cut back beside the DB9 body up to z ", jack_cut_z));
 if (!front_on_body) echo(str("ZEBCASE WARNING: the XIAO lies only ", body_overlap, " mm on the DB9 body (needs ", front_rest_min, ")"));

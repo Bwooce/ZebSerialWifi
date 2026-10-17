@@ -662,7 +662,7 @@ mm above the PCB underside with 25 mm of wire turning space. Everything below is
     more than 1.5 mm off.
   - **Jack screw hardware** behind the flange: within 7 mm across (`jack_d`), 5 mm behind the plate back
     (`jack_l`), and below z 9.75. The XIAO's −X end is only 0.65 mm above it.
-  - **Wire:** 1.4 mm outside diameter for the pin 9 jumper (`wire_pass` 2.0 gives 0.6 spare).
+  - **Wire:** 1.4 mm outside diameter for the pin 9 jumper (`wire_d`; the model asserts `wire_pass`, 2.0, leaves 0.4 spare).
 
 ## Concerns to check before printing
 
