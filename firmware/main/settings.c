@@ -111,6 +111,34 @@ esp_err_t settings_set_baud_cap(const char *model, uint32_t cap)
     return err;
 }
 
+void settings_get_model(char out[32])
+{
+    nvs_handle_t h;
+    size_t len = 32;
+    out[0] = '\0';
+    if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_str(h, "model", out, &len) != ESP_OK) {
+            out[0] = '\0';
+        }
+        nvs_close(h);
+    }
+}
+
+esp_err_t settings_set_model(const char *model)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_str(h, "model", model);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
 esp_err_t settings_set_baud(uint32_t baud)
 {
     nvs_handle_t h;

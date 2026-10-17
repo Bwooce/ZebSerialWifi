@@ -74,6 +74,10 @@ esp_err_t settings_clear_net(void);
 bool settings_get_flag(const char *key);
 esp_err_t settings_set_flag(const char *key, bool value);
 
+/* Last printer model found (from ~HI), "" when none has been; names the bridge in Bonjour. */
+void settings_get_model(char out[32]);
+esp_err_t settings_set_model(const char *model);
+
 /* Returns 0 when no baud has been saved. */
 uint32_t settings_get_baud(void);
 

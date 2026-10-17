@@ -26,15 +26,29 @@ static const char *TAG = "main";
 #define STATUS_TICK_MS 100
 #define PDL_SERVICE "_pdl-datastream"
 
-/* model in the printer TXT records; generic until the printer answers ~HI */
+/* model in the printer TXT records and service name; saved, and generic until a printer has ever answered ~HI */
 static char s_mdns_model[32];
+static char s_mdns_host[33];
 
 static void mdns_setup(void)
 {
     settings_net_t net;
     settings_get_net(&net);
-    char instance[64];
-    snprintf(instance, sizeof(instance), "ZebSerial (%s)", net.hostname);
+    strlcpy(s_mdns_host, net.hostname, sizeof(s_mdns_host));
+    /* Named after the last printer found, so the name does not change while the printer is off or slow to answer */
+    settings_get_model(s_mdns_model);
+    char instance[64];  /* a DNS label: 63 bytes at most, so long models are cut to fit a 32-byte hostname */
+    char ty[48];
+    char product[48];
+    if (s_mdns_model[0] != '\0') {
+        snprintf(instance, sizeof(instance), "Zebra %.22s (%s)", s_mdns_model, net.hostname);
+        snprintf(ty, sizeof(ty), "Zebra %s", s_mdns_model);
+        snprintf(product, sizeof(product), "(Zebra %s)", s_mdns_model);
+    } else {
+        snprintf(instance, sizeof(instance), "ZebSerial (%s)", net.hostname);
+        strlcpy(ty, "Zebra ZPL Printer", sizeof(ty));
+        strlcpy(product, "(Zebra ZPL Printer)", sizeof(product));
+    }
     /* Bonjour printing spec: the printer's web page, shown as "Printer Website" in the macOS print queue */
     char adminurl[64];
     snprintf(adminurl, sizeof(adminurl), "http://%s.local/", net.hostname);
@@ -44,24 +58,30 @@ static void mdns_setup(void)
     mdns_txt_item_t txt[] = {
         {"txtvers", "1"},
         {"qtotal", "1"},
-        {"ty", "Zebra ZPL Printer"},
-        {"product", "(Zebra ZPL Printer)"},
+        {"ty", ty},
+        {"product", product},
         {"usb_MFG", "Zebra"},
-        {"usb_MDL", "ZPL Printer"},
+        {"usb_MDL", s_mdns_model[0] != '\0' ? s_mdns_model : "ZPL Printer"},
         {"note", "ZebSerialWifi"},
         {"adminurl", adminurl},
     };
     mdns_service_add(instance, PDL_SERVICE, "_tcp", CONFIG_ZEB_TCP_PORT, txt,
                      sizeof(txt) / sizeof(txt[0]));
     mdns_service_add(instance, "_http", "_tcp", 80, NULL, 0);
-    ESP_LOGI(TAG, "mDNS: %s.local", net.hostname);
+    ESP_LOGI(TAG, "mDNS: %s.local, service name \"%s\"", net.hostname, instance);
 }
 
-/* Put the model the printer reported into the TXT records print drivers match on. */
+/*
+ * Put the model the printer reported into the TXT records print drivers match
+ * on and into the service name ("Zebra GX430t (zebserial)", as the macOS
+ * printer list shows it), and save it for the next boot.
+ */
 static void mdns_set_model(const char *model)
 {
     char ty[48];
     char product[48];
+    char instance[64];
+    snprintf(instance, sizeof(instance), "Zebra %.22s (%s)", model, s_mdns_host);
     snprintf(ty, sizeof(ty), "Zebra %s", model);
     snprintf(product, sizeof(product), "(Zebra %s)", model);
     strlcpy(s_mdns_model, model, sizeof(s_mdns_model));  /* also on failure, so it warns once, not every tick */
@@ -72,11 +92,25 @@ static void mdns_set_model(const char *model)
     if (err == ESP_OK) {
         err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "usb_MDL", model);
     }
+    if (err == ESP_OK) {
+        err = mdns_service_instance_name_set(PDL_SERVICE, "_tcp", instance);
+    }
+    if (err == ESP_OK) {
+        err = mdns_service_instance_name_set("_http", "_tcp", instance);
+    }
+    if (err == ESP_OK) {
+        err = mdns_instance_name_set(instance);
+    }
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "mDNS model update failed: %s", esp_err_to_name(err));
         return;
     }
-    ESP_LOGI(TAG, "mDNS model: %s", model);
+    ESP_LOGI(TAG, "mDNS model: %s, service name \"%s\"", model, instance);
+    char saved[32];
+    settings_get_model(saved);
+    if (strcmp(saved, model) != 0 && settings_set_model(model) != ESP_OK) {
+        ESP_LOGW(TAG, "could not save the printer model");
+    }
 }
 
 static void status_task(void *arg)
