@@ -10,6 +10,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "netcfg.h"
+#include "ota.h"
 #include "printer_link.h"
 #include "remote_log.h"
 #include "settings.h"
@@ -613,6 +614,10 @@ static esp_err_t status_get(httpd_req_t *req)
     settings_get_options(&opt);
     remote_log_status_t rl;
     remote_log_get_status(&rl);
+    ota_status_t ota;
+    ota_get_status(&ota);
+    char other_esc[sizeof(ota.other_version) * 6];
+    json_escape(ota.other_version, other_esc, sizeof(other_esc));
     char handshake_esc[sizeof(p.handshake) * 6];
     json_escape(p.handshake, handshake_esc, sizeof(handshake_esc));
     char model_esc[sizeof(p.model) * 6];
@@ -653,6 +658,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"bridge\":{\"active\":%s,\"client_ip\":\"%s\",\"sessions\":%lu,\"aborted\":%lu,"
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"rlog\":{\"enabled\":%s,\"listener\":%s,\"sent\":%lu,\"dropped\":%lu},"
+             "\"ota\":{\"running\":\"%s\",\"pending\":%s,\"other_version\":\"%s\"},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              join_names[join], join_esc, join_why,
@@ -667,7 +673,8 @@ static esp_err_t status_get(httpd_req_t *req)
              (unsigned long long)p.rx_bytes, b.active ? "true" : "false", b.client_ip, (unsigned long)b.sessions,
              (unsigned long)b.aborted, (unsigned long long)b.bytes_to_printer,
              (unsigned long long)b.bytes_from_printer, rl.enabled ? "true" : "false", rl.listener ? "true" : "false",
-             (unsigned long)rl.sent, (unsigned long)rl.dropped, (long long)(esp_timer_get_time() / 1000000), version_esc,
+             (unsigned long)rl.sent, (unsigned long)rl.dropped, ota.running, ota.pending ? "true" : "false",
+             other_esc, (long long)(esp_timer_get_time() / 1000000), version_esc,
              app->date, app->time);
     if (json_len < 0 || (size_t)json_len >= json_cap) {
         free(json);
@@ -1155,6 +1162,47 @@ static void send_wifi_section(httpd_req_t *req, const settings_net_t *net)
     httpd_resp_sendstr_chunk(req, buf);
 }
 
+/* Firmware version, upload and going back: the Bridge page's last section. */
+static void send_firmware_section(httpd_req_t *req, const char *hostname)
+{
+    ota_status_t st;
+    ota_get_status(&st);
+    char ver[sizeof(st.version) * 6];
+    char other[sizeof(st.other_version) * 6];
+    html_escape(st.version, ver, sizeof(ver));
+    html_escape(st.other_version, other, sizeof(other));
+    char buf[1600];
+    snprintf(buf, sizeof(buf),
+             "<fieldset id=fw><legend>Firmware</legend>"
+             "<p>Running %s (%s)%s.</p>"
+             "<label for=fwf>New firmware <small>(build/zebserial.bin from <code>idf.py build</code>)</small></label>"
+             "<input type=file id=fwf accept=.bin> <button type=button id=fwb>Upload and restart</button> "
+             "<span id=fwm></span>"
+             "<p><small>The new firmware has %d s to reach the network after it starts, or the bridge goes back to "
+             "this one. From a terminal: <code>curl --data-binary @build/zebserial.bin http://%s.local/update</code>"
+             "</small></p>",
+             ver, st.running, st.pending ? ", new and not yet confirmed" : "", 180, hostname);
+    httpd_resp_sendstr_chunk(req, buf);
+    if (st.other_version[0] != '\0') {
+        snprintf(buf, sizeof(buf),
+                 "<form method=post action=/boot_other onsubmit=\"return confirm('Restart into the other firmware?')\">"
+                 "<button class=danger>Go back to %s</button></form>",
+                 other);
+        httpd_resp_sendstr_chunk(req, buf);
+    }
+    httpd_resp_sendstr_chunk(req,
+        "</fieldset><script>"
+        "document.getElementById('fwb').onclick=function(){"
+        "var f=document.getElementById('fwf').files[0],m=document.getElementById('fwm');"
+        "if(!f){m.textContent='Choose the .bin file first.';return}"
+        "var x=new XMLHttpRequest();x.open('POST','/update');"
+        "x.upload.onprogress=function(e){if(e.lengthComputable)m.textContent='Uploading '+Math.round(100*e.loaded/e.total)+' %'};"
+        "x.onload=function(){m.textContent=x.responseText;if(x.status==200)setTimeout(function(){location.reload()},20000)};"
+        "x.onerror=function(){m.textContent='The upload failed.'};"
+        "this.disabled=true;x.send(f)}"
+        "</script>");
+}
+
 /* GET /bridge: the bridge's own settings, kept in its flash. */
 static esp_err_t bridge_get_page(httpd_req_t *req)
 {
@@ -1245,6 +1293,7 @@ static esp_err_t bridge_get_page(httpd_req_t *req)
              rlog.enabled ? " checked" : "", rlog.level == 1 ? " selected" : "", rlog.level == 2 ? " selected" : "",
              rlog.level == 3 ? " selected" : "", rlog_ip);
     httpd_resp_sendstr_chunk(req, buf);
+    send_firmware_section(req, net.hostname);
     return send_page_end(req);
 }
 
@@ -1563,6 +1612,49 @@ static esp_err_t printer_test_post(httpd_req_t *req)
     return redirect_to(req, "/printer?done=test_label");
 }
 
+/* POST /update: a new app image as the raw body (see ota_receive); restarts into it. */
+static esp_err_t update_post(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    if (!same_origin(req)) {
+        return cross_site(req);
+    }
+    const char *why;
+    esp_err_t err = ota_receive(req, &why);
+    httpd_resp_set_type(req, "text/plain");
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, err == ESP_ERR_NO_MEM || err == ESP_FAIL ? "500 Internal Server Error"
+                                                                             : "400 Bad Request");
+        return httpd_resp_sendstr(req, why != NULL ? why : "Update failed.");
+    }
+    httpd_resp_sendstr(req, "Updated. Restarting into the new firmware; this page reloads in 20 s.");
+    restart_soon();
+    return ESP_OK;
+}
+
+/* POST /boot_other: restart into the firmware in the other slot. */
+static esp_err_t boot_other_post(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    if (!same_origin(req)) {
+        return cross_site(req);
+    }
+    if (ota_boot_other() != ESP_OK) {
+        return fail(req, "400 Bad Request", "There is no other valid firmware to go back to.", "/bridge");
+    }
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr_chunk(req, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(req, "<p>Restarting into the other firmware. <a href=/>Back to the status page</a> in "
+                                  "about 20 s.</p>");
+    send_page_end(req);
+    restart_soon();
+    return ESP_OK;
+}
+
 static esp_err_t favicon_get(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "image/svg+xml");
@@ -1681,6 +1773,8 @@ void web_start(void)
         {.uri = "/printer_config", .method = HTTP_POST, .handler = printer_config_post},
         {.uri = "/printer_action", .method = HTTP_POST, .handler = printer_action_post},
         {.uri = "/printer_test", .method = HTTP_POST, .handler = printer_test_post},
+        {.uri = "/update", .method = HTTP_POST, .handler = update_post},
+        {.uri = "/boot_other", .method = HTTP_POST, .handler = boot_other_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         esp_err_t err = httpd_register_uri_handler(server, &uris[i]);

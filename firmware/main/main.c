@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mdns.h"
+#include "ota.h"
 #include "printer_link.h"
 #include "remote_log.h"
 #include "sdkconfig.h"
@@ -122,6 +123,7 @@ static void status_task(void *arg)
             ESP_LOGI(TAG, "status stack: %u bytes never used after 10 s", (unsigned)uxTaskGetStackHighWaterMark(NULL));
         }
 
+        ota_poll();
         printer_status_t p;
         printer_link_get_status(&p);
         if (p.model[0] != '\0' && strcmp(p.model, s_mdns_model) != 0) {

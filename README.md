@@ -214,6 +214,24 @@ On macOS, put Homebrew's Python first in `PATH` if `export.sh` says Python 3.10 
 
 Host unit tests for the parsers (no ESP-IDF needed): `make -C firmware/test_host`.
 
+### Updates over the network (OTA)
+
+The flash has two firmware slots. After the first flash over USB, new firmware goes over the network:
+
+- **Bridge page, Firmware:** choose `firmware/build/zebserial.bin` and press Upload and restart.
+- **Or from a terminal:** `curl --data-binary @firmware/build/zebserial.bin http://zebserial.local/update`
+
+The bridge checks the upload is a ZebSerialWifi image for the ESP32-C6 and that it arrived whole, writes it to the
+other slot and restarts into it. The new firmware must reach the Wi-Fi network within 180 s, or the bridge goes back
+to the previous one; a crash before that also goes back. The Bridge page can also restart into the other slot by hand
+("Go back to ...").
+
+Anyone on the network can upload firmware, as they can already change the settings. Uploads from another web site are
+refused.
+
+The first flash with this two-slot layout must be over USB (`idf.py flash`), since the partition table and the
+bootloader that does the rollback are not updated over the network. The settings survive it.
+
 ## Setting up
 
 1. **Join Wi-Fi.** On first start the bridge opens an open network called `ZebSerial-XXXX`. Join it; the set-up page
