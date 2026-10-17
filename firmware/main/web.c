@@ -52,7 +52,7 @@ static const char s_favicon[] =
 static const char PAGE_HEAD[] =
     "<!doctype html><html><head><meta charset=utf-8>"
     "<meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>ZebSerial</title><link rel=icon href=/favicon.svg><style>"
+    "<title>ZebSerial</title><link rel=icon href=/favicon.svg><link rel=apple-touch-icon href=/apple-touch-icon.png><style>"
     "body{font-family:system-ui,sans-serif;max-width:32em;margin:1em auto;padding:0 1em;color:#222;background:#fff}"
     "input,select,button{font-size:1em;padding:.4em;margin:.2em 0;width:100%;box-sizing:border-box}"
     "label{display:block;margin-top:.4em}label.check{display:flex;gap:.5em;align-items:baseline}"
@@ -1653,6 +1653,22 @@ static esp_err_t favicon_get(httpd_req_t *req)
     return httpd_resp_send(req, s_favicon, sizeof(s_favicon) - 1);
 }
 
+/* Bitmap icons for browsers that ignore the SVG one (Safari on iOS); made by assets/logo/make_icons.py */
+extern const uint8_t favicon_ico_start[] asm("_binary_favicon_ico_start");
+extern const uint8_t favicon_ico_end[] asm("_binary_favicon_ico_end");
+extern const uint8_t touch_icon_start[] asm("_binary_apple_touch_icon_png_start");
+extern const uint8_t touch_icon_end[] asm("_binary_apple_touch_icon_png_end");
+
+static esp_err_t icon_get(httpd_req_t *req)
+{
+    bool ico = strcmp(req->uri, "/favicon.ico") == 0;
+    httpd_resp_set_type(req, ico ? "image/x-icon" : "image/png");
+    httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");
+    const uint8_t *start = ico ? favicon_ico_start : touch_icon_start;
+    const uint8_t *end = ico ? favicon_ico_end : touch_icon_end;
+    return httpd_resp_send(req, (const char *)start, end - start);
+}
+
 static esp_err_t redetect_post(httpd_req_t *req)
 {
     if (on_ap(req)) {
@@ -1742,7 +1758,7 @@ void web_start(void)
     cfg.max_open_sockets = 4;
     cfg.stack_size = 8192;
     cfg.lru_purge_enable = true;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 24;
     httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP server failed to start");
@@ -1753,6 +1769,9 @@ void web_start(void)
         {.uri = "/save", .method = HTTP_POST, .handler = save_post},
         {.uri = "/api/status", .method = HTTP_GET, .handler = status_get},
         {.uri = "/favicon.svg", .method = HTTP_GET, .handler = favicon_get},
+        {.uri = "/favicon.ico", .method = HTTP_GET, .handler = icon_get},
+        {.uri = "/apple-touch-icon.png", .method = HTTP_GET, .handler = icon_get},
+        {.uri = "/apple-touch-icon-precomposed.png", .method = HTTP_GET, .handler = icon_get},
         {.uri = "/settings", .method = HTTP_GET, .handler = settings_get_page},
         {.uri = "/printer", .method = HTTP_GET, .handler = printer_get_page},
         {.uri = "/bridge", .method = HTTP_GET, .handler = bridge_get_page},
