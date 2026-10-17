@@ -267,6 +267,9 @@ receiver. It is on by default, but nothing is sent until mDNS finds a receiver o
 IPv4 address also sends straight to that machine, for networks that lose multicast. The Status page shows whether a
 receiver was found.
 
+"Found" only means mDNS answered: on the network this was developed on, mDNS found the receiver but none of the
+multicast copies reached it, and unicast did. If the receiver shows nothing, enter its address.
+
 ## Case
 
 `enclosure/` has the OpenSCAD model and its README (fit, sections and checks); `print/` has the sliced Bambu Lab H2D
@@ -280,4 +283,5 @@ project and its settings. The unit plugs straight into the printer's serial sock
 | Printer prints but never answers | A DTR handshake mode, or a fault such as ribbon out |
 | "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within a few minutes. The D5 pull-up stops it at the source. |
 | Printer page: "No complete reply to ^HH" | The printer has stopped running formats (seen once with the head not fully latched). Close the head properly and turn the printer off and on. |
+| Remote log: receiver found, but no lines arrive | The network drops the bridge's multicast; set the receiver address on the Bridge page |
 | No 5 V on pin 9 at the module | The gender changer does not carry pin 9, or a bad connection; measure at the printer's own socket |

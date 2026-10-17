@@ -22,6 +22,21 @@ int log_line_level(const char *line, size_t len)
     }
 }
 
+size_t log_line_body(const char *line, size_t len)
+{
+    if (log_line_level(line, len) == 0) {
+        return 0;
+    }
+    size_t i = 3;
+    while (i < len && line[i] >= '0' && line[i] <= '9') {
+        i++;
+    }
+    if (i == 3 || i + 1 >= len || line[i] != ')' || line[i + 1] != ' ') {
+        return 0;
+    }
+    return i + 2;
+}
+
 size_t log_line_trim(const char *line, size_t len)
 {
     while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {

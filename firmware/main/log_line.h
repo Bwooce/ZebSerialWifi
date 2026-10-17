@@ -9,5 +9,12 @@
  */
 int log_line_level(const char *line, size_t len);
 
+/*
+ * Offset of the text after the level letter and timestamp ("W (1234) "), which
+ * the remote log already carries in its own header; 0 if the line has no such
+ * prefix.
+ */
+size_t log_line_body(const char *line, size_t len);
+
 /* Length of the line without trailing CR and LF. */
 size_t log_line_trim(const char *line, size_t len);

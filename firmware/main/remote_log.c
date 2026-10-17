@@ -148,7 +148,8 @@ static void sender_task(void *arg)
         line[len] = '\0';
         vRingbufferReturnItem(s_queue, item);
         int level = log_line_level(line, len);
-        iot_log((iot_log_level_t)(level == 0 ? 3 : level), "%s", line);
+        /* iot_log sends its own level and timestamp, so drop the "W (1234) " prefix */
+        iot_log((iot_log_level_t)(level == 0 ? 3 : level), "%s", line + log_line_body(line, len));
     }
 }
 

@@ -882,6 +882,15 @@ static void test_log_line(void)
     CHECK(log_line_trim("abc\r\n", 5) == 3);
     CHECK(log_line_trim("abc", 3) == 3);
     CHECK(log_line_trim("\n\n", 2) == 0);
+    /* the level letter and timestamp come off; the tag and text stay */
+    CHECK(log_line_body(w, strlen(w)) == strlen("W (797) "));
+    CHECK(strncmp(w + log_line_body(w, strlen(w)), "printer: ", 9) == 0);
+    CHECK(log_line_body("I (0) a", 7) == 6);
+    CHECK(log_line_body("Hello", 5) == 0);
+    CHECK(log_line_body("W () x", 6) == 0);
+    CHECK(log_line_body("W (12", 5) == 0);
+    CHECK(log_line_body("W (12)x", 7) == 0);
+    CHECK(log_line_body("W (12) ", 7) == 7);  /* an empty text is still a whole prefix */
 }
 
 /* Every ^FO origin, and every ^GB box from its origin, lies inside the label */
