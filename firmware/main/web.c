@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "netcfg.h"
 #include "printer_link.h"
+#include "remote_log.h"
 #include "settings.h"
 #include "urlcodec.h"
 #include "wifi_prov.h"
@@ -483,6 +484,8 @@ static const char STATUS_SCRIPT[] =
     "row('Print client',b.active?('printing from '+b.client_ip):('idle, last '+(b.client_ip||'none')))+"
     "row('Jobs',b.sessions+' ('+b.aborted+' dropped)')+"
     "row('Bytes',b.to_printer+' to printer, '+b.from_printer+' back')+"
+    "row('Remote log',!s.rlog.enabled?'off':(s.rlog.listener?'sending to an iot_log receiver':'no receiver found')+"
+    "', '+s.rlog.sent+' lines sent')+"
     "row('Uptime',dur(s.uptime_s))+"
     "row('Firmware',s.version+' '+s.built)}"
     "catch(x){if(J=='trying')id('j').innerHTML='<p class=note>No reply from the bridge. If it joined the new network, '+"
@@ -607,6 +610,8 @@ static esp_err_t status_get(httpd_req_t *req)
     settings_options_t opt;
     settings_get_net(&net);
     settings_get_options(&opt);
+    remote_log_status_t rl;
+    remote_log_get_status(&rl);
     char handshake_esc[sizeof(p.handshake) * 6];
     json_escape(p.handshake, handshake_esc, sizeof(handshake_esc));
     char model_esc[sizeof(p.model) * 6];
@@ -646,6 +651,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"formats_in_buffer\":%d},\"tx_bytes\":%llu,\"rx_bytes\":%llu},"
              "\"bridge\":{\"active\":%s,\"client_ip\":\"%s\",\"sessions\":%lu,\"aborted\":%lu,"
              "\"to_printer\":%llu,\"from_printer\":%llu},"
+             "\"rlog\":{\"enabled\":%s,\"listener\":%s,\"sent\":%lu,\"dropped\":%lu},"
              "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              join_names[join], join_esc, join_why,
@@ -659,7 +665,8 @@ static esp_err_t status_get(httpd_req_t *req)
              p.hs.over_temp ? "true" : "false", p.hs.formats_in_buffer, (unsigned long long)p.tx_bytes,
              (unsigned long long)p.rx_bytes, b.active ? "true" : "false", b.client_ip, (unsigned long)b.sessions,
              (unsigned long)b.aborted, (unsigned long long)b.bytes_to_printer,
-             (unsigned long long)b.bytes_from_printer, (long long)(esp_timer_get_time() / 1000000), version_esc,
+             (unsigned long long)b.bytes_from_printer, rl.enabled ? "true" : "false", rl.listener ? "true" : "false",
+             (unsigned long)rl.sent, (unsigned long)rl.dropped, (long long)(esp_timer_get_time() / 1000000), version_esc,
              app->date, app->time);
     if (json_len < 0 || (size_t)json_len >= json_cap) {
         free(json);
@@ -1169,13 +1176,33 @@ static esp_err_t bridge_get_page(httpd_req_t *req)
              "<option value=1%s>TX on D3 (GPIO21), RX on D5 (GPIO23)</option>"
              "<option value=2%s>TX on D5 (GPIO23), RX on D3 (GPIO21)</option></select>"
              "<label for=idle>Close an idle print connection after <small>(seconds, %d to %d)</small></label>"
-             "<input id=idle name=idle type=number min=%d max=%d value=%u></fieldset>"
-             "<p><small>Changing the hostname, the address or the pins restarts the bridge.</small></p>"
-             "<button type=submit>Save</button></form>"
-             "<p><small>Holding the BOOT button for 5 s clears the Wi-Fi and network settings.</small></p>",
+             "<input id=idle name=idle type=number min=%d max=%d value=%u></fieldset>",
              opt.pins == SETTINGS_PINS_AUTO ? " selected" : "", opt.pins == SETTINGS_PINS_TX_D3 ? " selected" : "",
              opt.pins == SETTINGS_PINS_TX_D5 ? " selected" : "", SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S,
              SETTINGS_IDLE_MIN_S, SETTINGS_IDLE_MAX_S, (unsigned)opt.idle_timeout_s);
+    httpd_resp_sendstr_chunk(req, buf);
+    settings_rlog_t rlog;
+    settings_get_rlog(&rlog);
+    char rlog_ip[16] = "";
+    if (rlog.unicast_ip != 0) {
+        ip_str(rlog.unicast_ip, rlog_ip);
+    }
+    snprintf(buf, sizeof(buf),
+             "<fieldset id=rlog><legend>Remote log</legend>"
+             "<label class=check><input type=checkbox name=rlog value=1%s> Send the bridge's log to an "
+             "<a href='https://github.com/Bwooce/esp-iot-log'>iot_log</a> receiver "
+             "<small>(only while one is found on the network, or to the address below)</small></label>"
+             "<label for=rlog_lvl>Level</label><select id=rlog_lvl name=rlog_lvl>"
+             "<option value=1%s>Errors</option><option value=2%s>Warnings and errors</option>"
+             "<option value=3%s>Everything (information, warnings and errors)</option></select>"
+             "<label for=rlog_ip>Receiver address <small>(optional: also send straight to this IPv4 address, "
+             "for networks that lose multicast)</small></label>"
+             "<input id=rlog_ip name=rlog_ip value='%s' placeholder='192.168.1.20'></fieldset>"
+             "<p><small>Changing the hostname, the address or the pins restarts the bridge.</small></p>"
+             "<button type=submit>Save</button></form>"
+             "<p><small>Holding the BOOT button for 5 s clears the Wi-Fi and network settings.</small></p>",
+             rlog.enabled ? " checked" : "", rlog.level == 1 ? " selected" : "", rlog.level == 2 ? " selected" : "",
+             rlog.level == 3 ? " selected" : "", rlog_ip);
     httpd_resp_sendstr_chunk(req, buf);
     return send_page_end(req);
 }
@@ -1223,6 +1250,21 @@ static esp_err_t config_post(httpd_req_t *req)
     if (form_get(body, "hostname", v, sizeof(v))) {
         strlcpy(net.hostname, v, sizeof(net.hostname));
     }
+    settings_rlog_t old_rlog;
+    settings_get_rlog(&old_rlog);
+    settings_rlog_t rlog = old_rlog;
+    rlog.enabled = form_get(body, "rlog", v, sizeof(v)) && strcmp(v, "1") == 0;
+    if (form_get(body, "rlog_lvl", v, sizeof(v))) {
+        long lvl = strtol(v, NULL, 10);
+        rlog.level = (lvl < SETTINGS_RLOG_LEVEL_MIN || lvl > SETTINGS_RLOG_LEVEL_MAX) ? 0 : (uint8_t)lvl;
+    }
+    if (form_get(body, "rlog_ip", v, sizeof(v))) {
+        rlog.unicast_ip = 0;
+        if (v[0] != '\0' && !netcfg_ipv4_parse(v, &rlog.unicast_ip)) {
+            return fail(req, "400 Bad Request", "The remote log receiver address is not a valid IPv4 address.",
+                        "/bridge");
+        }
+    }
     net.static_ip = form_get(body, "static", v, sizeof(v)) && strcmp(v, "1") == 0;
     if (net.static_ip) {
         const char *keys[] = {"ip", "mask", "gw", "dns"};
@@ -1240,14 +1282,20 @@ static esp_err_t config_post(httpd_req_t *req)
     if (!settings_options_valid(&opt)) {
         return fail(req, "400 Bad Request", "A serial link setting is out of range.", "/bridge");
     }
+    if (rlog.level < SETTINGS_RLOG_LEVEL_MIN || rlog.level > SETTINGS_RLOG_LEVEL_MAX) {
+        return fail(req, "400 Bad Request", "Unknown remote log level.", "/bridge");
+    }
     if (!settings_net_valid(&net)) {
         return fail(req, "400 Bad Request",
                     "Invalid hostname, or the static address, netmask and gateway do not fit together.", "/bridge");
     }
-    if (settings_set_options(&opt) != ESP_OK || settings_set_net(&net) != ESP_OK) {
+    if (settings_set_options(&opt) != ESP_OK || settings_set_net(&net) != ESP_OK || settings_set_rlog(&rlog) != ESP_OK) {
         return fail(req, "500 Internal Server Error", "Could not save the settings.", "/bridge");
     }
     printer_link_set_target_baud(opt.target_baud);
+    if (rlog.enabled != old_rlog.enabled || rlog.level != old_rlog.level || rlog.unicast_ip != old_rlog.unicast_ip) {
+        remote_log_apply();
+    }
 
     bool reboot = opt.pins != old_opt.pins || strcmp(net.hostname, old_net.hostname) != 0 ||
                   net.static_ip != old_net.static_ip ||

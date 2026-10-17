@@ -1,3 +1,8 @@
 dependencies:
   idf: ">=6.1"
   espressif/mdns: "^1.8"
+  # iot_log remote logging (remote_log.c); pinned to a commit of the ESP-IDF port
+  bwooce/esp_iot_log:
+    git: https://github.com/Bwooce/esp-iot-log.git
+    path: esp-idf
+    version: e6a5a22aa21f7f4be1f956563619fbe1f11b0544

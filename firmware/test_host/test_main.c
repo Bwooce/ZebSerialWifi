@@ -15,6 +15,7 @@
 #include "zpl_status.h"
 #include "urlcodec.h"
 #include "netcfg.h"
+#include "log_line.h"
 
 static int s_failures;
 static int s_checks;
@@ -861,6 +862,26 @@ static void test_json_escape(void)
     CHECK(small[0] == '\0');
 }
 
+/* Lines as the ESP-IDF log v1 prints them with colours off (CONFIG_LOG_COLORS unset) */
+static void test_log_line(void)
+{
+    const char *w = "W (797) printer: the printer has a partial format open\n";
+    CHECK(log_line_level(w, strlen(w)) == 2);
+    const char *i = "I (537) main: mDNS: zebserial.local";
+    CHECK(log_line_level(i, strlen(i)) == 3);
+    CHECK(log_line_level("E (1) x: y", 10) == 1);
+    CHECK(log_line_level("D (1) x: y", 10) == 4);
+    CHECK(log_line_level("V (1) x: y", 10) == 5);
+    /* raw printf output, colour codes and fragments have no level */
+    CHECK(log_line_level("Hello", 5) == 0);
+    CHECK(log_line_level("\033[0;33mW (1) x", 15) == 0);
+    CHECK(log_line_level("I", 1) == 0);
+    CHECK(log_line_level("I(1)", 4) == 0);
+    CHECK(log_line_trim("abc\r\n", 5) == 3);
+    CHECK(log_line_trim("abc", 3) == 3);
+    CHECK(log_line_trim("\n\n", 2) == 0);
+}
+
 static void test_origin_matches_host(void)
 {
     CHECK(url_origin_matches_host("http://192.168.4.1", "192.168.4.1"));
@@ -879,6 +900,7 @@ static void test_origin_matches_host(void)
 
 int main(void)
 {
+    test_log_line();
     test_hs_ok();
     test_hs_handshake_bit();
     test_hs_partial_format();

@@ -111,6 +111,53 @@ esp_err_t settings_set_baud_cap(const char *model, uint32_t cap)
     return err;
 }
 
+void settings_get_rlog(settings_rlog_t *out)
+{
+    out->enabled = true;
+    out->level = 3;
+    out->unicast_ip = 0;
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    uint8_t u8;
+    uint32_t u32;
+    if (nvs_get_u8(h, "rlog_on", &u8) == ESP_OK) {
+        out->enabled = u8 != 0;
+    }
+    if (nvs_get_u8(h, "rlog_lvl", &u8) == ESP_OK && u8 >= SETTINGS_RLOG_LEVEL_MIN && u8 <= SETTINGS_RLOG_LEVEL_MAX) {
+        out->level = u8;
+    }
+    if (nvs_get_u32(h, "rlog_ip", &u32) == ESP_OK) {
+        out->unicast_ip = u32;
+    }
+    nvs_close(h);
+}
+
+esp_err_t settings_set_rlog(const settings_rlog_t *rlog)
+{
+    if (rlog->level < SETTINGS_RLOG_LEVEL_MIN || rlog->level > SETTINGS_RLOG_LEVEL_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_set_u8(h, "rlog_on", rlog->enabled ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, "rlog_lvl", rlog->level);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_u32(h, "rlog_ip", rlog->unicast_ip);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
 void settings_get_model(char out[32])
 {
     nvs_handle_t h;

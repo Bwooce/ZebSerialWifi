@@ -74,6 +74,20 @@ esp_err_t settings_clear_net(void);
 bool settings_get_flag(const char *key);
 esp_err_t settings_set_flag(const char *key, bool value);
 
+/* Copies of the log sent to an iot_log receiver; see remote_log.h. */
+typedef struct {
+    bool enabled;
+    uint8_t level;              /* 1 errors, 2 warnings, 3 info (iot_log levels) */
+    uint32_t unicast_ip;        /* IPv4, host byte order; 0 = only to a receiver found by mDNS */
+} settings_rlog_t;
+
+#define SETTINGS_RLOG_LEVEL_MIN 1
+#define SETTINGS_RLOG_LEVEL_MAX 3
+
+/* Saved remote log settings; on at info level, multicast only, when nothing is saved. */
+void settings_get_rlog(settings_rlog_t *out);
+esp_err_t settings_set_rlog(const settings_rlog_t *rlog);
+
 /* Last printer model found (from ~HI), "" when none has been; names the bridge in Bonjour. */
 void settings_get_model(char out[32]);
 esp_err_t settings_set_model(const char *model);

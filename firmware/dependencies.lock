@@ -1,4 +1,14 @@
 dependencies:
+  bwooce/esp_iot_log:
+    component_hash: 556d0d68dc60a40cd1f3bdd5d63303f107631af11d2bab20b05204b9aaf3a09d
+    dependencies:
+    - name: espressif/mdns
+      version: ^1.0
+    source:
+      git: https://github.com/Bwooce/esp-iot-log.git
+      path: esp-idf
+      type: git
+    version: e6a5a22aa21f7f4be1f956563619fbe1f11b0544
   espressif/mdns:
     component_hash: b5b30022c46302eab89c1d2e3b6fb5918a627563a7462f0ee284b22b9a934967
     dependencies:
@@ -14,8 +24,9 @@ dependencies:
       type: idf
     version: 6.1.0
 direct_dependencies:
+- bwooce/esp_iot_log
 - espressif/mdns
 - idf
-manifest_hash: 324dc30af6bb87486275cc5fd8faf5b5f916b788e5a57931d697c6e6a5ab46da
+manifest_hash: 2e4563c59c5c3a6d13b74ee8d5cdb0169ceb9e75df201083576f383d558c61fe
 target: esp32c6
 version: 3.0.0

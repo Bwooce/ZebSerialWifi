@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "mdns.h"
 #include "printer_link.h"
+#include "remote_log.h"
 #include "sdkconfig.h"
 #include "settings.h"
 #include "web.h"
@@ -156,10 +157,10 @@ static void status_task(void *arg)
 
 void app_main(void)
 {
+    ESP_ERROR_CHECK(settings_init());
+    remote_log_init();  /* first, so the boot log reaches the remote log too */
     const esp_app_desc_t *app = esp_app_get_description();
     ESP_LOGI(TAG, "ZebSerialWifi %s built %s %s, IDF %s", app->version, app->date, app->time, app->idf_ver);
-
-    ESP_ERROR_CHECK(settings_init());
     board_init();
 
     settings_options_t opt;
@@ -186,6 +187,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     wifi_prov_start();
     mdns_setup();
+    remote_log_start();
     web_start();
     bridge_start();
     printer_link_start();
