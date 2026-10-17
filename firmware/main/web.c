@@ -13,6 +13,7 @@
 #include "printer_link.h"
 #include "remote_log.h"
 #include "settings.h"
+#include "test_label.h"
 #include "urlcodec.h"
 #include "wifi_prov.h"
 
@@ -1005,7 +1006,45 @@ static const notice_t s_printer_notices[] = {
     {"reload_saved", "The printer reloaded its saved settings."},
     {"factory_defaults", "Factory defaults restored. The bridge is finding the printer again to set its serial port."},
     {"redetect", "Finding the printer again."},
+    {"test_label", "Printing the test label."},
 };
+
+/*
+ * The test label form, its size prefilled from the printer's print width
+ * and label length (the last ^HH reading; a print job's own ^PW and ^LL may
+ * have changed them since, so they can be edited).
+ */
+static void send_test_label_form(httpd_req_t *req)
+{
+    zpl_hh_t *hh = malloc(sizeof(*hh));
+    zpl_printer_cfg_t cfg = {0};
+    int64_t age_ms;
+    if (hh != NULL && printer_link_get_config(hh, &age_ms)) {
+        zpl_cfg_from_hh(hh, &cfg);
+    }
+    free(hh);
+    char w[12] = "";
+    char l[12] = "";
+    if (cfg.dpmm > 0 && (cfg.known & (1u << ZPL_CFG_WIDTH))) {
+        snprintf(w, sizeof(w), "%.1f", (double)cfg.v[ZPL_CFG_WIDTH] / cfg.dpmm);
+    }
+    if (cfg.dpmm > 0 && (cfg.known & (1u << ZPL_CFG_LENGTH))) {
+        snprintf(l, sizeof(l), "%.1f", (double)cfg.v[ZPL_CFG_LENGTH] / cfg.dpmm);
+    }
+    char buf[900];
+    snprintf(buf, sizeof(buf),
+             "<fieldset><legend>Test label</legend>"
+             "<p><small>A border 1 mm in from the edges, mm rulers, line widths, a solid band (white streaks are dead "
+             "printhead dots), a 20 mm circle (an oval means the wrong dpi) and two barcodes. Nothing is saved in "
+             "the printer. The size starts as the printer's print width and label length; a print job may have "
+             "changed those, so set your label's size.</small></p>"
+             "<form method=post action=/printer_test>"
+             "<label for=tw>Width <small>(mm)</small></label><input id=tw name=w inputmode=decimal required value='%s'>"
+             "<label for=tl>Length <small>(mm)</small></label><input id=tl name=l inputmode=decimal required value='%s'>"
+             "<button>Print test label</button></form></fieldset>",
+             w, l);
+    httpd_resp_sendstr_chunk(req, buf);
+}
 
 /* GET /printer: the printer's own settings and maintenance. */
 static esp_err_t printer_get_page(httpd_req_t *req)
@@ -1030,7 +1069,9 @@ static esp_err_t printer_get_page(httpd_req_t *req)
     send_action(req, "reset_head_cleaned", "Mark head cleaned", "Record that the printhead has just been cleaned?",
                 false);
     httpd_resp_sendstr_chunk(req, "<form class=inline method=post action=/redetect><button>Re-detect printer</button>"
-                                  "</form></fieldset><fieldset><legend>Reset</legend>");
+                                  "</form></fieldset>");
+    send_test_label_form(req);
+    httpd_resp_sendstr_chunk(req, "<fieldset><legend>Reset</legend>");
     send_action(req, "reset_counter1", "Reset counter 1", "Reset counter 1?", true);
     send_action(req, "reset_counter2", "Reset counter 2", "Reset counter 2?", true);
     send_action(req, "reload_saved", "Reload saved settings",
@@ -1445,6 +1486,83 @@ static esp_err_t printer_action_post(httpd_req_t *req)
     return redirect_to(req, location);
 }
 
+/* Parse a size in mm ("101.6") into dots; false unless it is a plain number from lo to hi mm. */
+static bool parse_mm(const char *text, int dpmm, double lo, double hi, int *dots)
+{
+    char *end;
+    double mm = strtod(text, &end);
+    if (end == text || *end != '\0' || !(mm >= lo && mm <= hi)) {
+        return false;
+    }
+    *dots = (int)(mm * dpmm + 0.5);
+    return true;
+}
+
+/* POST /printer_test: print the test label at the size from the form. */
+static esp_err_t printer_test_post(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return to_setup_page(req);
+    }
+    if (!same_origin(req)) {
+        return cross_site(req);
+    }
+    char body[BODY_MAX + 1];
+    if (!read_form(req, body)) {
+        return ESP_FAIL;
+    }
+    zpl_hh_t *hh = malloc(sizeof(*hh));
+    zpl_printer_cfg_t cfg = {0};
+    bool have = false;
+    int64_t age_ms;
+    if (hh != NULL) {
+        printer_config(hh, false, &have, &age_ms);
+        if (have) {
+            zpl_cfg_from_hh(hh, &cfg);
+        }
+    }
+    free(hh);
+    if (cfg.dpmm <= 0) {
+        return fail(req, "503 Service Unavailable",
+                    "The printer's resolution is not known yet: it has not answered the settings read.", "/printer");
+    }
+    double head_mm = cfg.head_dots > 0 ? (double)cfg.head_dots / cfg.dpmm : 108.0;
+    char v[16];
+    int w = 0;
+    int l = 0;
+    if (!form_get(body, "w", v, sizeof(v)) || !parse_mm(v, cfg.dpmm, 10.0, head_mm, &w)) {
+        snprintf(body, sizeof(body), "The width must be a number of mm from 10 to %.1f (the printhead's width).",
+                 head_mm);
+        return fail(req, "400 Bad Request", body, "/printer");
+    }
+    if (!form_get(body, "l", v, sizeof(v)) || !parse_mm(v, cfg.dpmm, 10.0, 1000.0, &l)) {
+        return fail(req, "400 Bad Request", "The length must be a number of mm from 10 to 1000.", "/printer");
+    }
+    printer_status_t p;
+    printer_link_get_status(&p);
+    settings_net_t net;
+    settings_get_net(&net);
+    char url[48];
+    snprintf(url, sizeof(url), "http://%s.local/", net.hostname);
+    test_label_t t = {.width = w, .length = l, .dpmm = cfg.dpmm, .model = p.model,
+                      .version = esp_app_get_description()->version, .url = url};
+    char *zpl = malloc(TEST_LABEL_ZPL_MAX);
+    if (zpl == NULL) {
+        return fail(req, "500 Internal Server Error", "Out of memory.", "/printer");
+    }
+    if (test_label_zpl(&t, zpl, TEST_LABEL_ZPL_MAX) == 0) {
+        free(zpl);
+        return fail(req, "500 Internal Server Error", "Could not build the test label.", "/printer");
+    }
+    esp_err_t err = printer_link_send_zpl(zpl, pdMS_TO_TICKS(CMD_LINK_WAIT_MS), 0);
+    free(zpl);
+    if (err != ESP_OK) {
+        return link_error(req, err);
+    }
+    ESP_LOGI(TAG, "test label %d x %d dots at %d dots/mm", w, l, cfg.dpmm);
+    return redirect_to(req, "/printer?done=test_label");
+}
+
 static esp_err_t favicon_get(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "image/svg+xml");
@@ -1541,7 +1659,7 @@ void web_start(void)
     cfg.max_open_sockets = 4;
     cfg.stack_size = 8192;
     cfg.lru_purge_enable = true;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
     httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP server failed to start");
@@ -1562,6 +1680,7 @@ void web_start(void)
         {.uri = "/api/printer_config", .method = HTTP_GET, .handler = printer_config_get},
         {.uri = "/printer_config", .method = HTTP_POST, .handler = printer_config_post},
         {.uri = "/printer_action", .method = HTTP_POST, .handler = printer_action_post},
+        {.uri = "/printer_test", .method = HTTP_POST, .handler = printer_test_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         esp_err_t err = httpd_register_uri_handler(server, &uris[i]);

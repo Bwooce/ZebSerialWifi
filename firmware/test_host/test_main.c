@@ -16,6 +16,8 @@
 #include "urlcodec.h"
 #include "netcfg.h"
 #include "log_line.h"
+#include "test_label.h"
+#include <stdlib.h>
 
 static int s_failures;
 static int s_checks;
@@ -882,6 +884,77 @@ static void test_log_line(void)
     CHECK(log_line_trim("\n\n", 2) == 0);
 }
 
+/* Every ^FO origin, and every ^GB box from its origin, lies inside the label */
+static int label_fields_inside(const char *zpl, int w, int l)
+{
+    int bad = 0;
+    for (const char *p = strstr(zpl, "^FO"); p != NULL; p = strstr(p + 3, "^FO")) {
+        int x, y;
+        if (sscanf(p, "^FO%d,%d", &x, &y) != 2 || x < 0 || y < 0 || x >= w || y >= l) {
+            bad++;
+            continue;
+        }
+        const char *gb = strstr(p, "^GB");
+        const char *fs = strstr(p, "^FS");
+        int bw, bh;
+        if (gb != NULL && fs != NULL && gb < fs && sscanf(gb, "^GB%d,%d", &bw, &bh) == 2 &&
+            (x + bw > w || y + bh > l)) {
+            bad++;
+        }
+    }
+    return bad;
+}
+
+static void test_label(void)
+{
+    char *out = malloc(TEST_LABEL_ZPL_MAX);
+    /* the checker itself catches a box past the edge and an origin outside */
+    CHECK(label_fields_inside("^FO10,10^GB2000,10,1^FS", 1200, 1800) == 1);
+    CHECK(label_fields_inside("^FO1300,10^FDx^FS", 1200, 1800) == 1);
+    /* 4 x 6 inch at 300 dpi: 1200 x 1800 dots */
+    test_label_t t = {.width = 1200, .length = 1800, .dpmm = 12, .model = "GX430t", .version = "abc123",
+                      .url = "http://zebserial.local/"};
+    size_t n = test_label_zpl(&t, out, TEST_LABEL_ZPL_MAX);
+    CHECK(n > 0 && n < TEST_LABEL_ZPL_MAX);
+    CHECK(strncmp(out, "^XA", 3) == 0 && strcmp(out + n - 3, "^XZ") == 0);
+    CHECK(strstr(out, "^PW1200^LL1800") != NULL);
+    CHECK(strstr(out, "^JUS") == NULL);                 /* nothing saved in the printer */
+    CHECK(strstr(out, "^FO12,12^GB1176,1776,3^FS") != NULL); /* border 1 mm in */
+    CHECK(strstr(out, "GX430t, 100 x 150 mm") != NULL);
+    CHECK(strstr(out, "300 dpi, 1200 x 1800 dots") != NULL);
+    CHECK(strstr(out, "^GC240,") != NULL);              /* 20 mm circle */
+    CHECK(strstr(out, "^BQN,2,6^FDQA,http://zebserial.local/^FS") != NULL);
+    CHECK(strstr(out, "^BCN,") != NULL);
+    CHECK(label_fields_inside(out, 1200, 1800) == 0);
+
+    /* 2 x 1 inch at 203 dpi: still bordered and inside, the big parts left out */
+    test_label_t s = {.width = 406, .length = 203, .dpmm = 8, .model = "", .version = "v", .url = "u"};
+    n = test_label_zpl(&s, out, TEST_LABEL_ZPL_MAX);
+    CHECK(n > 0 && strstr(out, "^GB") != NULL && strstr(out, "^GC") == NULL && strstr(out, "^BC") == NULL);
+    CHECK(label_fields_inside(out, 406, 203) == 0);
+
+    /* 1 m long: the rulers stop at 300 mm, so it still fits */
+    test_label_t lg = {.width = 1200, .length = 12000, .dpmm = 12, .model = "m", .version = "v", .url = "u"};
+    CHECK(test_label_zpl(&lg, out, TEST_LABEL_ZPL_MAX) > 0);
+    CHECK(label_fields_inside(out, 1200, 12000) == 0);
+
+    /* ^ and ~ in field data would end the field or start a command */
+    test_label_t bad = t;
+    bad.model = "X^XZ~JA";
+    CHECK(test_label_zpl(&bad, out, TEST_LABEL_ZPL_MAX) > 0 && strstr(out, "X XZ JA") != NULL &&
+          strstr(out, "~JA") == NULL);
+
+    /* unusable: under 10 mm, no resolution, or no room */
+    test_label_t tiny = t;
+    tiny.width = 100;
+    CHECK(test_label_zpl(&tiny, out, TEST_LABEL_ZPL_MAX) == 0);
+    test_label_t nodpi = t;
+    nodpi.dpmm = 0;
+    CHECK(test_label_zpl(&nodpi, out, TEST_LABEL_ZPL_MAX) == 0);
+    CHECK(test_label_zpl(&t, out, 100) == 0);
+    free(out);
+}
+
 static void test_origin_matches_host(void)
 {
     CHECK(url_origin_matches_host("http://192.168.4.1", "192.168.4.1"));
@@ -900,6 +973,7 @@ static void test_origin_matches_host(void)
 
 int main(void)
 {
+    test_label();
     test_log_line();
     test_hs_ok();
     test_hs_handshake_bit();

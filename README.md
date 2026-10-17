@@ -223,7 +223,22 @@ Host unit tests for the parsers (no ESP-IDF needed): `make -C firmware/test_host
    (your model) from the list; Use should say "Zebra ZPL Label Printer". If the Mac does not see it (some networks
    lose multicast between access points), add it by IP instead: the IP tab, protocol "HP Jetdirect – Socket", address
    `zebserial.local` or the bridge's IP address.
-4. **Check the printer:** the Status page shows the model, language, serial speed and handshake, and any fault.
+4. **Set the queue to the printer's resolution.** The Zebra ZPL driver defaults to 203 dpi, so on a 300 dpi printer
+   every label comes out at two-thirds size. macOS has no setting for it in Printers & Scanners, so use Terminal
+   (`lpstat -p` lists the queue names):
+
+   ```
+   lpadmin -p Zebra_GX430t__zebserial_ -o Resolution=300dpi
+   lpoptions -p Zebra_GX430t__zebserial_ -l | grep Resolution
+   ```
+
+   The second line should show `*300dpi`. A 203 dpi printer needs nothing.
+5. **Check the printer:** the Status page shows the model, language, serial speed and handshake, and any fault. The
+   Printer page's **Print test label** prints a border 1 mm in from the edges, mm rulers, line widths, a solid band
+   (white streaks are dead printhead dots), a 20 mm circle (an oval means a dpi mismatch) and two barcodes, at the
+   label size you give it. Nothing is saved in the printer.
+
+   ![The test label for a 4 x 6 inch label at 300 dpi](docs/images/test_label.png)
 
 Holding the XIAO's BOOT button for 5 s clears the Wi-Fi and network settings and restarts it in set-up mode.
 
