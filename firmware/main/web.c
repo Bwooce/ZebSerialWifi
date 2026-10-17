@@ -1,6 +1,7 @@
 #include "web.h"
 
 #include <stdio.h>
+#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -417,8 +418,8 @@ static const char STATUS_SCRIPT[] =
     "'FIRMWARE':'Firmware','HARDWARE ID':'Hardware ID','SERIAL NUMBER':'Serial number','RESOLUTION':'Resolution',"
     "'XML SCHEMA':'XML schema','CONFIGURATION':'Configuration','ZBI VERSION':'ZBI version',"
     "'FORMAT CONVERT':'Format conversion','MODES ENABLED':'Modes enabled','MODES DISABLED':'Modes disabled',"
-    "'HEXDUMP':'Hex dump','HEAD USAGE':'Printhead usage','TOTAL USAGE':'Total printed','RESET CNTR1':'Counter 1',"
-    "'RESET CNTR2':'Counter 2','LAST CLEANED':'Since the head was cleaned'};"
+    "'HEXDUMP':'Hex dump','HEAD USAGE':'Printhead usage','TOTAL USAGE':'Total printed','RESET CNTR1':'User counter 1',"
+    "'RESET CNTR2':'User counter 2','LAST CLEANED':'Since the head was cleaned'};"
     "function has(o,k){return Object.prototype.hasOwnProperty.call(o,k)}"
     "function nm(k){return has(UI,k)?UI[k][0]:has(FN,k)?FN[k]:k}"
     "var ST={'WEB':'gaps between labels','MARK':'black marks','CONTINUOUS':'continuous media'};"
@@ -1022,7 +1023,7 @@ static void send_printer_form(httpd_req_t *req)
 /* A one-button form posting action to /printer_action; confirm (no quotes) asks first when not NULL. */
 static void send_action(httpd_req_t *req, const char *action, const char *label, const char *confirm, bool danger)
 {
-    char buf[400];
+    char buf[640];
     snprintf(buf, sizeof(buf),
              "<form class=inline method=post action=/printer_action%s%s%s><input type=hidden name=action value=%s>"
              "<button%s>%s</button></form> ",
@@ -1031,14 +1032,74 @@ static void send_action(httpd_req_t *req, const char *action, const char *label,
     httpd_resp_sendstr_chunk(req, buf);
 }
 
+/*
+ * A ^HH length counter ("7,509,612 IN", or CM) as "190.7 km" or "350 m";
+ * false if the printer did not list it.
+ */
+static bool counter_text(const zpl_hh_t *hh, const char *name, char *out, size_t out_len)
+{
+    const char *v = hh != NULL ? zpl_hh_get(hh, name) : NULL;
+    if (v == NULL) {
+        return false;
+    }
+    unsigned long long n = 0;
+    bool digit = false;
+    for (; *v != '\0' && (isdigit((unsigned char)*v) || *v == ','); v++) {
+        if (*v != ',') {
+            n = n * 10 + (unsigned)(*v - '0');
+            digit = true;
+        }
+    }
+    while (*v == ' ') {
+        v++;
+    }
+    unsigned long long m;
+    if (strncmp(v, "IN", 2) == 0) {
+        m = n * 254 / 10000;
+    } else if (strncmp(v, "CM", 2) == 0) {
+        m = n / 100;
+    } else {
+        return false;
+    }
+    if (!digit) {
+        return false;
+    }
+    if (m < 1000) {
+        snprintf(out, out_len, "%llu m", m);
+    } else {
+        snprintf(out, out_len, "%llu.%llu km", m / 1000, m % 1000 / 100);
+    }
+    return true;
+}
+
+/* The two user counters: what they count and what is left alone, with the current reading when it is known */
+static void send_counter_reset(httpd_req_t *req, const zpl_hh_t *hh, int which)
+{
+    char name[16];
+    char now[24];
+    char label[64];
+    char confirm[240];
+    char action[24];
+    snprintf(name, sizeof(name), "RESET CNTR%d", which);
+    snprintf(action, sizeof(action), "reset_counter%d", which);
+    bool known = counter_text(hh, name, now, sizeof(now));
+    snprintf(label, sizeof(label), "Zero user counter %d%s%s%s", which, known ? " (now " : "", known ? now : "",
+             known ? ")" : "");
+    snprintf(confirm, sizeof(confirm),
+             "Set user counter %d to zero? It counts the length of media printed since it was last zeroed%s%s. "
+             "Total printed and printhead usage are not changed.",
+             which, known ? ", now " : "", known ? now : "");
+    send_action(req, action, label, confirm, true);
+}
+
 static const notice_t s_printer_notices[] = {
     {"sent", "Sent to the printer and saved there."},
     {"same", "Nothing was changed, so nothing was sent."},
     {"calibrate", "Calibrating: the printer feeds labels while it measures them."},
     {"feed", "Fed one label."},
     {"config_label", "Printing the configuration label."},
-    {"reset_counter1", "Counter 1 reset."},
-    {"reset_counter2", "Counter 2 reset."},
+    {"reset_counter1", "User counter 1 set to zero."},
+    {"reset_counter2", "User counter 2 set to zero."},
     {"reset_head_cleaned", "Head cleaning recorded."},
     {"reload_saved", "The printer reloaded its saved settings."},
     {"factory_defaults", "Factory defaults restored. The bridge is finding the printer again to set its serial port."},
@@ -1109,8 +1170,15 @@ static esp_err_t printer_get_page(httpd_req_t *req)
                                   "</form></fieldset>");
     send_test_label_form(req);
     httpd_resp_sendstr_chunk(req, "<fieldset><legend>Reset</legend>");
-    send_action(req, "reset_counter1", "Reset counter 1", "Reset counter 1?", true);
-    send_action(req, "reset_counter2", "Reset counter 2", "Reset counter 2?", true);
+    zpl_hh_t *hh = malloc(sizeof(*hh));
+    int64_t age;
+    if (hh != NULL && !printer_link_get_config(hh, &age)) {
+        free(hh);
+        hh = NULL;
+    }
+    send_counter_reset(req, hh, 1);
+    send_counter_reset(req, hh, 2);
+    free(hh);
     send_action(req, "reload_saved", "Reload saved settings",
                 "Discard unsaved printer changes and reload its saved settings?", true);
     send_action(req, "factory_defaults", "Restore factory defaults",
