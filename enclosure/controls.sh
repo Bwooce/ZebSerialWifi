@@ -34,7 +34,7 @@ ctl nominal                        check_traylid none
 ctl nominal                        check_lid_path none -D '$fn=16'
 ctl "lid undercut under the XIAO"  check_lid      none -D ctl_undercut=true
 ctl "lid undercut under the XIAO"  check_lid_path hit  -D '$fn=16' -D ctl_undercut=true
-# RS232 board + DB9 fore-aft (lips 0.1 in front, lid front wall at 0 behind, tray rear wall 0.25 behind the PCB)
+# RS232 board + DB9 fore-aft (lips 0.1 in front, lid front wall at 0 behind, tray backstop ledge 0.25 behind the PCB)
 ctl "board fwd 0.05"               check_tray    none -D ghost_board_dy=-0.05
 ctl "board fwd 0.05"               check_lid     none -D ghost_board_dy=-0.05
 ctl "board fwd 0.15 (bottom lip)"  check_tray    hit  -D ghost_board_dy=-0.15
@@ -42,7 +42,7 @@ ctl "board fwd 0.15 (top lip)"     check_lid     hit  -D ghost_board_dy=-0.15
 ctl "board fwd 1.2 (bottom lip)"   check_tray    hit  -D ghost_board_dy=-1.2
 ctl "board back 0.2"               check_tray    none -D ghost_board_dy=0.2
 ctl "board back 0.2 (lid wall)"    check_lid     hit  -D ghost_board_dy=0.2
-ctl "board back 0.3 (rear wall)"   check_tray    hit  -D ghost_board_dy=0.3
+ctl "board back 0.3 (backstop)"    check_tray    hit  -D ghost_board_dy=0.3
 # mounting holes off their nominal Y (pins 0.45 clear in Y all round the hole)
 ctl "holes +0.4 Y"                 check_tray    none -D ghost_mh_dy=0.4
 ctl "holes -0.4 Y"                 check_tray    none -D ghost_mh_dy=-0.4
@@ -92,8 +92,35 @@ ctl "dupont +X 1"                  check_lid      none -D 'ghost_dupont_d=[1,0,0
 ctl "dupont -X 1"                  check_lid      none -D 'ghost_dupont_d=[-1,0,0]'
 ctl "dupont down 1"                check_lid      none -D 'ghost_dupont_d=[0,0,-1]'
 ctl "dupont -Y 1 (shield stop)"    check_lid      hit  -D 'ghost_dupont_d=[0,-1,0]'
-ctl "dupont +Y 1 (rear wall)"      check_lid      hit  -D 'ghost_dupont_d=[0,1,0]'
 ctl "dupont up 1 (ceiling)"        check_lid      hit  -D 'ghost_dupont_d=[0,0,1]'
+# revision 4: the housing keep-out, the bend zone and the 5V/GND zone run dupont_rear_clr behind the housing, and
+# the rear wall is 0.73 behind that; the revision 3 rear face (bs_clr behind the PCB) must hit
+ctl "dupont +Y 0.5"                check_lid      none -D 'ghost_dupont_d=[0,0.5,0]'
+ctl "dupont +Y 0.5"                check_tray     none -D 'ghost_dupont_d=[0,0.5,0]'
+ctl "dupont +Y 1 (rear wall)"      check_lid      hit  -D 'ghost_dupont_d=[0,1,0]'
+ctl "dupont +Y 1 (rear wall)"      check_tray     hit  -D 'ghost_dupont_d=[0,1,0]'
+ctl "rev 3 rear face (lid)"        check_lid      hit  -D ctl_rear_rev3=true
+ctl "rev 3 rear face (tray)"       check_tray     hit  -D ctl_rear_rev3=true
+# revision 4: D3/D5 channel 6 mm wide; the revision 3 channel (5 mm) must hit the 6 mm keep-out
+ctl "rev 3 channel vs 6 mm zone"   check_lid      hit  -D wch_hw=2.5 -D ghost_wch_hw=3.0
+# revision 4: pin 9 wire keep-out (joint 2.5 deep, 0.5 above the floor; run 2.0 under the board, 1.0 above the
+# floor; riser in the backstop notch, exactly wire_pass wide, against the rear wall)
+ctl "pin 9 wire down 0.4"          check_tray     none -D 'ghost_p9_d=[0,0,-0.4]'
+ctl "pin 9 wire down 0.6 (floor)"  check_tray     hit  -D 'ghost_p9_d=[0,0,-0.6]'
+ctl "pin 9 wire +X 0.1 (notch)"    check_tray     hit  -D 'ghost_p9_d=[0.1,0,0]'
+ctl "pin 9 wire -X 0.1 (notch)"    check_tray     hit  -D 'ghost_p9_d=[-0.1,0,0]'
+ctl "pin 9 wire +Y 0.1 (rear wall)" check_lid     hit  -D 'ghost_p9_d=[0,0.1,0]'
+ctl "no backstop notch"            check_tray     hit  -D p9_notch=false
+# revision 4: jack screw hardware behind the flange holes (7 mm, 5 mm behind the plate): the front wall is cut back
+# jack_clr above it, the lid side walls are 0.2 outside it (the tray walls, below z 4, are further); revision 3's full-width front wall ("wings") must hit
+ctl "jack hardware up 0.2"         check_lid      none -D 'ghost_jack_d=[0,0,0.2]'
+ctl "jack hardware up 0.4 (wall)"  check_lid      hit  -D 'ghost_jack_d=[0,0,0.4]'
+ctl "jack hardware +X 0.15"        check_lid      none -D 'ghost_jack_d=[0.15,0,0]'
+ctl "jack hardware -X 0.15"        check_lid      none -D 'ghost_jack_d=[-0.15,0,0]'
+ctl "jack hardware +X 0.3 (wall)"  check_lid      hit  -D 'ghost_jack_d=[0.3,0,0]'
+ctl "jack hardware -X 0.3 (wall)"  check_lid      hit  -D 'ghost_jack_d=[-0.3,0,0]'
+ctl "rev 3 wings vs the hardware"  check_lid      hit  -D fw_wings=true
+ctl "rev 3 wings (lid path)"       check_lid_path hit  -D '$fn=16' -D fw_wings=true
 # flange plate (full flange outline to fl_plate_d 5.1): 0.5 deeper must hit the lid front wall; the revision 2 lid
 # (front wall from the steel flange back, fl_plate_d = fl_t) must hit the 5.1 plate: the fault the user reported
 ctl "plate 0.5 deeper"             check_lid      hit  -D ghost_plate_d=5.6

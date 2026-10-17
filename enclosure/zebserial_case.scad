@@ -49,6 +49,12 @@ coupon_z = 18.0;         // the lid coupon is the lid below this Z (walls, front
 ctl_ring_full = false;   // positive control: the shield pad ring over the whole shield, across the D3/D5 wire channel
 fw_relief = true;        // front wall reliefs at the D3/D5 joints (false = positive control)
 ctl_undercut = false;    // positive control for check_lid_path: a lid block 0.5 under the XIAO rear edge, clear when closed
+ctl_rear_rev3 = false;   // positive control: the interior rear face back at revision 3's place (bs_clr behind the PCB)
+fw_wings = false;        // positive control: revision 3's lid front wall, full width behind the plate (the "wings")
+p9_notch = true;         // the pin 9 wire's notch in the backstop (false = positive control)
+ghost_p9_d = [0, 0, 0];  // positive control: moves the pin 9 wire keep-out
+ghost_jack_d = [0, 0, 0];   // positive control: moves the jack screw hardware keep-outs
+ghost_wch_hw = -1;       // D3/D5 channel keep-out half width (-1 = wch_hw; a positive control sets it apart from the case)
 
 /* [Measured by the user (calipers)] */
 board_w = 32.0;          // HW-044 board width (along the DB9 face, X)
@@ -183,6 +189,40 @@ dupont_ceiling_min = 23.4;   // measured: the wires need 25 mm of turning space 
                              // lid ceiling must be at least 25 - 1.6 above the PCB top
 xiao_hdr_min = 0.5;      // minimum gap from the XIAO rear edge to the housing front face
 ghost_dupont_d = [0, 0, 0];   // positive control: moves the Dupont housing and bend zone
+// Revision 4 (after the first print, "the back wall is too close to the dupont pins" and "there isn't enough space to
+// route the wires from the dupont connector back to the xiao"): the housing keep-out, the wire-bend zone and the
+// 5V/GND zone all run dupont_rear_clr further back, and the interior rear face stands behind them. Below the PCB top
+// a backstop ledge stays bs_clr behind the PCB, so the board is located exactly as before.
+dupont_rear_clr = 1.5;   // extra room behind the Dupont housing (revision 3 had 0.48 to the rear wall)
+bend_side = 2.0;         // the wire-bend zone reaches this far either side of the housing in X
+bs_top = -0.2;           // backstop ledge top, relative to the PCB top (it bears on the PCB rear edge below this)
+
+/* [Pin 9 power wire (revision 4)] */
+// The bridge is powered from the printer: a wire from the DB9 pin 9 pad (solder side, -Z) to the XIAO 5V pad. It
+// runs under the board to the rear edge, up through a notch in the backstop behind the PCB, and forward over the
+// -X corner presser into the 5V/GND wire zone. The -X edge is nearer, but the PCB is 0.2 from the side wall there,
+// and the -X wall carries the snap windows, the USB-C slot, tongue and relief; the leg tail is in the way under it.
+p9_on = true;
+p9_x = -4.155;           // pin 9 pad: the -X end of the 4-pin row (DE-9 pitch 2.77, connector centred on X 0)
+p9_y = 7.1;              // ESTIMATE from the annotated photo: the 4-pin row about 1.5 in front of the leg tails
+p9_joint = 3.0;          // joint zone around the pad (square)
+p9_joint_h = 2.5;        // joint zone depth below the PCB underside (pin tail, solder, wire end); 0.5 above the floor
+wire_d = 1.4;            // jumper wire outside diameter (26 AWG Dupont type), for the ghost wire
+wire_pass = 2.0;         // passage width for one wire, and the run's depth under the board
+p9_run_x = -8.0;         // X of the run under the board and of the riser behind the PCB rear edge: clear of the
+                         // header joints (X -3.81), the corner-pin boss (from X -11.05) and the presser (from -11.25)
+
+/* [DB9 jack screw hardware (revision 4)] */
+// The user fits the DB9's jack screws / hex posts. Their tails and nuts stand behind the flange plate at the two
+// flange holes, where revision 3's lid front wall ran full width ("the wings"). The front wall is cut back over
+// them; the plate now bears on it above the hardware and across the top of the DB9 body.
+jack_on = true;
+jack_d = 7.0;            // keep-out diameter (M3 / 4-40 nut or screw tail, about 6 across flats)
+jack_l = 5.0;            // keep-out length behind its start
+jack_y0 = -1;            // start of the keep-out; -1 = fl_plate_d, the back of the flange plate screw holes
+jack_clr = 0.3;          // front wall cut-back above the keep-out
+jack_lead = 0.3;         // 45 degree lead-in on the cut-back front wall's bottom front edges (the wall is 1.6 deep
+                         // there, behind the XIAO lead-in; fw_lead 0.5 would leave under min_wall)
 
 /* [Print / tolerance] */
 wall = 1.6;              // minimum wall (4 perimeters)
@@ -271,7 +311,7 @@ stop_t = 1.6;            // rib thickness in X
 stop_z_clr = 0.1;        // rib bottom above the DB9 body top where it runs over the body
 stop_lead = 0.4;         // 45 degree lead-in on the rib's bottom inner edge (pushes a misplaced XIAO towards -X)
 // D3/D5 wires cross over the XIAO in a channel between their pads (room for the RX diode as well)
-wch_hw = 2.5;            // channel half width
+wch_hw = 3.0;            // channel half width (revision 3: 2.5): two wires and the RX diode side by side
 
 $fn = 48;
 eps = 0.01;
@@ -304,7 +344,9 @@ zx0 = body_h;                        // XIAO underside
 zx1 = zx0 + xiao_pcb_t;              // XIAO top
 usb_cz = zx1 + usb_h / 2;
 y_in0 = y_cf;
-y_in1 = y_pcb1 + bs_clr;             // interior rear face: the backstop behind the PCB
+y_bs = y_pcb1 + bs_clr;              // backstop face behind the PCB rear edge (below bs_top)
+// interior rear face: dupont_rear_clr more room than revision 3, and room for the pin 9 wire behind the PCB
+y_in1 = ctl_rear_rev3 ? y_bs : max(y_bs + dupont_rear_clr, p9_on ? y_pcb1 + wire_pass : 0);
 y_rear_face = y_in1 + max(wall, min_wall + reveal_d);   // rear face at its mid-span: min_wall behind the shadow-line groove
 rear_sag = sag_frac * 2 * x_out;
 y_out1 = y_rear_face + rear_sag;     // outermost Y; the concave rear face comes back to y_rear_face at mid-span
@@ -329,6 +371,7 @@ hdr_yc = y_pcb1 - hdr_row_in;
 hdr_hw = hdr_pins * 2.54 / 2;
 hdr_y0 = hdr_yc - 1.27;
 hdr_y1 = hdr_yc + 1.27;
+hdr_room = hdr_y1 + dupont_rear_clr;  // the Dupont keep-out, bend zone and 5V/GND zone run back to here
 // corner pins
 mh_x = mh_pitch / 2;
 mh_y = y_pcb1 - mh_inset;
@@ -354,6 +397,10 @@ function pad_x(i) = dx(xiao_pad1 + (i - 1) * xiao_pitch);
 wch_c = (pad_x(min(used_pads_front)) + pad_x(max(used_pads_front))) / 2;
 wch0 = wch_c - wch_hw;
 wch1 = wch_c + wch_hw;
+gwch_hw = ghost_wch_hw < 0 ? wch_hw : ghost_wch_hw;
+// jack screw hardware keep-out, behind each flange hole, and the front wall cut-back over it
+jack_ys = jack_y0 < 0 ? fl_plate_d : jack_y0;
+jack_cut_z = hole_z + jack_d / 2 + jack_clr;
 // shield outline (X, Y)
 sh_x0 = dx(shield_d0);  sh_x1 = dx(shield_d1);
 sh_y0 = wy(-shield_w / 2);  sh_y1 = wy(shield_w / 2);
@@ -436,7 +483,14 @@ if (lip_t_bot < ds_top + lip_ds_clr || lip_b_top > ds_bot - lip_ds_clr)
     echo("ZEBCASE WARNING: a flange lip comes within lip_ds_clr of the D-shell");
 if (lip_x > fl_hole_pitch / 2 - 3.5) echo("ZEBCASE WARNING: the lips reach the jackpost area at the flange holes");
 if (dupont_on) echo(str("ZEBCASE DUPONT: housing X +-", hdr_hw, " Y ", hdr_y0, "..", hdr_y1, " to z ", dupont_top,
-                        "; wire-bend zone from z ", dupont_top, " to the ceiling at ", z_ceil));
+                        ", keep-out to Y ", hdr_room, " (interior rear face ", y_in1, ", backstop ", y_bs, " below z ", bs_top,
+                        "); wire-bend zone X +-", hdr_hw + bend_side, " Y ", yx1, "..", hdr_room, " from z ", dupont_top,
+                        " to the ceiling at ", z_ceil));
+if (p9_on) echo(str("ZEBCASE PIN 9 WIRE: pad X ", p9_x, " Y ", p9_y, " (estimate); run under the board at X ", p9_run_x,
+                    " +-", wire_pass / 2, ", z ", -pcb_t - wire_pass, "..", -pcb_t, " (floor top ", z_floor,
+                    "); riser behind the PCB Y ", y_pcb1, "..", y_pcb1 + wire_pass, " up to the 5V/GND zone"));
+if (jack_on) echo(str("ZEBCASE JACK HARDWARE: X +-", fl_hole_pitch / 2, " z ", hole_z, ", d ", jack_d, ", Y ", jack_ys, "..",
+                      jack_ys + jack_l, "; front wall cut back beside the DB9 body up to z ", jack_cut_z));
 if (!front_on_body) echo(str("ZEBCASE WARNING: the XIAO lies only ", body_overlap, " mm on the DB9 body (needs ", front_rest_min, ")"));
 if (leg_pocket_on && leg_pocket_bot < z_bot + 0.8)
     echo(str("ZEBCASE WARNING: the leg-tail pocket bottom (z ", leg_pocket_bot, ") comes within 0.8 mm of the tray floor bottom"));
@@ -522,6 +576,11 @@ module tray(logo = logo_mode) union() {
                     leg_y - leg_py - leg_boss_wall, leg_y + leg_py + leg_boss_wall, z_floor - eps, leg_boss_top);
             // corner pins through the mounting holes, on bosses under the solder side
             mirror_x_both() corner_pin();
+            // backstop ledge behind the PCB rear edge, below the PCB top, with the pin 9 wire's notch
+            if (y_in1 > y_bs) difference() {
+                box(-x_in - eps, x_in + eps, y_bs, y_in1 + eps, z_floor - eps, bs_top);
+                if (p9_on && p9_notch) box(p9_run_x - wire_pass / 2, p9_run_x + wire_pass / 2, y_bs - 1, y_in1 + eps, z_floor - 1, bs_top + 1);
+            }
             usb_tongue();
         }
         if (leg_pocket_on) mirror_x_both() translate([lug_hx, leg_y, 0]) leg_pocket();
@@ -644,6 +703,17 @@ module lid(xcap = true) union() {
         }
         // DB9 rear body
         box(-body_cut_x, body_cut_x, y_fb - 1, y_body1 + pcb_clr, -1, body_h + pcb_clr);
+        // revision 4: the front wall beside the DB9 body (revision 3's "wings") cut back over the jack screw
+        // hardware, with the plate bearing above it; 45 degree lead-ins on the new bottom front edges
+        if (jack_on && !fw_wings) {
+            mirror_x_both() {
+                box(body_cut_x - eps, x_in + eps, fl_plate_d - 1, y_fw1 + 1, split_z - 1, jack_cut_z);
+                yz_prism([[fl_plate_d - 1, jack_cut_z - 1], [fl_plate_d + jack_lead + 1, jack_cut_z - 1],
+                          [fl_plate_d - 1, jack_cut_z + jack_lead + 1]], body_cut_x - eps, x_in + eps);
+            }
+            yz_prism([[fl_plate_d - 1, body_h + pcb_clr - 1], [fl_plate_d + jack_lead + 1, body_h + pcb_clr - 1],
+                      [fl_plate_d - 1, body_h + pcb_clr + jack_lead + 1]], -body_cut_x, body_cut_x);
+        }
         if (step_on) box(-step_wx / 2 - pcb_clr, step_wx / 2 + pcb_clr, y_fb - 1, y_fb + step_d + pcb_clr, -1, step_h + pcb_clr);
         // front wall at XIAO height: a 45 degree lead-in on its rear face, so a XIAO up to xlead too far forward is
         // pushed back as the lid closes, and reliefs for the D3/D5 solder joints on the XIAO front edge
@@ -798,6 +868,9 @@ module ghost_db9() {
         else box(-leg_w / 2, leg_w / 2, -leg_t / 2, leg_t / 2, leg_tip, lug_h);
     if (!leg_pocket_on) gcol("orange", 0.3) mirror_x_both() translate([lug_hx + ghost_lug_dx, leg_y + ghost_lug_dy, 0])
         box(-leg_ko_x, leg_ko_x, -leg_ko_y, leg_ko_y, leg_tip, -pcb_t);
+    // jack screw tails / nuts behind the flange holes (revision 4), a keep-out
+    if (jack_on) gcol("gold", 0.6) translate(ghost_jack_d) mirror_x_both()
+        translate([fl_hole_pitch / 2, jack_ys, hole_z]) rotate([-90, 0, 0]) cylinder(d = jack_d, h = jack_l, $fn = 32);
     gcol("dimgray") {
         box(-body_w / 2, body_w / 2, y_fb, y_body1, 0, body_h);
         if (step_on) box(-step_wx / 2, step_wx / 2, y_fb, y_fb + step_d, 0, step_h);
@@ -823,7 +896,9 @@ module ghost_rs232() {
 // Dupont housing on the header and the wire-bend zone above it and forward to the XIAO, up to the ceiling
 module ghost_dupont() if (dupont_on) translate(ghost_dupont_d) {
     gcol("dimgray") box(-hdr_hw, hdr_hw, hdr_y0, hdr_y1, 0, dupont_top);
-    gcol("cyan", 0.3) box(-hdr_hw, hdr_hw, yx1, hdr_y1, dupont_top, z_ceil - eps);
+    // the room behind the housing (revision 4): pins, housing and wires lean back here
+    gcol("cyan", 0.3) box(-hdr_hw, hdr_hw, hdr_y1, hdr_room, 0, dupont_top);
+    gcol("cyan", 0.3) box(-hdr_hw - bend_side, hdr_hw + bend_side, yx1, hdr_room, dupont_top, z_ceil - eps);
 }
 
 // XIAO in the case frame: d (from the USB end) along +X, w (across) along +Y
@@ -858,6 +933,10 @@ module ghost_wires() {
         for (k = [0, 1]) let(px = pad_x(used_pads_rear[k]))
             wire([[hx(k), hdr_yc, T], [hx(k), hdr_yc, T + 1.6], [-hdr_hw - 1, yx1 + 0.9, T + 0.6],
                   [px, yx1 + 0.6, zx1 + 3], [px, yx1 - 0.4, zx1 + 0.8]]);
+        // pin 9 -> 5V: under the board to the rear edge, up behind it, forward to the 5V pad
+        if (p9_on) let(px = pad_x(used_pads_rear[0]), zr = -pcb_t - wire_pass / 2, yr = y_pcb1 + wire_pass / 2)
+            translate(ghost_p9_d) wire([[p9_x, p9_y, -pcb_t - 0.6], [p9_x, p9_y, zr], [p9_run_x, p9_y, zr],
+                  [p9_run_x, yr, zr], [p9_run_x, yr, zx1 + 3], [px, yx1 + 0.6, zx1 + 3], [px, yx1 - 0.4, zx1 + 0.8]]);
         for (k = [0, 1]) let(px = pad_x(used_pads_front[k]), cx = wch_c + (k - 0.5) * 2)
             wire([[hx(k + 2), hdr_yc, T], [hx(k + 2), hdr_yc, T + 1.6], [cx, yx1 + 0.9, T + 1.8],
                   [cx, yx1 - 1, T + 1.8], [cx, yx0 + 3.5, zx1 + shield_h + 1.5], [px, yx0 + 0.8, zx1 + 2], [px, yx0 + 0.4, zx1 + 0.8]]);
@@ -871,12 +950,20 @@ module wire_zones() {
         for (i = used_pads_front)
             box(pad_x(i) - joint_half, pad_x(i) + joint_half, yx0 - 0.9, sh_y0, zx0, zx1 + 3);
         // the D3/D5 channel across the XIAO top, front edge to the bend zone
-        box(wch0, wch1, yx0, yx1 + eps, zx1, z_ceil - eps);
+        box(wch_c - gwch_hw, wch_c + gwch_hw, yx0, yx1 + eps, zx1, z_ceil - eps);
         // 5V/GND: from the bend zone -X over the rear edge strip to their pads
-        box(pad_x(min(used_pads_rear)) - joint_half, -hdr_hw + eps, yx1 - 2.6, hdr_y1, zx1, z_ceil - eps);
+        box(pad_x(min(used_pads_rear)) - joint_half, -hdr_hw + eps, yx1 - 2.6, hdr_room, zx1, z_ceil - eps);
         // under the 5V/GND pads (underside joints; the XIAO overhangs the PCB there)
         for (i = used_pads_rear)
             box(pad_x(i) - joint_half, pad_x(i) + joint_half, yx1 - 2.6, yx1 + 0.9, 0.3, zx0 + eps);
+        // pin 9 wire (revision 4): the joint under the pad, the run under the board to the rear edge, and the
+        // riser behind the PCB rear edge up into the 5V/GND zone, all wire_pass wide
+        if (p9_on) translate(ghost_p9_d) {
+            box(p9_x - p9_joint / 2, p9_x + p9_joint / 2, p9_y - p9_joint / 2, p9_y + p9_joint / 2, -pcb_t - p9_joint_h, -pcb_t);
+            box(p9_run_x - wire_pass / 2, p9_x, p9_y - wire_pass / 2, p9_y + wire_pass / 2, -pcb_t - wire_pass, -pcb_t);
+            box(p9_run_x - wire_pass / 2, p9_run_x + wire_pass / 2, p9_y - wire_pass / 2, y_pcb1, -pcb_t - wire_pass, -pcb_t);
+            box(p9_run_x - wire_pass / 2, p9_run_x + wire_pass / 2, y_pcb1, y_pcb1 + wire_pass - eps, -pcb_t - wire_pass, z_ceil - eps);
+        }
     }
 }
 

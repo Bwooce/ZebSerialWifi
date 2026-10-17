@@ -5,6 +5,9 @@ DB9), with a Seeed XIAO ESP32-C6 lying across the DB9 body. The DB9 flange sits 
 the D-shell sticks out (6.0 mm), so the unit plugs straight into the printer. Two small lips in front of the flange
 hold the flange and the loose shield. The two parts snap together, with no screws.
 
+This is revision 4, after the first HW-044 print: room for the pin 9 power wire, more room behind and above the Dupont
+plug, and no front wall where the DB9's jack screw hardware sits. See [Revision 4](#revision-4-after-the-first-print).
+
 In use the unit hangs upside down on the printer: the board's solder side and the case's tray floor face up, and the
 logo is inlaid in the tray floor. The XIAO's USB-C comes out of the side away from the printer's parallel port.
 
@@ -62,12 +65,13 @@ In the code, `y_cf` (0) is the case front and `y_fb` (`fl_t`) the flange back.
   parts" (Bambu Studio), so they stay aligned; give the logo part the second filament. The inlay is the first four
   layers on the bed (0.2 + 3 × 0.16 = 0.68 mm), flush with the tray floor. For a single-colour print set
   `logo_mode = "deboss"` (0.68 mm deep) or `"none"` and rebuild.
-- **Size:** 40.4 × 31.7 × 31.2 mm (X × Y × Z, the case shell from the front face at Y 0; the rear face is concave, 30.9 at
-  mid-span). The two flange lips stand 1.3 mm proud of the front face over |X| ≤ 8, so 33.0 mm in Y over the lips, and the metal
-  D-shell 6.0 mm. Revision 2 was 39.9 × 35.4 × 31.2 (36.65 over the lips). The top is 25.0 mm above the RS232 board,
-  exactly the 25 mm limit (`max_above`): the Dupont wires' measured turning space sets it; see below.
-- **Material:** 4.25 cm³ for the tray, 10.73 cm³ for the lid and 0.22 cm³ for the logo inlay, roughly 19 g of PETG at
-  100 %, less with infill. The fit coupons are 3.65 cm³ (tray) and 5.53 cm³ (lid). The slicer figures are in
+- **Size:** 40.4 × 33.5 × 31.2 mm (X × Y × Z, the case shell from the front face at Y 0; the rear face is concave, 32.65 at
+  mid-span). The two flange lips stand 1.3 mm proud of the front face over |X| ≤ 8, so 34.8 mm in Y over the lips, and the metal
+  D-shell 6.0 mm. Revision 3 was 40.4 × 31.7 × 31.2; revision 4 is 1.75 mm longer in Y for the Dupont plug and the pin 9
+  wire. The top is 25.0 mm above the RS232 board, exactly the 25 mm limit (`max_above`): the Dupont wires' measured
+  turning space sets it; see below.
+- **Material:** 4.68 cm³ for the tray, 10.99 cm³ for the lid and 0.22 cm³ for the logo inlay, roughly 20 g of PETG at
+  100 %, less with infill. The fit coupons are 4.08 cm³ (tray) and 5.66 cm³ (lid). The slicer figures are in
   `print/README.md`.
 
 ## Exterior style: faceted pincushion
@@ -80,7 +84,7 @@ follows that.
 
 | Feature | Parameter | Value |
 |---------|-----------|-------|
-| Side and rear faces bow inwards at mid-span (2 % of each face's length) | `sag_frac` | 0.02: 0.63 mm on the sides, 0.81 mm on the rear |
+| Side and rear faces bow inwards at mid-span (2 % of each face's length) | `sag_frac` | 0.02: 0.67 mm on the sides, 0.81 mm on the rear |
 | Each face is three flat facets: a flat middle third, sloping to the corners | `facet_flat` | 0.3 (0 gives a two-facet V) |
 | Each of the 8 corners cut off by a flat plane square to the body diagonal, leaving a triangular facet in plan, side and front views | `corner_facet` | 5.0 mm along each edge (12.4 % of the width) |
 | Small 45° bevel on the vertical corner edges between the facets | `corner_chamfer` | 1.5 mm |
@@ -105,7 +109,7 @@ What the style changed underneath:
 
 - **Wall thickness:**
   - Side walls are 4.0 mm at the corner ends (`side_t`), so that the deepest point of the bow keeps about 3.4 mm. On
-    the −X side that also gives the USB relief its depth (2.07 mm at its shallowest).
+    the −X side that also gives the USB relief its depth (2.03 mm at its shallowest).
   - The rear wall is 1.65 mm at mid-span (`min_wall` + `reveal_d`), so that 1.2 mm is left behind the shadow-line
     groove.
 - **Height:** the lid top is set so the 45° top chamfer leaves 1.2 mm over the USB overmould relief. That alone would
@@ -119,6 +123,29 @@ What the style changed underneath:
   recess would leave under 1.2 mm behind it.
 
 ## How it works
+
+### Revision 4: after the first print
+
+The user printed revision 3 and fitted both boards. Both fit well, and how the boards are located and held is
+unchanged. Four problems, in the user's words, and what changed:
+
+- **"There's no space to route the 5v wire from under the pcb to the xiao."** The bridge is now powered from the
+  printer through a wire from the DB9 pin 9 pad (solder side) to the XIAO's 5V pad. It has a path of its own, 2.0 mm
+  wide for a 1.4 mm jumper wire, under the board to the rear edge, through a notch behind the PCB and up to the 5V/GND
+  wires. See [The pin 9 power wire](#the-pin-9-power-wire).
+- **"The back wall is too close to the dupont pins."** The interior rear face above the PCB moved back 1.75 mm, from
+  0.48 to 2.23 mm behind the Dupont housing (`dupont_rear_clr` 1.5 for the plug, plus 0.25 so the pin 9 wire passes
+  behind the PCB). Below the PCB top a backstop ledge still stands 0.25 behind the PCB rear edge (`bs_clr`), so the
+  board is located exactly as before. The case is 1.75 mm longer in Y.
+- **"There isn't enough space to route the wires from the dupont connector back to the xiao."** The ceiling is already
+  at the 25 mm limit, so the room comes from the rear and from X. The wire-bend zone is 14.2 × 5.2 mm (was 10.2 ×
+  3.7), the 5V/GND zone runs 1.5 mm further back, and the D3/D5 channel is 6.0 mm wide (was 5.0). See
+  [Wires and the Dupont plug](#wires-and-the-dupont-plug).
+- **"The wings behind the RS232 shell don't permit the screws."** The wings were the lid front wall either side of the
+  DB9 body: Y 5.1–7.1, |X| 8.8–16.2, from the split (z 4) up. They were the plate's bearing face beside the body, and the
+  jack screw tails and nuts behind the flange holes (X ±12.5, z 6.25) sat in them. They are cut back to z 10.05 over a
+  keep-out for the hardware. The plate now bears on the front wall above it and across the DB9 body top. See
+  [DB9 and the front face](#db9-and-the-front-face).
 
 ### Revision 3: the HW-044 board
 
@@ -157,10 +184,27 @@ onto them.
   flush with the tray front skin and floor.
 - **Front opening and rear bearing face.** The lid is open across the full interior width from the rim up to z 12.8
   and back to Y 5.1. Its front wall sits behind the plate, Y 5.1–7.1 (`front_wall_t` 2.0, was 3.2), and that face is
-  what the plate back bears on, with no gap: about 139 mm² in all, beside the DB9 body on both sides and across its
-  top, the same area as before (only the wall's depth changed). The front wall's bottom front edge has a 0.5 mm 45°
-  lead-in (`fw_lead`), so a board sitting slightly back is pushed forward onto the lips as the lid closes.
-  `renders/lid_front.png` (lid alone, from the front) and `section_plate.png` (X 12) show it.
+  what the plate back bears on, with no gap.
+  - **Revision 4:** the wall beside the DB9 body (|X| 8.8–16.2, the "wings") stops at z 10.05, over the jack screw
+    hardware (below). The plate bears on it above that, beside the body, and across the DB9 body top: 50.5 mm² in
+    all (revision 3: 139 mm², down to the split). The front wall bears on the plate back only, so this carries the
+    push as the unit goes onto the printer, which is well under what PETG takes on 50 mm².
+  - The new bottom front edges (z 10.05 beside the body, z 10.6 over it) have 0.3 mm 45° lead-ins (`jack_lead`), so
+    a board sitting slightly back is pushed forward onto the lips as the lid closes. The old 0.5 mm lead-in at the
+    split (`fw_lead`) now has no wall left to cut, and 0.5 here left 1.17 mm where the wall is only 1.6 deep behind
+    the XIAO lead-in.
+  - `renders/lid_front.png` (lid alone, from the front), `section_plate.png` (X 12) and `section_jack.png` show it.
+- **Jack screw hardware (revision 4).** The user fits the DB9's jack screws or hex posts. Behind each flange hole a
+  gold keep-out stands for the screw tail and nut: 7.0 mm across (`jack_d`, an M3 or 4-40 nut is about 6 across the
+  flats), from the plate back at Y 5.1 (`jack_y0`; the measured 5.1 is "the back of the flange plate screw holes") 5.0
+  mm back (`jack_l`), centred on X ±12.5, z 6.25.
+  - It is part of the DB9 ghost, so `check_lid`, `check_tray` and `check_lid_path` all test it.
+  - The front wall is cut back 0.3 above it (`jack_clr`), from the DB9 body to the side walls. A cut shaped to the
+    cylinder would leave 0.2 mm slivers beside the body and the side wall.
+  - The lid side walls are 0.2 mm outside it. The XIAO's −X end overhangs it 0.65 mm above (underside z 10.4,
+    keep-out top 9.75).
+  - In front of the flange the hex posts are clear: the lips span only |X| ≤ 8, and nothing else stands in front of
+    Y 0.
 - **Retention lips** (`lip_*`), unchanged. Two lips stand in front of the flange:
   - **Top lip** (lid): over the flange's top margin, from z 11.5 to the flange top, then up the front face.
   - **Bottom lip** (tray): over the PCB front edge and the flange's bottom margin, up to z 1.0.
@@ -201,12 +245,14 @@ onto them.
   - The top is 0.1 below the PCB top, with a 0.4 mm 45° lead-in, so 1.1 mm of straight pin engages the hole. A pin
     standing proud of the board would need a bore in the presser that breaks out of its front face (that version
     left 0.0–0.8 mm slivers, which the wall probe caught).
-- **Backstop rib removed.** The tray rear wall now stands 0.25 mm behind the PCB rear edge (`bs_clr`), the old rib's
-  clearance, so the wall is the backstop. It stops the board going back before the lid is on, and never fights the
-  flange datum. The pins could not do that job: their Y clearance is deliberately larger.
+- **Backstop.** A ledge across the tray rear wall stands 0.25 mm behind the PCB rear edge (`bs_clr`), up to 0.2 mm
+  below the PCB top (`bs_top`). It stops the board going back before the lid is on, and never fights the flange
+  datum. The pins could not do that job: their Y clearance is deliberately larger. In revision 3 the rear wall itself
+  was the backstop; in revision 4 the wall above the board moved 1.75 mm back (for the Dupont plug and the pin 9
+  wire), and the ledge keeps the old face. It has a 2.0 mm notch at X −9..−7 for the pin 9 wire.
 - **Corner pressers** (`cp_*`): each is a block from the lid side and rear walls down to 0.25 mm above the PCB top
   (`press_gap`), over the corner around the hole: X from 2.0 mm inside the hole centre to the PCB edge, Y from 0.8 mm
-  in front of the hole centre (Y 26.2) to the PCB rear edge.
+  in front of the hole centre (Y 26.2) back to the rear wall (Y 31.0).
   - The front face stops at Y 26.2 because the XIAO's 5V/GND solder joints on its rear edge reach Y 25.98 above the
     −X presser. Moved 0.4 forward it hits them (a control).
   - Below the split they stand 0.2 off the tray walls. Above it they are rooted in the lid walls with 45° tops, and
@@ -263,10 +309,11 @@ with the USB end at −X.
   the shell's stadium section, 0.05 mm under the shell bottom (`tongue_gap`) and 0.35 mm off the rounded ends.
 - **Above:** rigid pads from the lid, 0.25 mm (`xpad_gap`) above:
   - **RF shield top:** the ring over the shield outline (inset 0.5), cut back on its +X side for the D3/D5 wire
-    channel. What remains is a U over X −8.79..−5.72.
+    channel. What remains is a U over X −8.79..−6.22 (revision 3: −5.72, before the channel was widened).
   - **USB-C shell's flat top:** from the shell's inner end to the −X wall. This is the support above the USB-C port,
     so a plug pushed in at an angle bears on the case.
-  - **Rear edge strip:** the bottom of the shield stop block (below), over the unused D8/D7 pads, X −0.12..2.6.
+  - **Rear edge strip:** the bottom of the shield stop block (below), over the unused D8/D7 pads, X 0.38..2.6
+    (revision 3: from −0.12).
   - The lid's USB slot, 0.2 mm above the shell, is the first thing a rising XIAO meets: up 0.2 is clear, up 0.3
     hits.
 - **−X:** the lid's −X wall, 0.2 mm from the USB-end PCB edge beside the USB slot. Plug extraction bears here.
@@ -328,37 +375,74 @@ interference checks fail if any case feature enters it.
 - **Housing:** 10.16 × 2.54 mm on the header, centred at X 0 and at Y 27.5: the pin row is assumed to be 1.5 mm in
   from the rear edge (`hdr_row_in`, an estimate from the photo). It reaches up to `dupont_top` = 16.7 mm above the PCB
   top (measured: 18.3 mm above the PCB underside).
-- **Wire-bend zone:** above the housing up to the ceiling, and forward over the 1.15 mm gap to the XIAO's rear edge.
+- **Room behind the housing (revision 4):** the keep-out runs 1.5 mm behind the housing (`dupont_rear_clr`), to Y
+  30.27, from the PCB top to the housing top. The rear wall is at Y 31.0: 2.23 mm behind the housing (revision 3:
+  0.48).
+- **Wire-bend zone:** above the housing up to the ceiling, 2.0 mm wider than the housing on each side (`bend_side`),
+  and from the XIAO's rear edge back to Y 30.27: 14.2 × 5.2 mm and 6.7 mm high (revision 3: 10.2 × 3.7). Four 1.4 mm
+  wires abreast take 5.6 mm, and the RX diode beside them (DO-41, 2.7 mm across) 8.3 mm.
   The ceiling is at least `dupont_ceiling_min` = 23.4 mm above the PCB top (the user's 25 mm of turning space from
   the PCB underside) and at least `dupont_bend_h` = 4.0 above the housing. With the 1.6 mm top skin that puts the
-  outside top at 25.0 mm, exactly `max_above`; there is no margin left in the envelope, and the model asserts it.
+  outside top at 25.0 mm, exactly `max_above`; there is no margin left in the envelope, and the model asserts it. So
+  the extra room had to come from the rear and from X.
 
 The wires leave the top of the housing. The magenta wire zones are keep-outs, and the interference check fails if any
 case feature enters them:
 
 - **5V/GND:** from the bend zone towards −X, over the gap in front of the housing, down onto the rear-edge pads. The
-  zone is X −14.85 to −5.08, from the XIAO top to the ceiling. A second zone sits under those pads for underside
-  joints.
-- **D3/D5:** over the housing and forward across the XIAO through a 5 mm channel over the shield (X −5.42..−0.42,
-  `wch_hw`), from the XIAO top to the ceiling. They come down onto the front-edge pads, in front of the shield, in the
-  front wall's relief. The shield pad is cut back for the channel, and the shield stop block sits on the channel's +X
-  side.
-- The channel is also the room for the RX diode: 5 mm wide and 9.6 mm from the shield top to the ceiling, enough for a
-  DO-41 body (2.7 × 5.2) laid along it.
+  zone is X −14.85 to −5.08 and Y 22.48 to 30.27 (revision 3: to 28.77), from the XIAO top to the ceiling. The pin 9
+  wire joins it (below). A second zone sits under those pads for underside joints.
+- **D3/D5:** over the housing and forward across the XIAO through a 6.0 mm channel over the shield (X −5.92..0.08,
+  `wch_hw` 3.0; revision 3: 5.0), from the XIAO top to the ceiling. They come down onto the front-edge pads, in front
+  of the shield, in the front wall's relief. The shield pad is cut back for the channel, and the shield stop block
+  sits on the channel's +X side.
+- The channel is also the room for the RX diode: 6.0 mm wide and 9.6 mm from the shield top to the ceiling. A DO-41
+  body (2.7 × 5.2) laid along it beside the D5 wire takes 4.1 mm; a BAT54 (SOT-23, 2.9 × 1.3) less. There is more
+  open space in front of the shield (Y 7.1–10.4, over the whole XIAO length), above the D3 pad, if the diode sits
+  right at the pad.
 
 The green ghost wires show one feasible route, and the interference check confirms that no case feature crosses it.
 Which header pin carries which signal is not modelled; the wires can cross in the bend zone.
 
 - **Moved 1 mm** (`ghost_dupont_d`): ±X and down stay clear. −Y meets the shield stop block (the bend zone runs up to
-  it), +Y meets the rear wall (the housing is 0.48 mm from it), and up meets the ceiling (the zone runs to it by
-  definition).
+  it), +Y meets the rear wall (the keep-out ends 0.73 mm from it; +Y 0.5 stays clear), and up meets the ceiling (the
+  zone runs to it by definition).
+
+### The pin 9 power wire
+
+The bridge takes its 5 V from the printer: a wire from the DB9 pin 9 pad on the solder side (−Z, facing the tray
+floor) to the XIAO's 5V pad (rear edge, X −13.08). See the top-level README for the wiring.
+
+- **Pin 9 pad:** X −4.155, the −X end of the 4-pin row (DE-9 pitch 2.77, the connector centred on X 0; in the
+  annotated photo, pin 9 is at the bottom of the 4-pin row, towards −X). Y 7.1 (`p9_y`) is an estimate from the photo:
+  the 4-pin row is about 1.5 mm in front of the leg tails.
+- **Which edge.** The front edge is under the flange. The −X edge is the nearest free one, but it does not work: the
+  PCB is 0.2 mm from the side wall there, so the wire would need a groove in the wall, and the −X wall already carries
+  the two snap windows and finger slots, the USB-C slot, tongue and relief. Under the board the leg tail is in the
+  way too. The rear edge needs only a notch in the backstop, and the revision 4 rear room gives it space behind the
+  PCB.
+- **The path** (magenta keep-out, all 2.0 mm wide, `wire_pass`; green ghost wire):
+  1. **Joint:** 3 × 3 mm around the pad (`p9_joint`), 2.5 mm below the PCB underside (`p9_joint_h`): pin tail,
+     solder and wire end. It ends 0.5 above the floor.
+  2. **Run under the board:** from the pad −X to X −8 (`p9_run_x`), then back to the PCB rear edge. It is 2.0 deep
+     below the PCB (z −1.6..−3.6), so a wire lying flat has 0.6 mm spare, and the floor is 1.0 mm below it. It
+     passes 0.6 mm clear of the leg-tail keep-out and 2.05 mm from the −X corner-pin boss.
+  3. **Up behind the PCB rear edge:** through the 2.0 mm notch in the backstop ledge (X −9..−7, Y 29.0–31.0, the
+     PCB edge to the rear wall), then straight up between the −X corner presser (2.25 mm away) and the Dupont housing
+     (1.92 mm away).
+  4. **Into the 5V/GND zone** above the XIAO top, and forward to the 5V pad with the 5V wire from the header.
+- **Solder-side clearance.** There is 3.0 mm between the PCB underside and the floor everywhere under the board, so
+  the joint and a flat wire fit with no relief. A floor relief would not be possible anyway: the pad is over the logo,
+  where the floor is 0.92 mm.
+- `renders/section_p9.png` (X −9..−7, from +X) shows the run, the notch and the riser; `section_plan_wires.png` (plan,
+  z 11.3–23.3) shows the riser joining the 5V/GND zone, the bend zone and the channel.
 
 ### Lid-tray snaps
 
-- **Fingers:** there are two snap fingers per side (Y 6.3 and 25.65), 1.4 mm thick and 6 mm wide, flush with the
-  outside.
+- **Fingers:** there are two snap fingers per side (Y 6.3 and 27.4; the rear pair moved back 1.75 mm with the rear
+  wall in revision 4), 1.4 mm thick and 6 mm wide, flush with the outside.
   - Their positions are set by the −X USB slot. Each finger's lid slot stays at least 1.2 mm clear of it: 1.7 mm in
-    front, 1.29 mm behind. The pattern is mirrored to the +X side.
+    front, 3.04 mm behind. The pattern is mirrored to the +X side.
   - The free length is 9 mm: 4 mm is slotted into the lid wall, and 5 mm hangs below the split.
   - In the lid wall the slot is 0.6 mm behind the finger (`lc_slot_back`), wide enough that PETG cannot bridge and
     weld it.
@@ -379,8 +463,9 @@ Which header pin carries which signal is not modelled; the wires can cross in th
   WiFi arcs), every corner rounded to `logo_round` 0.62.
 - **Where:** inlaid in the outside of the tray floor, the face that is up when the unit hangs on the printer and the
   bed side in print.
-- **Size:** 25 mm wide (`logo_w`), 24.6 mm tall, centred on the floor flat. The floor flat is 27.9 mm deep
-  (Y 1.5–29.4 at mid-span), so the height sets the size and leaves 1.63 mm front and rear (5.6 mm at the sides).
+- **Size:** 25 mm wide (`logo_w`), 24.6 mm tall, centred on the floor flat. The floor flat is 29.65 mm deep
+  (Y 1.5–31.15 at mid-span), so it leaves 2.51 mm front and rear (5.5 mm at the sides). It was sized when the floor
+  was 27.9 mm deep (revision 3), and left at 25 mm.
   - At this size every stroke and gap is at least 1.2 mm (three 0.4 mm lines, `logo_min`). `part="check_logo"`
     checks it: what is thinner than `logo_min` survives "shape minus its opening", and narrower gaps survive
     "closing minus shape". Both are empty.
@@ -406,10 +491,10 @@ known snap hooks, gusset and tongue edges.
 
 - **`part="coupon_tray"`** (`out/coupon_tray.stl`, 3.65 cm³) is the whole tray with the middle of its floor cut out
   (`coupon_floor`).
-  - It keeps the front skin and bottom lip, the ledges, both corner pins on their bosses, the rear wall (the
-    backstop), the snap pockets and the USB tongue.
+  - It keeps the front skin and bottom lip, the ledges, both corner pins on their bosses, the backstop ledge, the
+    snap pockets and the USB tongue.
   - So the riskiest dimension can be tested: the 27.0 mm from the flange to the hole centres, against the lips and
-    the rear wall.
+    the backstop.
 - **`part="coupon_lid"`** (`out/coupon_lid.stl`, 5.53 cm³) is the lid below Z 18 (`coupon_z`), printed cut face down.
   - It keeps the front wall and its plate bearing face, the top lip, the corner pressers, the snap fingers, the USB
     slot and relief, and the stop rib.
@@ -418,12 +503,15 @@ known snap hooks, gusset and tongue edges.
 
 ## Assembly order
 
-1. **Board into the tray.** Lower the HW-044 (DB9 fitted, shield on) straight down, with the flange just behind the
-   bottom lip. The rear-corner holes drop over the pins (0.4 mm lead-ins), and the PCB lands on the front skin, the
+1. **Board into the tray.** Solder the pin 9 wire to the pin 9 pad first, lying flat along the solder side towards
+   −X and then to the rear edge at X −8 (about 4 mm outboard of the header's −X pin), and bend it up there. Lower the
+   HW-044 (DB9 fitted with its jack screws, shield on) straight down, with the flange just behind the bottom lip; the
+   wire goes up through the notch in the backstop behind the board. The rear-corner holes drop over the pins (0.4 mm lead-ins), and the PCB lands on the front skin, the
    ledges and the pin bosses. The D-shell passes over the bottom lip (1.05 mm clear at the end).
 2. **XIAO onto the board.** The wires are short and soldered, so keep it tethered:
    1. Plug the Dupont housing onto the header if it is not on yet. 5V/GND go over the gap in front of the housing
-      towards −X, down to their pads on the XIAO's rear edge. D3/D5 go over the housing and forward across the
+      towards −X, down to their pads on the XIAO's rear edge. The pin 9 wire comes forward from behind the −X side of
+      the housing to the 5V pad. D3/D5 go over the housing and forward across the
       middle of the XIAO, between the shield's −X part and the stop block, down to their pads on the front edge.
    2. Lay the XIAO on the DB9 body top, USB-C towards −X, its USB-C shell in the tongue cradle, and its front edge
       about 2.2 mm behind the flange plate.
@@ -450,12 +538,13 @@ known snap hooks, gusset and tongue edges.
 
 Each must have zero volume. Zero-thickness contact faces are designed contacts:
 
-- the flange plate back on the lid front wall (Y 5.1; it shows from z 4.5, above the front wall lead-in)
+- the flange plate back on the lid front wall (Y 5.1; it shows from z 10.35, above the new lead-in)
 - the PCB on the front skin, the ledges and the pin bosses
 - the leg-tail keep-out on the floor top (the tails reach it)
 - the lid rim on the tray rim, and the shield stop block's rear face on the Dupont bend zone
+- the pin 9 wire's riser on the sides of the backstop notch (the notch is exactly `wire_pass` wide)
 
-**Controls** (`./controls.sh`, 65 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` line such as a
+**Controls** (`./controls.sh`, 85 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` line such as a
 failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each
 moves one ghost (or one feature) and states whether a check must find real overlap (any piece of at least 0.01 mm³)
 or none. I looked at where each positive control hits, not only that it hits:
@@ -465,9 +554,9 @@ or none. I looked at where each positive control hits, not only that it hits:
 | board + DB9 forward 0.05 | tray, lid | none (lips 0.1 in front) |
 | board + DB9 forward 0.15 | tray / lid | hits the bottom lip / the top lip |
 | board + DB9 forward 1.2 | tray | hits the bottom lip (and the pins, and the pin zone in the front skin) |
-| board + DB9 back 0.2 | tray | none (rear wall 0.25 behind) |
+| board + DB9 back 0.2 | tray | none (backstop ledge 0.25 behind) |
 | board + DB9 back 0.2 | lid | hits the lid front wall (the datum, zero gap) |
-| board + DB9 back 0.3 | tray | hits the rear wall |
+| board + DB9 back 0.3 | tray | hits the backstop ledge |
 | mounting holes ±0.4 in Y | tray | none |
 | mounting holes ±0.5 in Y | tray | hits the corner pins |
 | board + DB9 ±0.15 in X | tray | none |
@@ -489,7 +578,17 @@ or none. I looked at where each positive control hits, not only that it hits:
 | shield pad ring over the whole shield (`ctl_ring_full`) | lid | hits the D3/D5 channel |
 | front wall without its joint reliefs (`fw_relief=false`) | lid | hits the D3/D5 pad zones |
 | Dupont keep-out ±X 1 / down 1 | lid | none |
-| Dupont keep-out −Y 1 / +Y 1 / up 1 | lid | hits the shield stop block / the rear wall / the ceiling |
+| Dupont keep-out −Y 1 / up 1 | lid | hits the shield stop block / the ceiling |
+| Dupont keep-out +Y 0.5 / +Y 1 | tray, lid | none / hits the rear wall |
+| revision 3 rear face (`ctl_rear_rev3`) | tray / lid | hits the rear wall (Dupont rear room 41 mm³, pin 9 riser 26 mm³) / 375 mm³ |
+| revision 3 channel (`wch_hw` 2.5) against the 6 mm keep-out | lid | hits the shield stop block and the shield pad ring |
+| pin 9 wire keep-out down 0.4 / 0.6 | tray | none / hits the floor under the joint |
+| pin 9 wire keep-out ±X 0.1 | tray | hits the backstop notch side |
+| pin 9 wire keep-out +Y 0.1 | lid | hits the rear wall |
+| backstop without the notch (`p9_notch=false`) | tray | hits the backstop (12 mm³) |
+| jack hardware up 0.2 / 0.4 | lid | none / hits the cut-back front wall, both sides |
+| jack hardware ±X 0.15 / 0.3 | lid | none / hits the lid side wall |
+| revision 3 wings (`fw_wings=true`) | lid / lid path | hits both wings (67 and 53 mm³) / 124 mm³ |
 | flange plate 0.5 deeper (`ghost_plate_d` 5.6) | lid / lid path | hits the front wall (71 mm³) |
 | revision 2 lid (`fl_plate_d` 0.38) against the 5.1 plate | lid | hits (266 mm³): the fault revision 2 fixed |
 | snap pockets 0.3 too tight (`clip_clr` −0.3) | tray / lid | hits the snap pockets (and the USB tongue, whose width uses `clip_clr`) |
@@ -508,7 +607,7 @@ What remains is deliberate, and `build.sh` whitelists exactly these regions (`--
 thickness); any other sample under 1.2 mm fails the build:
 
 - the lid snap hooks (0.95 and 1.10 mm)
-- the 0.92 mm floor skin under the logo pocket, over the logo's footprint only (X ±13, Y 2.5–28.5): the inlay fills
+- the 0.92 mm floor skin under the logo pocket, over the logo's footprint only (X ±13, Y 3.3–29.4): the inlay fills
   the pocket in the two-colour print, and 0.92 mm prints as six solid 0.16 mm layers. This entry moved from the lid
   top (revision 2) to the tray floor with the logo.
 - the tongue's top edges beside the USB cradle, now in the −X wall (0.93–0.95 mm; they taper to the 0.5 mm
@@ -516,7 +615,10 @@ thickness); any other sample under 1.2 mm fails the build:
   0.35 mm off these edges.
 - 1.19 mm at the front bottom floor: the floor / front skin gusset, 1.2 mm by construction square to the 45° chamfer
 
-The probe found and fixed in this revision:
+The probe found and fixed in revision 4: 1.17 and 1.19 mm at the cut-back front wall's bottom edge, where a 0.5 mm
+lead-in met the XIAO lead-in on the 1.6 mm wall; the new lead-ins are 0.3 mm (`jack_lead`).
+
+The probe found and fixed in revision 3:
 
 - 0.0–0.8 mm slivers where a presser bore over a protruding pin broke out of the presser front face; the pin top is
   now below the PCB top.
@@ -555,6 +657,12 @@ mm above the PCB underside with 25 mm of wire turning space. Everything below is
 - **Lips and the printer:** nothing on the printer side should stand within 1.3 mm of our flange over the middle
   16 mm (|X| ≤ 8) above and below the D-shell. In the photo a gender changer sits between the board and the printer.
 - **Step:** none behind the flange (`step_on = false`).
+- **Revision 4 estimates:**
+  - **Pin 9 pad** at X −4.155, Y 7.1 (`p9_x`, `p9_y`): the joint keep-out is 3 × 3, so it only matters if the pad is
+    more than 1.5 mm off.
+  - **Jack screw hardware** behind the flange: within 7 mm across (`jack_d`), 5 mm behind the plate back
+    (`jack_l`), and below z 9.75. The XIAO's −X end is only 0.65 mm above it.
+  - **Wire:** 1.4 mm outside diameter for the pin 9 jumper (`wire_pass` 2.0 gives 0.6 spare).
 
 ## Concerns to check before printing
 

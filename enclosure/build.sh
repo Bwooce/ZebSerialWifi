@@ -59,9 +59,17 @@ run $IMG --camera=-20,16,12,75,0,285,70 -D 'part="assembly"' -o renders/side_usb
 run $IMG --camera=-22,16,10,90,0,270,60 --projection=o -D 'part="assembly"' -D show_ghosts=false -o renders/side_usb_case_only.png
 # y plane through the estimated leg tails (Y 7.6..9.6), from the front: the keep-out (orange) is clear of the tray
 run $IMG --camera=0,16,0,90,0,0,110 --projection=o -D 'part="assembly"' -D show_pin_zone=false -D 'section="y"' -D section_pos=7.6 -D section_t=2 -o renders/section_leg_keepout.png
-# sections through each lid snap finger (front pair at Y 6.3, rear pair at Y 25.6), seen from the front
+# sections through each lid snap finger (front pair at Y 6.3, rear pair at Y 27.4), seen from the front
 run $IMG --camera=0,16,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=5.3 -D section_t=2 -o renders/section_snap_front.png
-run $IMG --camera=0,16,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=24.6 -D section_t=2 -o renders/section_snap_rear.png
+run $IMG --camera=0,16,2,90,0,0,110 --projection=o -D 'part="assembly"' -D show_ghosts=false -D 'section="y"' -D section_pos=26.4 -D section_t=2 -o renders/section_snap_rear.png
+# revision 4: the pin 9 wire (x slab X -9..-7, seen from +X): the run under the board, the notch in the backstop
+# ledge behind the PCB rear edge, and the riser up into the 5V/GND wire zone
+run $IMG --camera=0,16,8,90,0,90,120 --projection=o -D 'part="assembly"' -D 'section="x"' -D section_pos=-7 -D section_t=2 -o renders/section_p9.png
+# revision 4: the jack screw hardware (gold) just behind the flange plate (y slab Y 5.15..7.15, from the front):
+# the lid front wall cut back over it, bearing on the plate above it and across the DB9 body top
+run $IMG --camera=0,16,6,90,0,0,110 --projection=o -D 'part="assembly"' -D show_pin_zone=false -D 'section="y"' -D section_pos=5.15 -D section_t=2 -o renders/section_jack.png
+# revision 4: plan section z 11.3..23.3 from above: D3/D5 channel, wire-bend zone, 5V/GND zone and the pin 9 riser
+run $IMG --camera=0,16,0,0,0,0,105 --projection=o -D 'part="assembly"' -D 'section="z"' -D section_pos=23.3 -D section_t=12 -o renders/section_plan_wires.png
 # exterior style, same viewpoints as the reference renders (plan from above, isometric from the front left)
 run $IMG --camera=0,16,6,0,0,0,120 --projection=o -D 'part="assembly"' -o renders/style_plan.png
 run $IMG --camera=0,16,6,55,0,330,135 -D 'part="assembly"' -o renders/style_iso.png
@@ -116,7 +124,7 @@ echo "== wall thickness (wallprobe.py): every sample under 1.2 mm, grouped; anyt
 #  tray: the floor skin under the logo pocket (0.92), over the logo footprint only: the inlay fills the pocket in the
 #        two-colour print, and the 0.92 prints as six solid 0.16 mm layers
 #  lid:  the snap hooks (about 0.95 and 1.1): the hook profile itself, a 0.6 mm 45 degree bump on the finger
-ALLOW_tray="--allow -20.5 -15.5 10 22.5 10.5 12.5 0.9 --allow -17 17 0 14 -6.5 -1 1.18 --allow -13 13 2.5 28.5 -6.5 -4.5 0.9"
+ALLOW_tray="--allow -20.5 -15.5 10 22.5 10.5 12.5 0.9 --allow -17 17 0 14 -6.5 -1 1.18 --allow -13 13 3.3 29.4 -6.5 -4.5 0.9"
 ALLOW_lid="--allow 16 20.5 3 32 -1.5 1 0.9 --allow -20.5 -16 3 32 -1.5 1 0.9"
 for p in tray lid; do
   rm -f "$TMP/${p}_inplace.stl"
