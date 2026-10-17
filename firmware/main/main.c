@@ -65,7 +65,6 @@ static void mdns_setup(void)
         {"product", ZPL_PPD_PRODUCT},
         {"usb_MFG", "Zebra"},
         {"usb_MDL", s_mdns_model[0] != '\0' ? s_mdns_model : "ZPL Printer"},
-        {"note", "ZebSerialWifi"},
         {"adminurl", adminurl},
     };
     mdns_service_add(instance, PDL_SERVICE, "_tcp", CONFIG_ZEB_TCP_PORT, txt,
