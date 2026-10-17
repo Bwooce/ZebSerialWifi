@@ -46,6 +46,8 @@ first.
 
 ## Wiring
 
+![The bench set-up: the printer's serial socket, the gender changer, the module solder side up and the XIAO](docs/images/bench.jpg)
+
 ```
   XIAO ESP32-C6                  MAX3232 module                       gender           Zebra printer
                                  (header)          (its DB9)          changer          (DB9 socket)
@@ -104,6 +106,8 @@ the module, so it needs one extra wire from the pin 9 pad on the back of the mod
   pin 5  ground ────────── 5 ────── pin 5 (module GND) ── header GND ───── GND pad
 ```
 
+![The DB9 pads on the back of the module, labelled with the printer's signal names](docs/images/db9_pads.jpg)
+
 - **The printer only turns pin 9 on once it has fully started.** After the printer is switched on, the bridge stays
   dark through the printer's own start-up and then boots, so it always starts with a printer that is ready. While the
   printer is off, the bridge is off too, and its web page is unreachable.
@@ -136,10 +140,26 @@ The chips on cheap modules are often clones that do not behave like that. In thi
 - **The second module**, the one in the case, is marked "MAX3232" but its charge pump does not start at 3.3 V. At 5 V
   it gives about −8 V and +9 V and works. So it runs on 5 V with the diode.
 
+![The MAX3232 on the HW-044 clone, with its pins labelled](docs/images/max3232_pins.jpg)
+
 To check a module before wiring it in: power it from 3.3 V with nothing on the DB9, and measure DB9 pins 2 and 3
 against pin 5. A working module's transmit pin (pin 2 on this layout) idles at about −5 to −6 V. If both read near 0 V,
 the charge pump is not running at that voltage: try 5 V with the diode, or another module. MAX3232 pin 2 (V+) should
 be about +5.5 V and pin 6 (V−) about −5.5 V.
+
+## Other XIAO boards
+
+The firmware is written for the XIAO ESP32-C6. Another Wi-Fi XIAO (ESP32-C3 or ESP32-S3) should work, but needs a
+small port that has not been done:
+
+- **Build target:** `idf.py set-target esp32c3` (or `esp32s3`).
+- **Pin numbers:** the firmware uses GPIO numbers, not XIAO pad names. D3 and D5 are GPIO21 and GPIO23 on the C6, but
+  different GPIOs on the other boards (`board.c`, `Kconfig.projbuild`).
+- **Antenna, LED and BOOT button:** `board.c` drives the C6's RF switch (GPIO3 and GPIO14), its LED (GPIO15) and BOOT
+  (GPIO9). Those lines would need changing or removing. The C3 and S3 use a plug-in antenna, which must be fitted.
+- **Case:** `enclosure/` is built around the C6's outline, USB-C and shield.
+
+The XIAO nRF52840, RP2040 and SAMD21 have no Wi-Fi, so they cannot be used.
 
 ## Printer serial settings
 
@@ -228,4 +248,3 @@ project and its settings. The unit plugs straight into the printer's serial sock
 | "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within a few minutes. The D5 pull-up stops it at the source. |
 | Printer page: "No complete reply to ^HH" | The printer has stopped running formats (seen once with the head not fully latched). Close the head properly and turn the printer off and on. |
 | No 5 V on pin 9 at the module | The gender changer does not carry pin 9, or a bad connection; measure at the printer's own socket |
-| Mac uses Generic PostScript | An old Bonjour record; quit System Settings and add the printer again |
