@@ -1,7 +1,6 @@
 #include "web.h"
 
 #include <stdio.h>
-#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1032,63 +1031,19 @@ static void send_action(httpd_req_t *req, const char *action, const char *label,
     httpd_resp_sendstr_chunk(req, buf);
 }
 
-/*
- * A ^HH length counter ("7,509,612 IN", or CM) as "190.7 km" or "350 m";
- * false if the printer did not list it.
- */
-static bool counter_text(const zpl_hh_t *hh, const char *name, char *out, size_t out_len)
+/* The two user counters: what they count, and what zeroing one leaves alone */
+static void send_counter_reset(httpd_req_t *req, int which)
 {
-    const char *v = hh != NULL ? zpl_hh_get(hh, name) : NULL;
-    if (v == NULL) {
-        return false;
-    }
-    unsigned long long n = 0;
-    bool digit = false;
-    for (; *v != '\0' && (isdigit((unsigned char)*v) || *v == ','); v++) {
-        if (*v != ',') {
-            n = n * 10 + (unsigned)(*v - '0');
-            digit = true;
-        }
-    }
-    while (*v == ' ') {
-        v++;
-    }
-    unsigned long long m;
-    if (strncmp(v, "IN", 2) == 0) {
-        m = n * 254 / 10000;
-    } else if (strncmp(v, "CM", 2) == 0) {
-        m = n / 100;
-    } else {
-        return false;
-    }
-    if (!digit) {
-        return false;
-    }
-    if (m < 1000) {
-        snprintf(out, out_len, "%llu m", m);
-    } else {
-        snprintf(out, out_len, "%llu.%llu km", m / 1000, m % 1000 / 100);
-    }
-    return true;
-}
-
-/* The two user counters: what they count and what is left alone, with the current reading when it is known */
-static void send_counter_reset(httpd_req_t *req, const zpl_hh_t *hh, int which)
-{
-    char name[16];
-    char now[24];
-    char label[64];
-    char confirm[240];
+    char label[32];
+    char confirm[300];
     char action[24];
-    snprintf(name, sizeof(name), "RESET CNTR%d", which);
     snprintf(action, sizeof(action), "reset_counter%d", which);
-    bool known = counter_text(hh, name, now, sizeof(now));
-    snprintf(label, sizeof(label), "Zero user counter %d%s%s%s", which, known ? " (now " : "", known ? now : "",
-             known ? ")" : "");
+    snprintf(label, sizeof(label), "Zero user counter %d", which);
     snprintf(confirm, sizeof(confirm),
-             "Set user counter %d to zero? It counts the length of media printed since it was last zeroed%s%s. "
-             "Total printed and printhead usage are not changed.",
-             which, known ? ", now " : "", known ? now : "");
+             "Set user counter %d to zero? The printer has two counters of the media it prints that you can zero "
+             "yourself, for example at a new roll or the start of a job. Total printed and printhead usage are "
+             "not changed.",
+             which);
     send_action(req, action, label, confirm, true);
 }
 
@@ -1170,15 +1125,8 @@ static esp_err_t printer_get_page(httpd_req_t *req)
                                   "</form></fieldset>");
     send_test_label_form(req);
     httpd_resp_sendstr_chunk(req, "<fieldset><legend>Reset</legend>");
-    zpl_hh_t *hh = malloc(sizeof(*hh));
-    int64_t age;
-    if (hh != NULL && !printer_link_get_config(hh, &age)) {
-        free(hh);
-        hh = NULL;
-    }
-    send_counter_reset(req, hh, 1);
-    send_counter_reset(req, hh, 2);
-    free(hh);
+    send_counter_reset(req, 1);
+    send_counter_reset(req, 2);
     send_action(req, "reload_saved", "Reload saved settings",
                 "Discard unsaved printer changes and reload its saved settings?", true);
     send_action(req, "factory_defaults", "Restore factory defaults",
