@@ -25,33 +25,57 @@ static const char *TAG = "remote_log";
 #define QUEUE_BYTES 12288      /* holds the boot log, Wi-Fi chatter included, until Wi-Fi is up */
 #define SENDER_STACK 6144      /* iot_log needs about 2 KB of buffers on the stack */
 #define SENDER_PRIO 2
+#define SEND_RETRIES 3         /* a burst (the queued boot log) can run out of Wi-Fi TX buffers */
+#define SEND_RETRY_MS 20
 
 static vprintf_like_t s_prev_vprintf;
 static RingbufHandle_t s_queue;
 static TaskHandle_t s_task;
 static volatile bool s_on;
 static volatile int s_level = 3;
+/* The line being built: the Wi-Fi driver prints "I (471) wifi:" and its text in two calls */
 static char s_line[RLOG_LINE_MAX + 1];
+static size_t s_line_len;                 /* an unfinished line (no newline yet) is held here */
+static TaskHandle_t s_line_task;          /* the task that started it */
 static atomic_flag s_line_busy = ATOMIC_FLAG_INIT;
 static volatile uint32_t s_hook_dropped;  /* queue full, or two tasks logging at once */
+static volatile uint32_t s_send_dropped;  /* not sent after SEND_RETRIES */
 static volatile bool s_running;           /* iot_log initialised */
+static bool s_unicast;                    /* a receiver address is set */
+
+/* Queue s_line[0..len) if its level passes. Hook only, under s_line_busy. */
+static void queue_line(size_t len)
+{
+    len = log_line_trim(s_line, len);
+    int level = log_line_level(s_line, len);
+    if (len > 0 && (level == 0 ? 3 : level) <= s_level && xRingbufferSend(s_queue, s_line, len, 0) != pdTRUE) {
+        s_hook_dropped++;
+    }
+}
 
 static int log_hook(const char *fmt, va_list args)
 {
     va_list copy;
     va_copy(copy, args);
     int ret = s_prev_vprintf(fmt, args);
-    if (s_on && !xPortInIsrContext() && xTaskGetCurrentTaskHandle() != s_task) {
+    TaskHandle_t me = xTaskGetCurrentTaskHandle();
+    if (s_on && !xPortInIsrContext() && me != s_task) {
         if (atomic_flag_test_and_set(&s_line_busy)) {
             s_hook_dropped++;
         } else {
-            int n = vsnprintf(s_line, sizeof(s_line), fmt, copy);
-            size_t len = n < 0 ? 0 : (size_t)n < sizeof(s_line) ? (size_t)n : sizeof(s_line) - 1;
-            len = log_line_trim(s_line, len);
-            int level = log_line_level(s_line, len);
-            if (len > 0 && (level == 0 ? 3 : level) <= s_level &&
-                xRingbufferSend(s_queue, s_line, len, 0) != pdTRUE) {
-                s_hook_dropped++;
+            if (s_line_len > 0 && s_line_task != me) {
+                queue_line(s_line_len);  /* another task's unfinished line: send it as it is */
+                s_line_len = 0;
+            }
+            size_t room = sizeof(s_line) - s_line_len;
+            int n = vsnprintf(s_line + s_line_len, room, fmt, copy);
+            size_t len = s_line_len + (n < 0 ? 0 : (size_t)n < room ? (size_t)n : room - 1);
+            if (n >= 0 && len > 0 && s_line[len - 1] != '\n' && len < sizeof(s_line) - 1) {
+                s_line_len = len;
+                s_line_task = me;
+            } else {
+                queue_line(len);
+                s_line_len = 0;
             }
             atomic_flag_clear(&s_line_busy);
         }
@@ -102,6 +126,7 @@ static void configure(void)
     lc.level = (iot_log_level_t)cfg.level;
     lc.serial_mirror = false;           /* the lines came from the serial log already */
     lc.unicast_ip = unicast;
+    s_unicast = unicast[0] != '\0';
     if (iot_log_init(&lc) != 0) {
         ESP_LOGW(TAG, "iot_log did not start");
         return;
@@ -149,7 +174,21 @@ static void sender_task(void *arg)
         vRingbufferReturnItem(s_queue, item);
         int level = log_line_level(line, len);
         /* iot_log sends its own level and timestamp, so drop the "W (1234) " prefix */
-        iot_log((iot_log_level_t)(level == 0 ? 3 : level), "%s", line + log_line_body(line, len));
+        for (int attempt = 0;; attempt++) {
+            uint32_t dropped = iot_log_get_dropped_count();
+            iot_log((iot_log_level_t)(level == 0 ? 3 : level), "%s", line + log_line_body(line, len));
+            if (iot_log_get_dropped_count() == dropped) {
+                break;
+            }
+            /* retry only a send that failed: with no receiver at all the line is just dropped */
+            if (attempt == SEND_RETRIES || !(s_unicast || iot_log_listener_active())) {
+                s_send_dropped++;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(SEND_RETRY_MS));
+        }
+        /* pace a backlog: an unpaced burst (the boot log) loses datagrams on the way even when every send succeeds */
+        vTaskDelay(1);
     }
 }
 
@@ -173,5 +212,5 @@ void remote_log_get_status(remote_log_status_t *out)
     out->enabled = s_on;
     out->listener = s_running && iot_log_listener_active();
     out->sent = iot_log_get_sent_count();
-    out->dropped = iot_log_get_dropped_count() + s_hook_dropped;
+    out->dropped = s_send_dropped + s_hook_dropped;
 }
