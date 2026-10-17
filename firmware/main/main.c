@@ -25,6 +25,12 @@ static const char *TAG = "main";
 #define FACTORY_RESET_HOLD_MS 5000
 #define STATUS_TICK_MS 100
 #define PDL_SERVICE "_pdl-datastream"
+/*
+ * The *Product of the "Zebra ZPL Label Printer" driver that ships with macOS
+ * CUPS (drv:///sample.drv/zebra.ppd). macOS picks the driver whose *Product
+ * equals the TXT product; any other value gets Generic PostScript.
+ */
+#define ZPL_PPD_PRODUCT "(ZPL Label Printer)"
 
 /* model in the printer TXT records and service name; saved, and generic until a printer has ever answered ~HI */
 static char s_mdns_model[32];
@@ -39,15 +45,12 @@ static void mdns_setup(void)
     settings_get_model(s_mdns_model);
     char instance[64];  /* a DNS label: 63 bytes at most, so long models are cut to fit a 32-byte hostname */
     char ty[48];
-    char product[48];
     if (s_mdns_model[0] != '\0') {
         snprintf(instance, sizeof(instance), "Zebra %.22s (%s)", s_mdns_model, net.hostname);
         snprintf(ty, sizeof(ty), "Zebra %s", s_mdns_model);
-        snprintf(product, sizeof(product), "(Zebra %s)", s_mdns_model);
     } else {
         snprintf(instance, sizeof(instance), "ZebSerial (%s)", net.hostname);
         strlcpy(ty, "Zebra ZPL Printer", sizeof(ty));
-        strlcpy(product, "(Zebra ZPL Printer)", sizeof(product));
     }
     /* Bonjour printing spec: the printer's web page, shown as "Printer Website" in the macOS print queue */
     char adminurl[64];
@@ -59,7 +62,7 @@ static void mdns_setup(void)
         {"txtvers", "1"},
         {"qtotal", "1"},
         {"ty", ty},
-        {"product", product},
+        {"product", ZPL_PPD_PRODUCT},
         {"usb_MFG", "Zebra"},
         {"usb_MDL", s_mdns_model[0] != '\0' ? s_mdns_model : "ZPL Printer"},
         {"note", "ZebSerialWifi"},
@@ -79,16 +82,11 @@ static void mdns_setup(void)
 static void mdns_set_model(const char *model)
 {
     char ty[48];
-    char product[48];
     char instance[64];
     snprintf(instance, sizeof(instance), "Zebra %.22s (%s)", model, s_mdns_host);
     snprintf(ty, sizeof(ty), "Zebra %s", model);
-    snprintf(product, sizeof(product), "(Zebra %s)", model);
     strlcpy(s_mdns_model, model, sizeof(s_mdns_model));  /* also on failure, so it warns once, not every tick */
     esp_err_t err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "ty", ty);
-    if (err == ESP_OK) {
-        err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "product", product);
-    }
     if (err == ESP_OK) {
         err = mdns_service_txt_item_set(PDL_SERVICE, "_tcp", "usb_MDL", model);
     }
