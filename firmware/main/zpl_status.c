@@ -531,7 +531,8 @@ static const zpl_cfg_desc_t s_cfg_desc[ZPL_CFG_COUNT] = {
     [ZPL_CFG_METHOD] = {"method", "PRINT METHOD", ZPL_CFG_LETTER, "DT"},
     [ZPL_CFG_MODE] = {"mode", "PRINT MODE", ZPL_CFG_LETTER, "TPRCD"},
     [ZPL_CFG_MEDIA] = {"media", "MEDIA TYPE", ZPL_CFG_LETTER, "YMN"},
-    [ZPL_CFG_SENSOR] = {"sensor", "SENSOR SELECT", ZPL_CFG_LETTER, "ART"},
+    /* G-series: SENSOR SELECT is AUTO after ^MNA (media type found at calibration), MANUAL after any other ^MN */
+    [ZPL_CFG_SENSOR] = {"sensor", "SENSOR SELECT", ZPL_CFG_LETTER, "AM"},
     [ZPL_CFG_ZPL_MODE] = {"zpl", "ZPL MODE", ZPL_CFG_INT, NULL},
     [ZPL_CFG_WIDTH] = {"width", "PRINT WIDTH", ZPL_CFG_INT, NULL},
     [ZPL_CFG_LENGTH] = {"length", "LABEL LENGTH", ZPL_CFG_INT, NULL},
@@ -561,8 +562,7 @@ static const text_map_t s_method_map[] = {
 static const text_map_t s_mode_map[] = {
     {"TEAR OFF", 'T'}, {"PEEL OFF", 'P'}, {"REWIND", 'R'}, {"CUTTER", 'C'}, {"DELAYED CUT", 'D'}, {NULL, 0}};
 static const text_map_t s_media_map[] = {{"GAP/NOTCH", 'Y'}, {"MARK", 'M'}, {"CONTINUOUS", 'N'}, {NULL, 0}};
-static const text_map_t s_sensor_map[] = {
-    {"AUTO", 'A'}, {"REFLECTIVE", 'R'}, {"TRANSMISSIVE", 'T'}, {NULL, 0}};
+static const text_map_t s_sensor_map[] = {{"AUTO", 'A'}, {"MANUAL", 'M'}, {NULL, 0}};
 static const text_map_t s_zpl_map[] = {{"ZPL II", 2}, {"ZPL", 1}, {NULL, 0}};
 static const text_map_t s_feed_map[] = {
     {"FEED", 'F'}, {"CALIBRATION", 'C'}, {"LENGTH", 'L'}, {"NO MOTION", 'N'}, {NULL, 0}};
@@ -930,11 +930,16 @@ size_t zpl_cfg_commands(const zpl_printer_cfg_t *want, uint32_t changed, char *o
         if (has(changed, ZPL_CFG_MODE)) {
             append(&a, "^MM%c", v[ZPL_CFG_MODE]);                /* ^MMa Print Mode */
         }
-        if (has(changed, ZPL_CFG_MEDIA)) {
-            append(&a, "^MN%c", v[ZPL_CFG_MEDIA]);               /* ^MNa Media Tracking */
-        }
-        if (has(changed, ZPL_CFG_SENSOR)) {
-            append(&a, "^JS%c", v[ZPL_CFG_SENSOR]);              /* ^JSa Sensor Select */
+        /*
+         * ^MNa Media Tracking. The GK420/GX420 user guide's cross-reference
+         * gives SENSOR SELECT as ^MNA (auto-detect), so the two settings are
+         * one command: A finds the media type at calibration, a media type
+         * letter fixes it (and SENSOR SELECT reads MANUAL).
+         */
+        if (has(changed, ZPL_CFG_SENSOR) && v[ZPL_CFG_SENSOR] == 'A') {
+            append(&a, "^MNA");
+        } else if (has(changed, ZPL_CFG_MEDIA) || has(changed, ZPL_CFG_SENSOR)) {
+            append(&a, "^MN%c", v[ZPL_CFG_MEDIA]);
         }
         if (has(changed, ZPL_CFG_WIDTH)) {
             append(&a, "^PW%d", v[ZPL_CFG_WIDTH]);               /* ^PWa Print Width */

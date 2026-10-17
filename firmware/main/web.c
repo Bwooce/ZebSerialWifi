@@ -1,6 +1,7 @@
 #include "web.h"
 
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "bridge.h"
@@ -441,7 +442,7 @@ static const char STATUS_SCRIPT[] =
     "return si(k,v)}"
     /* a setting the printer form changes reads as the form does: its option text, or its number (and mm) */
     "function val(k,v){if(has(UI,k)&&has(C,k)){var u=UI[k],c=C[k];if(has(u[3],c))return u[3][c];"
-    "if(u[2])return D?c+' dots = '+len(c/D):c+' dots';if(!Object.keys(u[3]).length)return c}return nice(k,v)}"
+    "if(u[2])return D?len(c/D)+' ('+c+' dots)':c+' dots';if(!Object.keys(u[3]).length)return c}return nice(k,v)}"
     /* one clean value per row; the printer's own name and text in the tooltip, or under it when asked */
     "function srow(k,v,m){var s=val(k,v),u=m?unused(k,m):'',t=k+': '+v;if(s==null)s=v;"
     "return '<tr title=\"'+e(t)+'\"'+(u?' style=opacity:.45':'')+'><td>'+e(nm(k))+'</td><td>'+e(s)+"
@@ -476,7 +477,7 @@ static const char STATUS_SCRIPT[] =
     "(p.language?row('Language',(has(LN,p.language)?LN[p.language]:p.language)+"
     "(p.zpl?'':' (not ZPL: jobs pass through, settings unavailable)')):'')+"
     "row('Status',p.hs_valid?flags(p.hs)+' ('+Math.round(p.hs_age_ms/1000)+' s ago)':'unknown')+"
-    "row('Serial link',p.baud+' baud, '+(p.handshake||'handshake unknown')+'\\nTX '+pin(p.tx_gpio)+', RX '+pin(p.rx_gpio)+"
+    "row('Serial link',p.baud+' baud, '+(SER?SER+', ':'')+(p.handshake||'handshake unknown')+'\\nTX '+pin(p.tx_gpio)+', RX '+pin(p.rx_gpio)+"
     "(s.config.target_baud&&s.config.target_baud!=p.baud?'\\nset to '+s.config.target_baud+' baud on the Bridge page':''));"
     "id('tb').innerHTML="
     "row('Wi-Fi',w.ip?w.ssid+', '+w.rssi+' dBm'+(w.phy?', '+w.phy:'')+(w.channel?', channel '+w.channel:''):"
@@ -499,18 +500,24 @@ static const char STATUS_SCRIPT[] =
     /* ^HH names by group, as the Printer page groups its form; names this list does not know go under Other */
     "var G=[['Print',['DARKNESS','PRINT SPEED','PRINT METHOD','PRINT MODE','PRINT WIDTH','LABEL LENGTH','TEAR OFF',"
     "'LABEL TOP','LEFT POSITION','BACKFEED']],"
-    "['Media',['MEDIA TYPE','MAXIMUM LENGTH','MEDIA POWER UP','HEAD CLOSE']],"
-    "['Communications',['BAUD','DATA BITS','PARITY','HOST HANDSHAKE','PROTOCOL','SER COMM. MODE','USB COMM.',"
+    "['Media',['MEDIA TYPE','SENSOR SELECT','MAXIMUM LENGTH','MEDIA POWER UP','HEAD CLOSE']],"
+    "['Communications',['SER COMM. MODE','USB COMM.',"
     "'PARALLEL COMM.','CONTROL CHAR','COMMAND CHAR','DELIM. CHAR','ZPL MODE']],"
-    "['Sensors',['SENSOR TYPE','SENSOR SELECT','WEB S.','MEDIA S.','WEB GAIN','MARK S.','MARK GAIN','MARK MED S.',"
+    "['Sensors',['SENSOR TYPE','WEB S.','MEDIA S.','WEB GAIN','MARK S.','MARK GAIN','MARK MED S.',"
     "'MARK MEDIA GAIN','CONT MEDIA S.','CONT MEDIA GAIN','RIBBON OUT','RIBBON GAIN','TAKE LABEL']],"
     "['Firmware and hardware',['FIRMWARE','HARDWARE ID','SERIAL NUMBER','RESOLUTION','RAM','ONBOARD FLASH',"
     "'XML SCHEMA','CONFIGURATION','ZBI','ZBI VERSION','FORMAT CONVERT','MODES ENABLED','MODES DISABLED','HEXDUMP']],"
     "['Usage and maintenance',['HEAD USAGE','TOTAL USAGE','RESET CNTR1','RESET CNTR2','LAST CLEANED','EARLY WARNING']]];"
-    "var LC=null,C={},RAW=false;"
+    /* the serial settings show once, in the Serial link row; SER is their text from the printer's own list */
+    "var LC=null,C={},RAW=false,SER='',SERN=['BAUD','DATA BITS','PARITY','HOST HANDSHAKE','PROTOCOL'];"
+    "function ser(m,b){var t=[],x;if(x=/^(\\d+)/.exec(m['DATA BITS']||''))t.push(x[1]+' data bits');"
+    "if(m['PARITY'])t.push(m['PARITY']=='NONE'?'no parity':m['PARITY'].toLowerCase()+' parity');"
+    "if(m['PROTOCOL']&&m['PROTOCOL']!='NONE')t.push('protocol '+m['PROTOCOL'].toLowerCase());"
+    "return t.join(', ')}"
     "function draw(){RAW=id('raw').checked;if(!LC)return;var c=LC;"
     "var m=Object.create(null),seen=Object.create(null),h='',o='';c.pairs.forEach(function(p){if(!(p[0] in m))m[p[0]]=p[1]});"
     "var r=/ (\\d+)\\/MM/.exec(m['RESOLUTION']||'');D=r?+r[1]:0;C=c.cfg||{};"
+    "SER=ser(m);SERN.forEach(function(n){seen[n]=1});"
     "G.forEach(function(g){var t='',ch=false;g[1].forEach(function(n){if(n in m){t+=srow(n,m[n],m);seen[n]=1;"
     "if(has(UI,n)&&has(C,n))ch=true}});"
     "if(t)h+='<h4>'+e(g[0])+(ch?' <small><a href=\"/printer#g-'+g[0].split(' ')[0].toLowerCase()+'\">change</a></small>':'')+"
@@ -809,11 +816,12 @@ static const printer_field_ui_t s_printer_ui[] = {
            "10=10% after|20=20% after|30=30% after|40=40% after|50=50% after|60=60% after|"
            "70=70% after|80=80% after|90=90% after"},
     {ZPL_CFG_MEDIA, "Media", "Media type", NULL, "Y=Gap/notch|M=Mark|N=Continuous"},
+    {ZPL_CFG_SENSOR, "Media", "Media type detection", NULL,
+     "A=Automatic, found when it calibrates|M=Fixed, as set in Media type"},
     {ZPL_CFG_MAX_LENGTH, "Media", "Maximum label length", "dots", NULL},
     {ZPL_CFG_POWER_UP, "Media", "Media at power up", NULL, FEED_OPTIONS},
     {ZPL_CFG_HEAD_CLOSE, "Media", "Media at head close", NULL, FEED_OPTIONS},
     {ZPL_CFG_ZPL_MODE, "Communications", "ZPL mode", NULL, "2=ZPL II|1=ZPL"},
-    {ZPL_CFG_SENSOR, "Sensors", "Sensor select", NULL, "A=Auto|R=Reflective|T=Transmissive"},
     {ZPL_CFG_EARLY_WARNING, "Usage and maintenance", "Head maintenance early warning", NULL, "D=Off|E=On"},
 };
 #define PRINTER_UI_COUNT (sizeof(s_printer_ui) / sizeof(s_printer_ui[0]))
@@ -863,11 +871,22 @@ static void send_ui_script(httpd_req_t *req)
     httpd_resp_sendstr_chunk(req, "};</script>");
 }
 
-/* dots at dpmm dots per mm as millimetres to one decimal place */
-static void fmt_mm(int dots, int dpmm, char *out, size_t out_len)
+/*
+ * Dots as mm to 0.01 mm, trailing zeros dropped: fine enough to give the
+ * same dot count back at up to 24 dots/mm, so an unchanged field stays
+ * unchanged.
+ */
+static void fmt_mm_exact(int dots, int dpmm, char *out, size_t out_len)
 {
-    int tenths = (abs(dots) * 10 + dpmm / 2) / dpmm;
-    snprintf(out, out_len, "%s%d.%d", dots < 0 && tenths > 0 ? "-" : "", tenths / 10, tenths % 10);
+    int h = (abs(dots) * 100 + dpmm / 2) / dpmm;
+    const char *sign = dots < 0 && h > 0 ? "-" : "";
+    if (h % 100 == 0) {
+        snprintf(out, out_len, "%s%d", sign, h / 100);
+    } else if (h % 10 == 0) {
+        snprintf(out, out_len, "%s%d.%d", sign, h / 100, h % 100 / 10);
+    } else {
+        snprintf(out, out_len, "%s%d.%02d", sign, h / 100, h % 100);
+    }
 }
 
 /* One labelled control, prefilled with the printer's current value. Options the printer cannot take are left out. */
@@ -882,18 +901,19 @@ static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, c
         int max;
         zpl_cfg_range(cur, ui->field, &min, &max);
         if (ui->unit != NULL && cur->dpmm > 0) {
+            /* typed in mm (the name ends _mm), with the dot count it comes to alongside */
             char lo[16];
             char hi[16];
             char now[16];
-            fmt_mm(min, cur->dpmm, lo, sizeof(lo));
-            fmt_mm(max, cur->dpmm, hi, sizeof(hi));
-            fmt_mm(cur->v[ui->field], cur->dpmm, now, sizeof(now));
+            fmt_mm_exact(min, cur->dpmm, lo, sizeof(lo));
+            fmt_mm_exact(max, cur->dpmm, hi, sizeof(hi));
+            fmt_mm_exact(cur->v[ui->field], cur->dpmm, now, sizeof(now));
             snprintf(buf, sizeof(buf),
-                     "<label for=f_%s>%s <small>(%s, %d to %d = %s to %s mm; now <span id=mm_%s>%s mm</span>)</small>"
-                     "</label><input id=f_%s name=%s type=number min=%d max=%d step=1 value=%s "
-                     "oninput=\"document.getElementById('mm_%s').textContent=(this.value/%d).toFixed(1)+' mm'\">",
-                     d->key, ui->label, ui->unit, min, max, lo, hi, d->key, now, d->key, d->key, min, max, cur_text,
-                     d->key, cur->dpmm);
+                     "<label for=f_%s>%s <small>(mm, %s to %s; <span id=dt_%s>%s %s</span>)</small>"
+                     "</label><input id=f_%s name=%s_mm type=number min=%s max=%s step=any value=%s "
+                     "oninput=\"document.getElementById('dt_%s').textContent=Math.round(this.value*%d)+' %s'\">",
+                     d->key, ui->label, lo, hi, d->key, cur_text, ui->unit, d->key, d->key, lo, hi, now, d->key,
+                     cur->dpmm, ui->unit);
             httpd_resp_sendstr_chunk(req, buf);
             return;
         }
@@ -1425,10 +1445,22 @@ static esp_err_t link_error(httpd_req_t *req, esp_err_t err)
     return fail(req, "500 Internal Server Error", msg, "/printer");
 }
 
+/* Parse a size in mm ("101.6") into dots; false unless it is a plain number from lo to hi mm. */
+static bool parse_mm(const char *text, int dpmm, double lo, double hi, int *dots)
+{
+    char *end;
+    double mm = strtod(text, &end);
+    if (end == text || *end != '\0' || !(mm >= lo && mm <= hi)) {
+        return false;
+    }
+    *dots = (int)lround(mm * dpmm);  /* to the nearest dot either side of zero */
+    return true;
+}
+
 /*
  * POST /printer_config: apply the printer settings form. Each value is
  * parsed and range-checked here; only values that differ from the cached
- * ^HH reading are sent, followed by ^JUS.
+ * ^HH reading are sent, followed by ^JUS. Lengths come in mm (<key>_mm).
  */
 static esp_err_t printer_config_post(httpd_req_t *req)
 {
@@ -1465,7 +1497,21 @@ static esp_err_t printer_config_post(httpd_req_t *req)
         const zpl_cfg_desc_t *d = zpl_cfg_desc((zpl_cfg_field_t)f);
         char v[16];
         int x;
-        if (!(cur.known & (1u << f)) || !form_get(body, d->key, v, sizeof(v))) {
+        if (!(cur.known & (1u << f))) {
+            continue;
+        }
+        char mm_key[24];
+        snprintf(mm_key, sizeof(mm_key), "%s_mm", d->key);
+        if (cur.dpmm > 0 && form_get(body, mm_key, v, sizeof(v))) {
+            /* a length typed in mm: to dots here, then checked against the range as dots */
+            int dots;
+            if (!parse_mm(v, cur.dpmm, -10000.0, 10000.0, &dots)) {
+                char msg[80];
+                snprintf(msg, sizeof(msg), "%s is not a number of mm; nothing was sent.", d->key);
+                return fail(req, "400 Bad Request", msg, "/printer");
+            }
+            snprintf(v, sizeof(v), "%d", dots);
+        } else if (!form_get(body, d->key, v, sizeof(v))) {
             continue;
         }
         if (!zpl_cfg_parse(&cur, (zpl_cfg_field_t)f, v, &x)) {
@@ -1531,18 +1577,6 @@ static esp_err_t printer_action_post(httpd_req_t *req)
     char location[48];
     snprintf(location, sizeof(location), "/printer?done=%s", action);
     return redirect_to(req, location);
-}
-
-/* Parse a size in mm ("101.6") into dots; false unless it is a plain number from lo to hi mm. */
-static bool parse_mm(const char *text, int dpmm, double lo, double hi, int *dots)
-{
-    char *end;
-    double mm = strtod(text, &end);
-    if (end == text || *end != '\0' || !(mm >= lo && mm <= hi)) {
-        return false;
-    }
-    *dots = (int)(mm * dpmm + 0.5);
-    return true;
 }
 
 /* POST /printer_test: print the test label at the size from the form. */

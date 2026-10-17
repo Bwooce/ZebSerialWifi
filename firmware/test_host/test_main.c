@@ -664,7 +664,7 @@ static void test_cfg_commands(void)
     c.v[ZPL_CFG_METHOD] = 'T';
     c.v[ZPL_CFG_MODE] = 'P';
     c.v[ZPL_CFG_MEDIA] = 'M';
-    c.v[ZPL_CFG_SENSOR] = 'R';
+    c.v[ZPL_CFG_SENSOR] = 'M';
     c.v[ZPL_CFG_WIDTH] = 812;
     c.v[ZPL_CFG_LENGTH] = 1218;
     c.v[ZPL_CFG_MAX_LENGTH] = 3000;
@@ -675,7 +675,7 @@ static void test_cfg_commands(void)
     uint32_t all = (1u << ZPL_CFG_COUNT) - 1;
     CHECK(zpl_cfg_commands(&c, all, out, sizeof(out)) == strlen(out));
     CHECK(strcmp(out, "~SD05~TA-120~JS60"
-                      "^XA^PR3^MTT^MMP^MNM^JSR^PW812^LL1218^ML3000^LT-10^LS25^MFC,F^JH,,,,,E^SZ1^XZ"
+                      "^XA^PR3^MTT^MMP^MNM^PW812^LL1218^ML3000^LT-10^LS25^MFC,F^JH,,,,,E^SZ1^XZ"
                       "^XA^JUS^XZ") == 0);
 
     /* out of range or unknown fields refuse the whole change */
@@ -716,7 +716,7 @@ static void test_cfg_all_options(void)
         {ZPL_CFG_METHOD, "D T"},
         {ZPL_CFG_MODE, "T P R C D"},
         {ZPL_CFG_MEDIA, "Y M N"},
-        {ZPL_CFG_SENSOR, "A R T"},
+        {ZPL_CFG_SENSOR, "A M"},
         {ZPL_CFG_POWER_UP, "F C L N"},
         {ZPL_CFG_HEAD_CLOSE, "F C L N"},
         {ZPL_CFG_BACKFEED, "N A B O 10 20 30 40 50 60 70 80 90"},
@@ -993,6 +993,29 @@ static void test_origin_matches_host(void)
     CHECK(!url_origin_matches_host("http://zebserial.local", ""));
 }
 
+/* SENSOR SELECT and MEDIA TYPE are both ^MN on the G-series (GK420d user guide cross-reference) */
+static void test_cfg_sensor_select(void)
+{
+    zpl_printer_cfg_t c;
+    char out[128];
+    int v;
+    cfg_from_fixture(&c);                       /* AUTO, GAP/NOTCH */
+    CHECK(zpl_cfg_parse(&c, ZPL_CFG_SENSOR, "M", &v) && v == 'M');
+    CHECK(!zpl_cfg_parse(&c, ZPL_CFG_SENSOR, "R", &v));                   /* ^JS letters are not offered */
+    /* manual: the media type goes out as it is */
+    c.v[ZPL_CFG_SENSOR] = 'M';
+    zpl_cfg_commands(&c, 1u << ZPL_CFG_SENSOR, out, sizeof(out));
+    CHECK(strcmp(out, "^XA^MNY^XZ^XA^JUS^XZ") == 0);
+    /* auto wins over a media type changed at the same time */
+    c.v[ZPL_CFG_SENSOR] = 'A';
+    c.v[ZPL_CFG_MEDIA] = 'M';
+    zpl_cfg_commands(&c, (1u << ZPL_CFG_SENSOR) | (1u << ZPL_CFG_MEDIA), out, sizeof(out));
+    CHECK(strcmp(out, "^XA^MNA^XZ^XA^JUS^XZ") == 0);
+    /* a media type alone fixes it */
+    zpl_cfg_commands(&c, 1u << ZPL_CFG_MEDIA, out, sizeof(out));
+    CHECK(strcmp(out, "^XA^MNM^XZ^XA^JUS^XZ") == 0);
+}
+
 int main(void)
 {
     test_label();
@@ -1024,6 +1047,7 @@ int main(void)
     test_cfg_parse();
     test_cfg_commands();
     test_cfg_all_options();
+    test_cfg_sensor_select();
     test_action_commands();
     test_hostname();
     test_ipv4_parse();
