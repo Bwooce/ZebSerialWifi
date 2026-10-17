@@ -1,5 +1,11 @@
 # Print project (Bambu Lab H2D)
 
+**Out of date: both 3MFs predate case revision 4** (enclosure commit d6eb8d0: pin 9 wire path, deeper rear, no
+front-wall wings over the DB9 jack screws; the case is 1.75 mm longer in Y). They were sliced from revision 3 and
+must not be printed as they are. Bambu Studio is not installed on the machine where revision 4 was made, so they were
+not re-sliced there. Re-slice from the current `enclosure/out/` STLs as described under Rebuilding below. The times
+and weights below are for revision 3.
+
 - `zebserial_case.3mf`: the tray and the lid on one plate, already sliced (enclosure commit 8a5cc1c, the HW-044
   revision). It takes about 1 h 15 min (1 h 14 min 33 s estimated) and uses 17.1 g (17.07 g) of PETG for the case
   plus 0.3 g (0.29 g) for the logo. The logo is a second part of the tray object on filament 2, so it prints as a
