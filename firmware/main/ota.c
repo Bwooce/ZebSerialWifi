@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
+#include "esp_image_format.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
@@ -18,6 +19,8 @@ static const char *TAG = "ota";
 #define OTA_HEAD (sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t))
 
 static bool s_busy;
+/* the other slot holds a whole, valid image: 1 yes, 0 no, -1 not checked since it was last written */
+static int s_other_ok = -1;
 
 void ota_poll(void)
 {
@@ -129,6 +132,7 @@ esp_err_t ota_receive(httpd_req_t *req, const char **why)
         goto out;
     }
     begun = true;
+    s_other_ok = -1;  /* the slot's old image is being overwritten, whatever happens next */
     while (true) {
         err = esp_ota_write(h, buf, have);
         if (err != ESP_OK) {
@@ -170,6 +174,17 @@ out:
     return err;
 }
 
+/* Check the whole image in the other slot once (its header alone survives a refused upload) */
+static bool other_ok(const esp_partition_t *other)
+{
+    if (s_other_ok < 0) {
+        esp_partition_pos_t pos = {.offset = other->address, .size = other->size};
+        esp_image_metadata_t meta;
+        s_other_ok = esp_image_verify(ESP_IMAGE_VERIFY_SILENT, &pos, &meta) == ESP_OK;
+    }
+    return s_other_ok == 1;
+}
+
 void ota_get_status(ota_status_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -182,7 +197,8 @@ void ota_get_status(ota_status_t *out)
     esp_app_desc_t desc;
     if (other != NULL && esp_ota_get_partition_description(other, &desc) == ESP_OK &&
         !(esp_ota_get_state_partition(other, &state) == ESP_OK &&
-          (state == ESP_OTA_IMG_INVALID || state == ESP_OTA_IMG_ABORTED))) {
+          (state == ESP_OTA_IMG_INVALID || state == ESP_OTA_IMG_ABORTED)) &&
+        other_ok(other)) {
         strlcpy(out->other_version, desc.version, sizeof(out->other_version));
     }
 }

@@ -4,5 +4,5 @@ idf_component_register(
          "log_line.c" "remote_log.c" "test_label.c" "ota.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES esp_driver_gpio esp_driver_uart nvs_flash esp_wifi esp_netif esp_event
-                  esp_http_server esp_timer esp_app_format lwip esp_ringbuf app_update
+                  esp_http_server esp_timer esp_app_format lwip esp_ringbuf app_update bootloader_support
 )
