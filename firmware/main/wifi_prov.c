@@ -22,6 +22,8 @@ static const char *TAG = "wifi";
 #define STA_RETRY_MS 2000
 #define JOIN_SWITCH_MS 1000   /* lets the page that asked for the join get its reply first */
 #define JOIN_TRIAL_MS 30000
+#define MIN_RSSI -85          /* weaker access points are skipped while a stronger one exists */
+#define NO_IP_MS 20000        /* associated this long without an IPv4 address: leave and scan again */
 
 static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
@@ -38,6 +40,10 @@ static char s_ssid[SETTINGS_SSID_MAX];
 static char s_ap_ssid[20];
 static esp_timer_handle_t s_fallback_timer;
 static esp_timer_handle_t s_retry_timer;
+static esp_timer_handle_t s_no_ip_timer;
+static volatile bool s_associated;
+static volatile bool s_weak_ok;   /* the last scan found nothing at MIN_RSSI or better: take any signal */
+static bool s_cfg_weak;           /* what the station config last set holds */
 static settings_net_t s_net;
 
 /*
@@ -107,6 +113,13 @@ static esp_err_t set_sta_config(const char *ssid, const char *pass)
      */
     sta.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     sta.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    /*
+     * An access point that refuses for a moment (a WPA3 "comeback" after a quick rejoin) makes the driver
+     * take the next one: on 2026-10-18 that was one at -92 dBm, which gave an address or not but never
+     * passed traffic for long. Skip such weak ones unless nothing else answers.
+     */
+    s_cfg_weak = s_weak_ok;
+    sta.sta.threshold.rssi = s_weak_ok ? -127 : MIN_RSSI;
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &sta);
     memset(&sta, 0, sizeof(sta));
     return err;
@@ -235,6 +248,23 @@ static void join_got_ip(void)
     xSemaphoreGive(s_join_lock);
 }
 
+/* Associated, but no IPv4 address came: a weak access point can hold the link up without passing traffic */
+static void no_ip_cb(void *arg)
+{
+    (void)arg;
+    if (s_associated && s_state != WIFI_ST_CONNECTED) {
+        wifi_ap_record_t ap;
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            ESP_LOGW(TAG, "t=%lld s: no IPv4 address %d s after joining " MACSTR " (channel %d, %d dBm): leaving",
+                     esp_timer_get_time() / 1000000, NO_IP_MS / 1000, MAC2STR(ap.bssid), ap.primary, ap.rssi);
+        } else {
+            ESP_LOGW(TAG, "t=%lld s: no IPv4 address %d s after joining: leaving",
+                     esp_timer_get_time() / 1000000, NO_IP_MS / 1000);
+        }
+        esp_wifi_disconnect();
+    }
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
@@ -243,6 +273,14 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             esp_wifi_connect();
         }
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+        wifi_event_sta_connected_t *c = data;
+        s_associated = true;
+        wifi_ap_record_t ap;
+        int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+        ESP_LOGI(TAG, "t=%lld s: joined " MACSTR " (channel %d, %d dBm)", esp_timer_get_time() / 1000000,
+                 MAC2STR(c->bssid), c->channel, rssi);
+        esp_timer_stop(s_no_ip_timer);
+        esp_timer_start_once(s_no_ip_timer, (uint64_t)NO_IP_MS * 1000);
         esp_netif_create_ip6_linklocal(s_sta_netif);
         if (s_net.static_ip) {
             apply_static_ip();  /* posts IP_EVENT_STA_GOT_IP */
@@ -252,6 +290,29 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "got IPv6 " IPV6STR, IPV62STR(e->ip6_info.ip));
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *d = data;
+        esp_timer_stop(s_no_ip_timer);
+        if (s_associated) {
+            ESP_LOGI(TAG, "t=%lld s: left " MACSTR ", reason %d", esp_timer_get_time() / 1000000, MAC2STR(d->bssid),
+                     d->reason);
+        }
+        s_associated = false;
+        if (d->reason == WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD && !s_weak_ok) {
+            ESP_LOGI(TAG, "no access point at %d dBm or better: taking a weaker one", MIN_RSSI);
+            s_weak_ok = true;  /* until the next address */
+        }
+        if (s_cfg_weak != s_weak_ok) {
+            /* the retry below scans with the new limit: set from the network being tried or the saved one */
+            char ssid[SETTINGS_SSID_MAX];
+            char pass[SETTINGS_PASS_MAX];
+            xSemaphoreTake(s_join_lock, portMAX_DELAY);
+            if (s_join_state == WIFI_JOIN_TRYING) {
+                set_sta_config(s_join_ssid, s_join_pass);
+            } else if (settings_get_wifi(ssid, pass)) {
+                set_sta_config(ssid, pass);
+            }
+            xSemaphoreGive(s_join_lock);
+            memset(pass, 0, sizeof(pass));
+        }
         /* leaving the old network on purpose (reason 8) says nothing about the one being tried */
         if (s_join_state == WIFI_JOIN_TRYING && d->reason != WIFI_REASON_ASSOC_LEAVE) {
             s_join_reason = d->reason;
@@ -271,6 +332,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
         ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
+        esp_timer_stop(s_no_ip_timer);
+        s_weak_ok = false;  /* the next disconnect sets MIN_RSSI again */
         set_state(WIFI_ST_CONNECTED);
         esp_timer_stop(s_fallback_timer);
         stop_ap();
@@ -305,6 +368,8 @@ void wifi_prov_start(void)
     ESP_ERROR_CHECK(esp_timer_create(&fb, &s_fallback_timer));
     const esp_timer_create_args_t rt = {.callback = retry_cb, .name = "wifi_retry"};
     ESP_ERROR_CHECK(esp_timer_create(&rt, &s_retry_timer));
+    const esp_timer_create_args_t ni = {.callback = no_ip_cb, .name = "wifi_noip"};
+    ESP_ERROR_CHECK(esp_timer_create(&ni, &s_no_ip_timer));
     const esp_timer_create_args_t js = {.callback = join_switch_cb, .name = "wifi_join"};
     ESP_ERROR_CHECK(esp_timer_create(&js, &s_join_switch_timer));
     const esp_timer_create_args_t jt = {.callback = join_trial_cb, .name = "wifi_trial"};
@@ -506,6 +571,7 @@ wifi_join_state_t wifi_prov_join_state(char ssid[SETTINGS_SSID_MAX], const char 
     case WIFI_REASON_NO_AP_FOUND:
         *why = "network not found";
         break;
+    case WIFI_REASON_AUTH_EXPIRE:  /* what a wrong WPA3 password gave on 2026-10-18 */
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
     case WIFI_REASON_HANDSHAKE_TIMEOUT:
