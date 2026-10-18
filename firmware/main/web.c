@@ -15,6 +15,8 @@
 #include "printer_link.h"
 #include "remote_log.h"
 #include "settings.h"
+#include "temp_alarm.h"
+#include "temp_mon.h"
 #include "test_label.h"
 #include "urlcodec.h"
 #include "wifi_prov.h"
@@ -490,6 +492,8 @@ static const char STATUS_SCRIPT[] =
     "row('Bytes',b.to_printer+' to printer, '+b.from_printer+' back')+"
     "row('Remote log',!s.rlog.enabled?'off':(s.rlog.listener?'sending to an iot_log receiver':'no receiver found')+"
     "', '+s.rlog.sent+' lines sent')+"
+    "(s.chip_temp?row('Chip temperature',s.chip_temp.c.toFixed(1)+' \\u00b0C (highest since start '+s.chip_temp.max_c.toFixed(1)+' \\u00b0C)'+"
+    "(s.chip_temp.hot?'\\nTOO HOT: at or above '+s.chip_temp.warn_c+' \\u00b0C. Check the case is not in the sun or by a heater':'')):'')+"
     "row('Uptime',dur(s.uptime_s))+"
     "row('Firmware',s.version+' '+s.built)}"
     "catch(x){if(J=='trying')id('j').innerHTML='<p class=note>No reply from the bridge. If it joined the new network, '+"
@@ -627,6 +631,13 @@ static esp_err_t status_get(httpd_req_t *req)
     remote_log_get_status(&rl);
     ota_status_t ota;
     ota_get_status(&ota);
+    temp_mon_status_t tm;
+    temp_mon_get_status(&tm);
+    char temp_json[64] = "null";
+    if (tm.valid) {
+        snprintf(temp_json, sizeof(temp_json), "{\"c\":%.1f,\"max_c\":%.1f,\"hot\":%s,\"warn_c\":%.0f}", (double)tm.temp_c,
+                 (double)tm.max_c, tm.hot ? "true" : "false", (double)TEMP_ALARM_WARN_C);
+    }
     char other_esc[sizeof(ota.other_version) * 6];
     json_escape(ota.other_version, other_esc, sizeof(other_esc));
     char handshake_esc[sizeof(p.handshake) * 6];
@@ -670,7 +681,7 @@ static esp_err_t status_get(httpd_req_t *req)
              "\"to_printer\":%llu,\"from_printer\":%llu},"
              "\"rlog\":{\"enabled\":%s,\"listener\":%s,\"sent\":%lu,\"dropped\":%lu},"
              "\"ota\":{\"running\":\"%s\",\"pending\":%s,\"other_version\":\"%s\"},"
-             "\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
+             "\"chip_temp\":%s,\"uptime_s\":%lld,\"version\":\"%s\",\"built\":\"%s %s\"}",
              ssid_esc, ip, wifi_prov_rssi(), phy, channel, bssid, hostname_esc, net.static_ip ? "true" : "false", ip6_json,
              join_names[join], join_esc, join_why,
              (unsigned long)opt.target_baud, (int)opt.pins, (unsigned)opt.idle_timeout_s, p.detected ? "true" : "false",
@@ -686,7 +697,7 @@ static esp_err_t status_get(httpd_req_t *req)
              (unsigned long)b.aborted, (unsigned long long)b.bytes_to_printer,
              (unsigned long long)b.bytes_from_printer, rl.enabled ? "true" : "false", rl.listener ? "true" : "false",
              (unsigned long)rl.sent, (unsigned long)rl.dropped, ota.running, ota.pending ? "true" : "false",
-             other_esc, (long long)(esp_timer_get_time() / 1000000), version_esc,
+             other_esc, temp_json, (long long)(esp_timer_get_time() / 1000000), version_esc,
              app->date, app->time);
     if (json_len < 0 || (size_t)json_len >= json_cap) {
         free(json);

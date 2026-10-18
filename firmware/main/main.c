@@ -19,6 +19,7 @@
 #include "remote_log.h"
 #include "sdkconfig.h"
 #include "settings.h"
+#include "temp_mon.h"
 #include "web.h"
 #include "wifi_prov.h"
 
@@ -124,6 +125,7 @@ static void status_task(void *arg)
         }
 
         ota_poll();
+        temp_mon_poll();
         printer_status_t p;
         printer_link_get_status(&p);
         if (p.model[0] != '\0' && strcmp(p.model, s_mdns_model) != 0) {
@@ -164,6 +166,7 @@ void app_main(void)
     const esp_app_desc_t *app = esp_app_get_description();
     ESP_LOGI(TAG, "ZebSerialWifi %s built %s %s, IDF %s", app->version, app->date, app->time, app->idf_ver);
     board_init();
+    temp_mon_init();
 
     settings_options_t opt;
     settings_get_options(&opt);

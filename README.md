@@ -24,6 +24,8 @@ It is a Seeed XIAO ESP32-C6 and a MAX3232 RS-232 module in a small 3D-printed ca
 - **Wi-Fi:** first set-up through its own access point; later changes from the Bridge page. A new network is tried for
   30 s and the bridge goes back to the old one if it fails.
 - **Remote log:** optionally sends its log to an [iot_log](https://github.com/Bwooce/esp-iot-log) receiver.
+- **Chip temperature:** shown on the Status page, read every 30 s. At 85 °C it logs a warning (about 56 °C is
+  normal in the case); the warning clears below 80 °C.
 
 ## Printers
 

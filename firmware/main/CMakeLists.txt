@@ -1,9 +1,9 @@
 idf_component_register(
     SRCS "main.c" "board.c" "settings.c" "zpl_status.c" "urlcodec.c" "netcfg.c"
          "printer_link.c" "bridge.c" "wifi_prov.c" "dns_hijack.c" "web.c"
-         "log_line.c" "remote_log.c" "test_label.c" "ota.c"
+         "log_line.c" "remote_log.c" "test_label.c" "ota.c" "temp_alarm.c" "temp_mon.c"
     INCLUDE_DIRS "."
     EMBED_FILES "icons/favicon.ico" "icons/apple-touch-icon.png"
-    PRIV_REQUIRES esp_driver_gpio esp_driver_uart nvs_flash esp_wifi esp_netif esp_event
+    PRIV_REQUIRES esp_driver_gpio esp_driver_uart esp_driver_tsens nvs_flash esp_wifi esp_netif esp_event
                   esp_http_server esp_timer esp_app_format lwip esp_ringbuf app_update bootloader_support
 )

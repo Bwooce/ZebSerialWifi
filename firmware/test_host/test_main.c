@@ -17,6 +17,7 @@
 #include "netcfg.h"
 #include "log_line.h"
 #include "test_label.h"
+#include "temp_alarm.h"
 #include <stdlib.h>
 
 static int s_failures;
@@ -1016,6 +1017,22 @@ static void test_cfg_sensor_select(void)
     CHECK(strcmp(out, "^XA^MNM^XZ^XA^JUS^XZ") == 0);
 }
 
+/* Warns at 75 °C and above, clears only below 70 °C, and reports each change once */
+static void test_temp_alarm(void)
+{
+    bool hot = false;
+    CHECK(temp_alarm_step(&hot, 45.0f, 75.0f, 70.0f) == TEMP_ALARM_SAME && !hot);
+    CHECK(temp_alarm_step(&hot, 74.9f, 75.0f, 70.0f) == TEMP_ALARM_SAME && !hot);
+    CHECK(temp_alarm_step(&hot, 75.0f, 75.0f, 70.0f) == TEMP_ALARM_NOW_HOT && hot);
+    CHECK(temp_alarm_step(&hot, 80.0f, 75.0f, 70.0f) == TEMP_ALARM_SAME && hot);
+    CHECK(temp_alarm_step(&hot, 72.0f, 75.0f, 70.0f) == TEMP_ALARM_SAME && hot);  /* between the levels: still hot */
+    CHECK(temp_alarm_step(&hot, 70.0f, 75.0f, 70.0f) == TEMP_ALARM_SAME && hot);
+    CHECK(temp_alarm_step(&hot, 69.9f, 75.0f, 70.0f) == TEMP_ALARM_NOW_OK && !hot);
+    CHECK(temp_alarm_step(&hot, 72.0f, 75.0f, 70.0f) == TEMP_ALARM_SAME && !hot);  /* between the levels: still ok */
+    CHECK(temp_alarm_step(&hot, 76.0f, 75.0f, 70.0f) == TEMP_ALARM_NOW_HOT && hot);
+    CHECK(TEMP_ALARM_CLEAR_C < TEMP_ALARM_WARN_C);
+}
+
 int main(void)
 {
     test_label();
@@ -1048,6 +1065,7 @@ int main(void)
     test_cfg_commands();
     test_cfg_all_options();
     test_cfg_sensor_select();
+    test_temp_alarm();
     test_action_commands();
     test_hostname();
     test_ipv4_parse();
