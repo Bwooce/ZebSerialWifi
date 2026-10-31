@@ -109,7 +109,7 @@ jobs:
         script: [build.sh, controls.sh]
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 python3-numpy
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libopengl0 libglx0 libegl1 libglu1-mesa python3-numpy
       - uses: actions/cache@v6
         id: openscad
         with:
@@ -123,7 +123,10 @@ jobs:
           curl -fsSLO "https://files.openscad.org/snapshots/$f"
           echo "$OPENSCAD_SHA256  $f" | sha256sum -c
           chmod +x "$f" && ./"$f" --appimage-extract > /dev/null && rm "$f"
-      - run: ~/openscad/squashfs-root/AppRun --version
+      - name: OpenSCAD libraries and version
+        run: |
+          ! ldd ~/openscad/squashfs-root/usr/bin/openscad | grep 'not found'
+          ~/openscad/squashfs-root/AppRun --version
       # build.sh rewrites the tracked out/*.stl and renders/*.png; CI judges only its gates (the exit status), since
       # STL bytes differ between OpenSCAD versions
       - run: xvfb-run -a -s "-screen 0 1600x1200x24" enclosure/${{ matrix.script }}

@@ -8,6 +8,10 @@ CC = $(LLVM_CLANG)
 endif
 endif
 CFLAGS = -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -I../main -DFIXTURE_DIR='"$(CURDIR)/fixtures"'
+# glibc declares strlcpy only outside strict ISO C (Ubuntu 24.04 and later)
+ifeq ($(shell uname -s),Linux)
+CFLAGS += -D_DEFAULT_SOURCE
+endif
 SRCS = test_main.c ../main/zpl_status.c ../main/urlcodec.c ../main/netcfg.c ../main/log_line.c ../main/test_label.c ../main/temp_alarm.c
 
 all: build/test_main
