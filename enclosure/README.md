@@ -21,7 +21,7 @@ is plugged in there).
 | `out/tray.stl`, `out/lid.stl`, `out/logo.stl` | Print-ready, already in print orientation. `logo.stl` is the two-colour logo inlay, in the same coordinates as `tray.stl`. |
 | `out/coupon_tray.stl`, `out/coupon_lid.stl` | Fit coupons: the whole tray with the middle of its floor cut out, and the lid below Z 18, single colour. |
 | `renders/*.png` | Assembly, exploded, as-plugged-in, front, side, sections, the XIAO with the lid off, exterior style (`style_*.png`) and print-orientation views. |
-| `build.sh` | Regenerates the STLs and renders, then runs the interference checks and the wall probe. Extra `-D` overrides apply to the checks, for example `./build.sh -D xpad_gap=0.3`. |
+| `build.sh` | Regenerates the STLs and renders, then fails on any `ZEBCASE WARNING` echo and runs the interference checks and the wall probe. Extra `-D` overrides apply to the checks, for example `./build.sh -D xpad_gap=0.3`. |
 | `controls.sh` | Positive and negative controls for the interference checks (moves the ghosts and says what must and must not hit). Exits non-zero on any failure. |
 | `stlinfo.py` | Reports STL volume and bounding box, and with `--components` the overlapping pieces. |
 | `wallprobe.py` | Measures local wall thickness by ray casting from every face; `build.sh` lists everything under 1.2 mm. |
@@ -347,7 +347,7 @@ the USB end is at +X (revisions 3 and 4: −X).
   - So D3 (X 5.46) and D5 (X 0.38) are on the rear edge, and 5V (X 13.08), GND (X 10.54) and 3V3 (X 8.0, for the
     optional pull-up) on the front edge.
   - The front pads lie over the DB9 body's +X end (3V3) and 0.65 mm above the +X jack screw hardware (5V, GND), so
-    their joints must be on the top side only. The model echoes this as a check.
+    their joints must be on the top side only. The model echoes this as a reminder (`ZEBCASE NOTE (check)`).
   - The rear pads overhang the RS232 board, so D3 and D5 can be soldered from either side.
 
 **Capture: all rigid, no flexing parts** (as in revision 4, turned round):
@@ -628,6 +628,14 @@ known snap hooks, gusset and tongue edges.
 
 ## Interference checks
 
+**Parameter warnings:** the model echoes `ZEBCASE WARNING: ...` when a parameter combination gives wrong geometry:
+the top over the `max_above` envelope, a flange lip within `lip_ds_clr` of the D-shell, the lips reaching the
+jackpost area, the XIAO lying under `front_rest_min` on the DB9 body, or a leg-tail pocket within 0.8 mm of the floor
+bottom. `build.sh` evaluates the model once (OpenSCAD echo export, with its extra `-D` overrides) and prints each one
+as a `FAIL:` line, which fails the build; for example `./build.sh -D lip_x=10` ends with
+`FAIL: ZEBCASE WARNING: the lips reach the jackpost area at the flange holes`. `controls.sh` counts a run that echoes
+one as an error. Reminders that print on a good build are `ZEBCASE NOTE` lines; `build.sh` prints them and passes.
+
 `build.sh` intersects:
 
 - the ghosts with the tray (`check_tray`)
@@ -647,7 +655,7 @@ Each must have zero volume. Zero-thickness contact faces are designed contacts:
 - the pin 9 wire's riser on the sides of the backstop notch (the notch is exactly `wire_pass` wide)
 
 **Controls** (`./controls.sh`, 97 lines, all must pass; under a minute). An OpenSCAD error (an `ERROR` or `WARNING`
-line, a failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each
+line, a `ZEBCASE WARNING` echo, a failed assert, or a non-zero exit that is not just an empty result) counts as a FAIL, in `build.sh` as well. Each
 moves one ghost (or one feature) and states whether a check must find real overlap (any piece of at least 0.01 mm³)
 or none. I looked at where each positive control hits, not only that it hits:
 

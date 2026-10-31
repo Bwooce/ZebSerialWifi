@@ -1,9 +1,9 @@
 #!/bin/sh
 # Positive and negative controls for the interference checks: each line moves a ghost and says whether the named
 # check must find real overlap ("hit": a piece of at least 0.01 mm3, thicker than 0.005 mm in every axis) or none.
-# Prints PASS / FAIL per line and exits non-zero on any FAIL. An OpenSCAD error (an ERROR or WARNING line, a failed
-# assert, or a non-zero exit that is not just "Current top level object is empty.") is reported as got "error" and
-# fails.
+# Prints PASS / FAIL per line and exits non-zero on any FAIL. An OpenSCAD error (an ERROR or WARNING line, a
+# "ZEBCASE WARNING" echo, a failed assert, or a non-zero exit that is not just "Current top level object is empty.")
+# is reported as got "error" and fails.
 # Usage: ./controls.sh
 set -u
 cd "$(dirname "$0")"
@@ -16,9 +16,9 @@ ctl() {   # name check expect -D ...
   rm -f "$TMP/o.stl"
   st=0
   "$OSC" --backend=manifold "$@" -D "part=\"$chk\"" -o "$TMP/o.stl" zebserial_case.scad > "$TMP/o.log" 2>&1 || st=$?
-  if grep -qE '^ERROR:|^WARNING:|Assertion|Execution aborted' "$TMP/o.log" ||
+  if grep -qE '^ERROR:|^WARNING:|Assertion|Execution aborted|ZEBCASE WARNING' "$TMP/o.log" ||
      { [ "$st" -ne 0 ] && ! grep -q 'Current top level object is empty' "$TMP/o.log"; }; then
-    got="error (exit $st: $(grep -m1 -E '^ERROR:|^WARNING:|Assertion' "$TMP/o.log" | cut -c1-80))"
+    got="error (exit $st: $(grep -m1 -E '^ERROR:|^WARNING:|Assertion|ZEBCASE WARNING' "$TMP/o.log" | cut -c1-80))"
   elif [ -s "$TMP/o.stl" ]; then
     got=$(python3 -I stlinfo.py --hits "$TMP/o.stl")
   else

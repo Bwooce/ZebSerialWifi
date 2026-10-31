@@ -497,6 +497,8 @@ usb_relief_depth = min([for (y = [xcy - usb_recess_w / 2, xcy, xcy + usb_recess_
 logo_h = logo_w * logo_svg_h / logo_svg_w;
 logo_cy = (y_cf + y_rear_face) / 2;
 
+// "ZEBCASE WARNING" echoes mean the geometry is wrong for this parameter set: build.sh and controls.sh fail on any of
+// them. Reminders that print on a good build use "ZEBCASE NOTE" instead.
 echo(str("ZEBCASE outer X ", 2 * x_out, " Y ", y_out1 - y_cf, " Z ", z_top - z_bot,
          " (top ", z_top, " above PCB top, limit ", max_above, ")"));
 echo(str("ZEBCASE style: side sag ", side_sag, ", rear sag ", rear_sag, ", front sag ", front_sag,
@@ -517,7 +519,7 @@ assert(logo_mode == "none" || logo_mode == "inlay" || logo_mode == "deboss", "lo
 echo(str("ZEBCASE XIAO on the DB9 body ", body_overlap, " mm; rear edge to the Dupont housing ", hdr_y0 - yx1,
          " mm; front edge ", yx0 - y_fw1, " behind the lid front wall"));
 assert(hdr_y0 - yx1 >= xiao_hdr_min - 1e-6, "the XIAO rear edge is too close to the Dupont housing");
-echo(str("ZEBCASE WARNING (check): the front-edge 5V/GND", pullup_pad > 0 ? "/3V3" : "", " joints (X ", front_jx0, "..", front_jx1,
+echo(str("ZEBCASE NOTE (check): the front-edge 5V/GND", pullup_pad > 0 ? "/3V3" : "", " joints (X ", front_jx0, "..", front_jx1,
          ", Y ", yx0, ") lie over the DB9 body's +X end and the +X jack screw hardware (top z ", hole_z + jack_d / 2,
          ", ", zx0 - hole_z - jack_d / 2, " under the XIAO): top-side joints only, with nothing under the XIAO there"));
 echo(str("ZEBCASE CORNER PINS at X +-", mh_x, " Y ", mh_y, ": ", mh_pin_dx, " across X, ", mh_pin_dy, " across Y, top z ",

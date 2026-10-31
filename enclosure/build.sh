@@ -94,8 +94,9 @@ run $IMG --camera=0,0,0,55,0,205,130 --autocenter --viewall -D 'part="lid"' -o r
 
 echo "== interference: volume of ghost/tray, ghost/lid and tray/lid overlaps"
 echo "   (zero-volume faces are designed contacts, e.g. flange on the case front, board on the ledges)"
-# Every gate below fails the build: an OpenSCAD error (ERROR / WARNING / failed assert, or a non-zero exit that is not
-# just an empty result), a real overlap, a logo stroke or gap under logo_min, or a wall sliver not on the whitelist.
+# Every gate below fails the build: a "ZEBCASE WARNING" echo, an OpenSCAD error (ERROR / WARNING / failed assert, or a
+# non-zero exit that is not just an empty result), a real overlap, a logo stroke or gap under logo_min, or a wall
+# sliver not on the whitelist.
 TMP=$(mktemp -d)
 fails=0
 fail() { echo "FAIL: $*"; fails=$((fails + 1)); }
@@ -105,6 +106,20 @@ osc_ok() {
   if grep -qE '^ERROR:|^WARNING:|Assertion|Execution aborted' "$1"; then return 1; fi
   [ "$2" -eq 0 ] || grep -q 'Current top level object is empty' "$1"
 }
+echo "== parameter warnings: every ZEBCASE WARNING echo fails (ZEBCASE NOTE lines are reminders and pass)"
+# The SCAD echoes "ZEBCASE WARNING: ..." when a parameter combination gives wrong geometry. The echo export evaluates
+# the file without rendering, with the same overrides as the checks below.
+# (The echo export writes failed assertions into the .echo file, not to stderr.)
+st=0; run "$@" -o "$TMP/params.echo" > "$TMP/params.log" 2>&1 || st=$?
+touch "$TMP/params.echo"; cat "$TMP/params.echo" >> "$TMP/params.log"
+grep 'ZEBCASE NOTE' "$TMP/params.echo" | sed 's/^ECHO: "\(.*\)"$/note: \1/' | cut -c1-160
+grep 'ZEBCASE WARNING' "$TMP/params.echo" | sed 's/^ECHO: "\(.*\)"$/\1/' > "$TMP/params.warn" || true
+while IFS= read -r w; do fail "$w"; done < "$TMP/params.warn"
+if ! osc_ok "$TMP/params.log" $st || ! grep -q 'ZEBCASE outer' "$TMP/params.echo"; then
+  fail "parameter echo: openscad error or no output (exit $st)"; grep -E '^ERROR:|^WARNING:|Assertion' "$TMP/params.log" | head -3
+elif [ ! -s "$TMP/params.warn" ]; then
+  echo "parameter warnings: none"
+fi
 for c in check_tray check_lid check_traylid check_lid_path; do
   fn=""; [ $c = check_lid_path ] && fn='$fn=16'   # the swept check takes about 2 min at the default $fn
   rm -f "$TMP/$c.stl"

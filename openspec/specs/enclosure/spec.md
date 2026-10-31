@@ -59,7 +59,7 @@ SHALL span only |X| <= `lip_x` (8.0) so the printer's jackposts at X +-`fl_hole_
 #### Scenario: Lips widened into the jackpost area
 - **WHEN** `lip_x` exceeds `fl_hole_pitch / 2 - 3.5` (9.0)
 - **THEN** the model SHALL echo "ZEBCASE WARNING: the lips reach the jackpost area at the flange holes"
-- **AND** `build.sh` SHALL still pass, because it fails only on lines starting `WARNING:` or `ERROR:`, not on `ECHO: "ZEBCASE WARNING ..."`; the echo is the only signal (see the regeneration procedure, step 3)
+- **AND** `build.sh` SHALL fail with "FAIL: ZEBCASE WARNING: the lips reach the jackpost area at the flange holes" (see "Geometry warnings fail the build")
 
 ### Requirement: Flange fore-aft location
 The flange SHALL be held fore-aft between the lips, `lip_gap` (0.1 mm) in front of the flange front face, and the
@@ -79,7 +79,7 @@ stay at least `lip_ds_clr` (1.0) clear of the D-shell outline.
 #### Scenario: Lip near the D-shell
 - **WHEN** a parameter change brings the top lip bottom (`lip_t_bot`) below `ds_top + lip_ds_clr` or the bottom lip top above `ds_bot - lip_ds_clr`
 - **THEN** the model SHALL echo "ZEBCASE WARNING: a flange lip comes within lip_ds_clr of the D-shell"
-- **AND** `build.sh` SHALL still pass, so the echo is the only signal
+- **AND** `build.sh` SHALL fail with a FAIL line naming that warning
 
 ### Requirement: RS-232 board location and hold-down
 The board SHALL be located by two tray corner pins through its rear mounting holes (`mh_pin_clr` 0.2 per side in X,
@@ -136,7 +136,7 @@ The XIAO SHALL lie on the DB9 rear body top (underside at Z `body_h`), its lengt
 #### Scenario: Too little of the XIAO on the DB9 body
 - **WHEN** the XIAO lies less than `front_rest_min` (2.0 mm) deep on the body
 - **THEN** the model SHALL echo "ZEBCASE WARNING: the XIAO lies only ... mm on the DB9 body"
-- **AND** `build.sh` SHALL still pass, so the echo is the only signal
+- **AND** `build.sh` SHALL fail with a FAIL line naming that warning
 
 ### Requirement: XIAO capture is rigid
 The XIAO SHALL be held with no flexing parts: below by the DB9 body and a tray tongue cradle `tongue_gap` (0.05)
@@ -231,11 +231,12 @@ behind the PCB to the ceiling. `wire_pass` MUST leave at least 0.4 mm round `wir
 The model SHALL echo the X span of the front-edge joints and the gap between the jack screw keep-out top and the XIAO
 underside; those joints SHALL be soldered on the top side only.
 
-**Source**: `enclosure/zebserial_case.scad` echo "ZEBCASE WARNING (check): the front-edge 5V/GND/3V3 joints ..."; `enclosure/README.md` Fit-check list
+**Source**: `enclosure/zebserial_case.scad` echo "ZEBCASE NOTE (check): the front-edge 5V/GND/3V3 joints ..."; `enclosure/README.md` Fit-check list
 
 #### Scenario: Reading the build output
 - **WHEN** the model is rendered
 - **THEN** the echo SHALL report the front joints at X 6.229..14.849 and 0.65 mm between the jack screw keep-out top (z 9.75) and the XIAO underside for the current module
+- **AND** it SHALL be a "ZEBCASE NOTE", printed on every build, which does not fail `build.sh` or `controls.sh`
 
 ### Requirement: Interference gate
 `build.sh` SHALL render four intersections, `check_tray` (ghosts and tray), `check_lid` (ghosts and lid),
@@ -258,6 +259,28 @@ aborted", or a non-zero exit other than "Current top level object is empty." as 
 - **WHEN** a parameter change makes a `box()` call with bounds out of order
 - **THEN** the `box()` assertion SHALL fire instead of the box silently rendering as nothing
 - **AND** if the box is in a ghost, the check run SHALL report "openscad error" and the gate SHALL fail; if it is in the tray or lid, `build.sh` SHALL stop at the first STL export with a non-zero exit and no FAIL line, after deleting `out/*.stl` and `renders/*.png`
+
+### Requirement: Geometry warnings fail the build
+The model SHALL echo "ZEBCASE WARNING: ..." only for wrong geometry and "ZEBCASE NOTE ..." for reminders.
+`build.sh` SHALL evaluate the model once with its extra `-D` overrides (OpenSCAD echo export) and SHALL print each
+"ZEBCASE WARNING" line as a FAIL line carrying its text, so the build fails. `controls.sh` SHALL count a run that
+echoes one as got "error".
+
+**Source**: `enclosure/build.sh` "parameter warnings" step; `enclosure/controls.sh` `ctl()`; `enclosure/zebserial_case.scad` `ZEBCASE WARNING` and `ZEBCASE NOTE` echoes
+
+#### Scenario: A geometry warning is echoed
+- **WHEN** `./build.sh` runs with an override that triggers a warning, for example `./build.sh -D lip_x=10`
+- **THEN** `build.sh` SHALL print "FAIL: ZEBCASE WARNING: the lips reach the jackpost area at the flange holes"
+- **AND** it SHALL end "build: 1 gate(s) FAILED" and exit 1
+
+#### Scenario: Every geometry warning is gated
+- **WHEN** an override sets the top over `max_above`, a lip within `lip_ds_clr` of the D-shell, the lips into the jackpost area, the XIAO under `front_rest_min` on the DB9 body, or the leg-tail pocket within 0.8 mm of the floor bottom
+- **THEN** `build.sh` SHALL print that warning as a FAIL line and exit 1 (the `max_above` case also fails its assertion)
+
+#### Scenario: Only notes are echoed
+- **WHEN** `./build.sh` runs on the current parameters, which echo the "ZEBCASE NOTE (check)" line on the front-edge joints and no warning
+- **THEN** the parameter step SHALL print the note and "parameter warnings: none"
+- **AND** the script SHALL end "build: all gates passed" with exit 0
 
 ### Requirement: Wall thickness gate
 `build.sh` SHALL export both parts in assembly position (`tray_inplace`, `lid_inplace`) and run `wallprobe.py`, and
@@ -610,9 +633,10 @@ datasheets and the Seeed CAD files, not measurements.
    enclosure README does not mention it; python3 with numpy for `wallprobe.py`). About 20 s on 2026-10-31. It must end "build: all gates passed".
    `build.sh` deletes `out/*.stl` and `renders/*.png` first; if a gate fails, restore them with
    `git checkout enclosure/out enclosure/renders` before committing anything.
-   Extra `-D` overrides apply to every call, for trying a value before committing it.
-3. Read the `ECHO: "ZEBCASE ..."` lines: any `ZEBCASE WARNING:` (except the "(check)" note on the joints) is a
-   failure the script does not catch.
+   Extra `-D` overrides apply to the gates (parameter warnings, interference, logo, wall thickness), not to the STL
+   exports or renders, for trying a value before committing it.
+3. A `ZEBCASE WARNING` echo fails the build with a FAIL line naming it. Read the `ZEBCASE NOTE` lines the build
+   prints: they are reminders (the front-edge joints over the jack screw hardware), not failures.
 4. Run `./enclosure/controls.sh` (about 50 s). It must end "controls: 0 failed". Recalibrate any control whose
    clearance moved, and the hard-coded positions listed above, as in the next section.
 5. Look at the renders (`renders/*.png`) for ghost-to-ghost clashes, which no check sees.
