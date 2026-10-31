@@ -54,8 +54,8 @@ context: |
   - Firmware build: cd firmware && idf.py build. ESP-IDF's default flags make warnings errors (-Werror, with
     ESP-IDF's own -Wno-error exceptions); the project sets no CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS.
   - Page JavaScript embedded as C string literals in firmware/main/web.c: extract each script and run node --check
-    on it before pushing (an apostrophe inside a C string once broke a served page). No script in the repository
-    does this yet; it is done by hand.
+    on it before pushing (an apostrophe inside a C string once broke a served page). python3 tools/check_page_js.py
+    does this for web.c and tools/cable-labels.html, and CI runs it (.github/workflows/ci.yml).
   - Before testing or reporting on a device, match the running firmware's version string to the commit built.
   - Enclosure: enclosure/build.sh (STL export, renders, interference checks, logo check, wall probe) and
     enclosure/controls.sh (97 positive and negative controls) must both print zero failures. build.sh overwrites
