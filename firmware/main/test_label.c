@@ -7,6 +7,8 @@
 
 /* Rulers stop here, so a long label stays inside TEST_LABEL_ZPL_MAX */
 #define RULER_MAX_MM 300
+/* The edge scales run from 0 to 4 mm in half mm steps */
+#define SCALE_HALF_MM 8
 
 typedef struct {
     char *out;
@@ -80,13 +82,41 @@ size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
     put(&b, "^XA^LH0,0^PW%d^LL%d^CI0", w, l);
     put(&b, "^FO%d,%d^GB%d,%d,%d^FS", edge, edge, w - 2 * edge, l - 2 * edge, bt);
 
+    /*
+     * Edge scales in the top corners: ticks every 0.5 mm from each side edge
+     * in to 4 mm, longer on whole mm, numbered at 2 and 4. Where the label's
+     * edge falls on each scale shows how far the print is off centre; ticks
+     * that miss the label print on the backing, so both sides can be read.
+     * Each tick's outer side is the reading. 3 dots wide or more: thinner
+     * lines along the feed break up on some media.
+     */
+    const int sc_w = bt > 3 ? bt : 3;
+    const int sc_long = (3 * m) / 2;
+    const int sc_short = (3 * m) / 4;
+    const int sc_num = (5 * m) / 4;          /* 1.25 mm digits */
+    for (int k = 0; k <= SCALE_HALF_MM; k++) {
+        int d = zpl_mm_to_dots(k * 0.5, m);
+        int h = k % 2 == 0 ? sc_long : sc_short;
+        put(&b, "^FO%d,%d^GB%d,%d,%d^FS", d, in_l, sc_w, h, sc_w);
+        put(&b, "^FO%d,%d^GB%d,%d,%d^FS", w - d - sc_w, in_l, sc_w, h, sc_w);
+        if (k == SCALE_HALF_MM / 2 || k == SCALE_HALF_MM) {
+            char n[4];
+            snprintf(n, sizeof(n), "%d", k / 2);
+            const int ny = in_l + sc_long + m / 6;
+            const int half = (sc_num * 3) / 10;  /* about half a digit's width */
+            put_line(&b, d + sc_w / 2 - half, ny, sc_num, n);
+            put_line(&b, w - d - sc_w / 2 - half, ny, sc_num, n);
+        }
+    }
+    const int sc_end = zpl_mm_to_dots(SCALE_HALF_MM * 0.5 + 1.0, m);  /* the ruler keeps 1 mm clear */
+
     /* Rulers: marks every 5 mm measured from the label's own edge, numbered every 10 mm */
     const int tick = m / 6 > 2 ? m / 6 : 2;
     const int num_h = (5 * m) / 2;           /* 2.5 mm digits */
     /* the marks are at true mm (zpl_units.h); sizes elsewhere only need to be roughly right */
     for (int mm = 5; zpl_mm_to_dots(mm, m) < in_r && mm <= RULER_MAX_MM; mm += 5) {
         int x = zpl_mm_to_dots(mm, m);
-        if (x - tick / 2 <= in_l) {
+        if (x - tick / 2 <= in_l || x + tick / 2 >= w - sc_end) {
             continue;
         }
         int len = mm % 10 == 0 ? 3 * m : (3 * m) / 2;

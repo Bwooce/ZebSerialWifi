@@ -1098,13 +1098,18 @@ static void send_test_label_form(httpd_req_t *req)
     if (cfg.dpmm > 0 && (cfg.known & (1u << ZPL_CFG_LENGTH))) {
         snprintf(l, sizeof(l), "%.1f", zpl_dots_to_mm(cfg.v[ZPL_CFG_LENGTH], cfg.dpmm));
     }
-    char buf[900];
+    char buf[1500];
     snprintf(buf, sizeof(buf),
              "<fieldset><legend>Test label</legend>"
              "<p><small>A border 1 mm in from the edges, mm rulers, line widths, a solid band (white streaks are dead "
              "printhead dots), a 20 mm circle (an oval means the wrong dpi) and two barcodes. Nothing is saved in "
              "the printer. The size starts as the printer's print width and label length; a print job may have "
              "changed those, so set your label's size.</small></p>"
+             "<p><small>Centring: the scales in the top corners count 0 to 4 mm in from each side edge. Read where "
+             "the label's edge falls on each; ticks past the edge print on the backing, and a gap before the 0 tick "
+             "is a negative reading. If the left reads L mm and the right R mm, lower Left Position by (L - R) / 2 mm "
+             "to centre the print (raise it if that is negative). Ticks missing altogether, not even on the backing, "
+             "mean the printer cannot print that far out at this width.</small></p>"
              "<form method=post action=/printer_test>"
              "<label for=tw>Width <small>(mm)</small></label><input id=tw name=w inputmode=decimal required value='%s'>"
              "<label for=tl>Length <small>(mm)</small></label><input id=tl name=l inputmode=decimal required value='%s'>"

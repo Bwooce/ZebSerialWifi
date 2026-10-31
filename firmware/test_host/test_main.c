@@ -918,6 +918,15 @@ static void test_log_line(void)
     CHECK(log_line_body("W (12) ", 7) == 7);  /* an empty text is still a whole prefix */
 }
 
+static int count_of(const char *s, const char *what)
+{
+    int n = 0;
+    for (const char *p = strstr(s, what); p != NULL; p = strstr(p + 1, what)) {
+        n++;
+    }
+    return n;
+}
+
 /* Every ^FO origin, and every ^GB box from its origin, lies inside the label */
 static int label_fields_inside(const char *zpl, int w, int l)
 {
@@ -972,7 +981,21 @@ static void test_label(void)
     CHECK(strstr(out, "GX430t, 101.6 x 152.4 mm") != NULL);
     CHECK(strstr(out, "300 dpi, 1200 x 1800 dots") != NULL);
     CHECK(strstr(out, "^GC236,") != NULL);              /* 20 mm circle: 236.2 dots at 300 dpi */
-    CHECK(strstr(out, "^FO1180,15^GB2,36,2^FS") != NULL); /* 100 mm mark at 1181 dots, not 1200 */
+    CHECK(strstr(out, "^FO1121,15^GB2,18,2^FS") != NULL); /* 95 mm mark at 1122 dots, not 1140 */
+    CHECK(strstr(out, "^FO1180,15^GB") == NULL);          /* 100 mm mark left out: the edge scale is there */
+    /*
+     * Edge scales: 3 dot ticks every 0.5 mm from each side edge to 4 mm,
+     * 1.5 mm long on whole mm, measured at the tick's outer side. 300 dpi:
+     * 0.5 mm = 5.9 dots, 4 mm = 47.2 dots. Right side: 1200 - 47 - 3 = 1150.
+     */
+    CHECK(strstr(out, "^FO0,15^GB3,18,3^FS") != NULL);    /* left, 0 mm */
+    CHECK(strstr(out, "^FO6,15^GB3,9,3^FS") != NULL);     /* left, 0.5 mm */
+    CHECK(strstr(out, "^FO30,15^GB3,9,3^FS") != NULL);    /* left, 2.5 mm: 29.5 dots */
+    CHECK(strstr(out, "^FO47,15^GB3,18,3^FS") != NULL);   /* left, 4 mm */
+    CHECK(strstr(out, "^FO1197,15^GB3,18,3^FS") != NULL); /* right, 0 mm */
+    CHECK(strstr(out, "^FO1191,15^GB3,9,3^FS") != NULL);  /* right, 0.5 mm */
+    CHECK(strstr(out, "^FO1150,15^GB3,18,3^FS") != NULL); /* right, 4 mm */
+    CHECK(count_of(out, "^FD2^FS") == 2 && count_of(out, "^FD4^FS") == 2);
     CHECK(strstr(out, "^BQN,2,6^FDQA,http://zebserial.local/^FS") != NULL);
     CHECK(strstr(out, "^BCN,") != NULL);
     CHECK(label_fields_inside(out, 1200, 1800) == 0);
@@ -982,6 +1005,14 @@ static void test_label(void)
     n = test_label_zpl(&s, out, TEST_LABEL_ZPL_MAX);
     CHECK(n > 0 && strstr(out, "^GB") != NULL && strstr(out, "^GC") == NULL && strstr(out, "^BC") == NULL);
     CHECK(label_fields_inside(out, 406, 203) == 0);
+
+    /* 60 x 20 mm at 300 dpi (709 x 236 dots): both edge scales, nothing outside */
+    test_label_t sm = {.width = 709, .length = 236, .dpmm = 12, .model = "GX430t", .version = "v", .url = "u"};
+    n = test_label_zpl(&sm, out, TEST_LABEL_ZPL_MAX);
+    CHECK(n > 0 && strstr(out, "^FO0,15^GB3,18,3^FS") != NULL && strstr(out, "^FO706,15^GB3,18,3^FS") != NULL);
+    CHECK(strstr(out, "^FO590,15^GB") != NULL);           /* 50 mm mark at 590.6 dots */
+    CHECK(strstr(out, "^FO649,15^GB") == NULL);           /* 55 mm is inside the right scale */
+    CHECK(label_fields_inside(out, 709, 236) == 0);
 
     /* 1 m long: the rulers stop at 300 mm, so it still fits */
     test_label_t lg = {.width = 1200, .length = 12000, .dpmm = 12, .model = "m", .version = "v", .url = "u"};

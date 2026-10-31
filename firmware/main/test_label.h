@@ -13,7 +13,8 @@ typedef struct {
 
 /*
  * A label with a border 1 mm in from the edges, mm rulers along the top and
- * left, the size and resolution as text, line widths of 1 to 4 dots, a solid
+ * left, 0 to 4 mm scales from each side edge in the top corners (to measure
+ * how far the print is off centre), the size and resolution as text, line widths of 1 to 4 dots, a solid
  * band (white streaks show dead printhead dots), a 20 mm circle (an oval
  * means the job and the printer disagree on dpi), a Code 128 barcode and a
  * QR code. Parts that do not fit the label are left out. Nothing is saved in
