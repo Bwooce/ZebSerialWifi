@@ -490,6 +490,16 @@ static void test_hh_parse_edges(void)
     CHECK(hh.count == 2);
     check_pair(&hh, "BAUD", "9600");
     check_pair(&hh, "HOST HANDSHAKE", "DTR & XON/XOFF");
+    /* GX430t after ^ML600 (captured 2026-10-31): the value is right-aligned, so it starts with a third space */
+    const char *short_ml = "\x02  15.0                DARKNESS          \r\n"
+                           "   2.0IN   50MM       MAXIMUM LENGTH    \r\n"
+                           "  1280 12/MM FULL     RESOLUTION        \r\n\x03";
+    CHECK(zpl_hh_parse((const uint8_t *)short_ml, strlen(short_ml), &hh));
+    CHECK(hh.count == 3);
+    check_pair(&hh, "MAXIMUM LENGTH", "2.0IN   50MM");
+    zpl_printer_cfg_t mc;
+    zpl_cfg_from_hh(&hh, &mc);
+    CHECK((mc.known & (1u << ZPL_CFG_MAX_LENGTH)) && mc.v[ZPL_CFG_MAX_LENGTH] == 600);  /* 50 mm x 12 */
     /* a truncated dump still gives the lines that arrived, without the cut-off one */
     const char *cut = "\x02  15.0                DARKNESS\r\n  4 IPS               PRI";
     CHECK(zpl_hh_parse((const uint8_t *)cut, strlen(cut), &hh));

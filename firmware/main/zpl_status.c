@@ -345,7 +345,12 @@ static bool hh_split_line(const uint8_t *p, size_t n, char *name, size_t name_le
     }
     size_t value_end;
     size_t name_start;
-    if (n > HH_NAME_COL && p[0] == ' ' && p[1] == ' ' && p[2] != ' ' && is_leader(p[HH_NAME_COL - 1]) &&
+    /* values can be right-aligned ("   2.0IN   50MM"), so the value starts anywhere before the name */
+    size_t first = 2;
+    while (first < HH_NAME_COL && first < n && p[first] == ' ') {
+        first++;
+    }
+    if (n > HH_NAME_COL && p[0] == ' ' && p[1] == ' ' && first < HH_NAME_COL - 1 && is_leader(p[HH_NAME_COL - 1]) &&
         !is_leader(p[HH_NAME_COL])) {
         value_end = HH_NAME_COL;
         name_start = HH_NAME_COL;
