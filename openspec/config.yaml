@@ -31,12 +31,25 @@ context: |
   - assets/logo/: the striped mark (SVG) used by the web UI icons and the case logo inlay.
   - docs/superpowers/: the 2026-10-07 design and plan, older than the code; docs/papercuts/: friction log.
 
+  ## Reference artefacts
+  The specs rely on these files as normative inputs and do not restate them. A rebuild uses these files plus the
+  specs:
+  - enclosure/zebserial_case.scad, for the case geometry; its parameters are specified in the enclosure spec.
+  - assets/logo/*.svg, for the mark (the case inlay uses zebserial-mark-deboss.svg; make_logo.py and make_icons.py
+    generate the SVGs and icons).
+  - firmware/test_host/fixtures/gx430t_hh.bin (a GX430t ^HH reply) and firmware/test_host/test_main.c, for the
+    expected parser output.
+  - firmware/main/icons/favicon.ico and apple-touch-icon.png, served as they are.
+  - The pinned components in firmware/main/idf_component.yml and firmware/dependencies.lock: bwooce/esp_iot_log at
+    git commit e6a5a22aa21f7f4be1f956563619fbe1f11b0544 (github.com/Bwooce/esp-iot-log, path esp-idf), and
+    espressif/mdns 1.14.0 (manifest "^1.8"), with ESP-IDF 6.1.0.
+
   ## Constraints
   - Flash 4 MB. partitions.csv: nvs 0x9000 size 0x6000, otadata 0xf000 0x2000, phy_init 0x11000 0x1000,
     ota_0 0x20000 0x1E0000, ota_1 0x200000 0x1E0000. An app image must fit 0x1E0000 (1,966,080 bytes).
     The partition table and bootloader change only over USB (idf.py flash); NVS keeps offset 0x9000.
   - httpd task stack 8192 bytes (web.c web_start(): cfg.stack_size), max_open_sockets 4, lru_purge_enable,
-    max_uri_handlers 24 with 21 registered (a new route beyond 3 more needs the limit raised). One server task
+    max_uri_handlers 24 with 22 registered (a third new handler needs the limit raised). One server task
     runs every handler, so a long handler (an HTTP print job, an OTA upload) holds up every other page.
     Handlers must not put large buffers on the stack. CONFIG_HTTPD_MAX_REQ_HDR_LEN 1024, CONFIG_LWIP_MAX_SOCKETS 16.
   - One printer link: the UART is shared by the TCP 9100 bridge, HTTP print jobs and the status poller, one at a

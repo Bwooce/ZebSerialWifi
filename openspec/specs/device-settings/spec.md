@@ -168,6 +168,16 @@ The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is th
 
 ## Notes
 
+### Stored lengths
+
+| Key | Type | Longest value | Source |
+|---|---|---|---|
+| `ssid` | string | 32 characters | `SETTINGS_SSID_MAX` 33 |
+| `pass` | string | 64 characters; an open network is stored as the empty string "" | `SETTINGS_PASS_MAX` 65, `settings_set_wifi()` |
+| `hostname` | string | 32 characters | `settings_net_t.hostname[33]`, `NETCFG_HOSTNAME_MAX` 32 |
+| `cap_model` | string | 31 characters (read into a 32-byte buffer; a longer stored value does not match) | `settings_get_baud_cap()` |
+| `model` | string | 31 characters | `settings_get_model(char out[32])` |
+
 The `pins` setting is stored here; how it selects the UART pins, the pin detection at boot and the swap
 fallback are specified in the printer-link spec (Pin selection at boot, Passive pin probe, Loopback pin probe and
 defaults, Pin swap fallback).

@@ -110,3 +110,30 @@ down, as exported, and both print without supports.
 ## Notes
 
 When to print the coupons, and what a good coupon fit is, are specified in the enclosure spec (Fit coupons).
+
+### Override files
+
+| File | Keys and values |
+|---|---|
+| `print/process_overrides.json` | `name` "ZebSerial PETG 0.16mm @BBL H2D", `wall_loops` "4", `top_shell_layers` "6", `bottom_shell_layers` "5", `sparse_infill_density` "25%", `sparse_infill_pattern` "gyroid", `enable_support` "0", `seam_position` "back", `brim_type` "no_brim", `initial_layer_speed` ["40"], `initial_layer_infill_speed` ["60"], `curr_bed_type` "Textured PEI Plate" |
+| `print/filament_overrides.json` | `name` "ZebSerial Bambu PETG Basic @BBL H2D 0.4 nozzle" only; every other filament value is the system profile's |
+| `print/filament_overrides_logo.json` | `name` "ZebSerial Bambu PETG Basic logo @BBL H2D 0.4 nozzle", `filament_colour` ["#FFFFFF"] |
+
+The machine profile has no overrides file (`-` is passed to `resolve_profile.py`).
+
+### Bambu Studio command lines
+
+With `APP=/Applications/BambuStudio.app/Contents`, run from the working folder, output to `slice.log`:
+
+```
+case:   "$APP/MacOS/BambuStudio" --outputdir "$W" --load-settings "machine.json;process.json" \
+            --load-filaments "filament.json;filament_logo.json" --load-assemble-list assemble.json \
+            --slice 0 --export-3mf zebserial_case.3mf
+coupon: "$APP/MacOS/BambuStudio" --outputdir "$W" --orient 0 --arrange 1 \
+            --load-settings "machine.json;process.json" --load-filaments "filament.json" \
+            --slice 0 --export-3mf zebserial_coupon.3mf coupon_tray.stl coupon_lid.stl
+```
+
+`assemble.json` (case only) holds one plate "zebserial" with `need_arrange` true and three objects: `tray.stl`
+(filament 1, `assemble_index` 1), `lid.stl` (filament 1, index 2) and `logo.stl` (filament 2, index 1), each at
+`pos_x`, `pos_y`, `pos_z` 0. The CLI's exit status is ignored (`|| true`); `result.json` decides.

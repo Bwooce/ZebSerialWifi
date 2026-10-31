@@ -268,3 +268,17 @@ from `CONFIG_LWIP_IPV6_AUTOCONFIG`. Up to 3 station IPv6 addresses SHALL be repo
 
 Routing of requests that arrive over the setup network is specified in web-ui (Setup access point routing); the
 refusal of port 9100 connections from it in print-bridge; the 403 for `/pstprnt` in http-print.
+
+### Station state
+
+`wifi_prov_state()` (`firmware/main/wifi_prov.h` `wifi_prov_state_t`) is one of:
+
+| Value | Meaning | Set when |
+|---|---|---|
+| `WIFI_ST_AP` | the setup access point is running and the station is not connected | `start_ap()`; a disconnect while the AP is up |
+| `WIFI_ST_CONNECTING` | the station is trying, or retrying, a saved network, with no AP | the initial value; `wifi_prov_start()` with a saved network; a disconnect with no AP |
+| `WIFI_ST_CONNECTED` | the station has an IPv4 address | `IP_EVENT_STA_GOT_IP` |
+
+The AP can run while the station tries a network (`wifi_prov_ap_active()`), and the state then reads `WIFI_ST_AP`.
+The join trial has its own state, `wifi_join_state_t`: `WIFI_JOIN_NONE`, `WIFI_JOIN_TRYING`, `WIFI_JOIN_JOINED`,
+`WIFI_JOIN_FAILED`.

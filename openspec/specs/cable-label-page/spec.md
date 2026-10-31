@@ -202,8 +202,8 @@ edit to the rows.
 
 ### Requirement: Print through the bridge's /pstprnt
 The page SHALL send the whole batch as one `POST http://<address>/pstprnt`, aborting after 120 s. The request SHALL
-be a CORS simple request: POST, a string body, and no header other than `Content-Type: text/plain`, because the bridge
-does not answer a preflight. A 2xx reply SHALL show "Sent <n> labels at <time>." with the bridge's reply text; any other status SHALL
+be a CORS simple request: POST, a string body, and no header other than `Content-Type: text/plain`, so the browser
+sends it without a preflight round trip (the bridge does answer one; see http-print, Route and method). A 2xx reply SHALL show "Sent <n> labels at <time>." with the bridge's reply text; any other status SHALL
 show "The bridge said: <reply>".
 
 **Source**: `tools/cable-labels.html` print button handler, `withTimeout()`, `showStatus()`; `firmware/main/web.c` `pstprnt_post()`, `pstprnt_reply()` (`Access-Control-Allow-Origin: *`)
@@ -261,6 +261,17 @@ and the field SHALL show `zebserial.local` again when it is left empty.
 - The page notes that the end margin should stay at 2.5 mm or more on the GX430t, as the last 2 mm at one side does
   not print.
 - Left-right position is not set by the page; it is the printer's Left Position, set on the bridge's Printer page.
+
+### Stored data
+
+Both keys hold JSON written by `store.set()` (`JSON.stringify`); unreadable JSON reads as the default.
+
+- `cable.settings`: one object with the `DEFAULTS` keys, `{"ip": "zebserial.local", "wMm": 60, "lMm": 20,
+  "cableMm": 3, "edgeMm": 2.5, "gapMm": 1, "vMm": 1.5, "maxMm": 5, "font": "DIN Condensed", "bold": true,
+  "marks": false, "rot": false, "same": true}`. Numbers are mm. A saved object is merged over `DEFAULTS`, so missing
+  keys take the default. An older `wrapMm` key is converted to `cableMm` and dropped.
+- `cable.rows`: an array of `{"a": "Line 1", "b": "Line 2", "q": 1}`. `q` is the quantity, at least 1. A missing,
+  empty or non-array value starts the page with the default row.
 
 ### Known deviations
 None. The last ones were fixed in the change archived as `2026-10-31-fix-known-deviations`.

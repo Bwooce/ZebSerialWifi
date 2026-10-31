@@ -44,10 +44,15 @@ fail with an assertion when the derived top `z_top` exceeds it.
 
 **Source**: `enclosure/zebserial_case.scad` `max_above`, `z_top`, `assert(z_top <= max_above, ...)`
 
-#### Scenario: A taller Dupont housing
-- **WHEN** `dupont_top` or `dupont_ceiling_min` grows so that `z_top` exceeds 25.0
-- **THEN** OpenSCAD SHALL exit 1 with "case taller than the 25 mm envelope above the board"
-- **AND** `build.sh` (`set -eu`) SHALL stop at the first STL export with a non-zero exit and no FAIL line, having already deleted `out/*.stl` and `renders/*.png`
+#### Scenario: Top over the envelope, edited in the SCAD
+- **WHEN** a SCAD edit makes `z_top` exceed `max_above` (for example a taller `dupont_ceiling_min`)
+- **THEN** OpenSCAD SHALL echo "ZEBCASE WARNING: top ... above the PCB top, over the ... mm envelope" and then fail the assertion "case taller than the 25 mm envelope above the board", exiting 1
+- **AND** `build.sh` (`set -eu`) SHALL stop at the first STL export (`out/tray.stl`) with exit 1 and no FAIL line, having already deleted `out/*.stl` and `renders/*.png`, because the STL exports do not catch errors
+
+#### Scenario: Top over the envelope, as a build.sh override
+- **WHEN** `./build.sh -D max_above=20` runs on the committed SCAD
+- **THEN** the STL exports and renders SHALL succeed (they do not get the overrides), and the parameter step SHALL print "FAIL: ZEBCASE WARNING: top 25 above the PCB top, over the 20 mm envelope" and "FAIL: parameter echo: openscad error or no output"
+- **AND** every later check SHALL fail with an OpenSCAD error, and the script SHALL end "build: 9 gate(s) FAILED" with exit 1
 
 ### Requirement: DB9 mating face
 The DB9 D-shell SHALL project `ds_proj` (6.0 mm) forward of the flush case front face so that it mates with the
@@ -275,7 +280,7 @@ echoes one as got "error".
 
 #### Scenario: Every geometry warning is gated
 - **WHEN** an override sets the top over `max_above`, a lip within `lip_ds_clr` of the D-shell, the lips into the jackpost area, the XIAO under `front_rest_min` on the DB9 body, or the leg-tail pocket within 0.8 mm of the floor bottom
-- **THEN** `build.sh` SHALL print that warning as a FAIL line and exit 1 (the `max_above` case also fails its assertion)
+- **THEN** `build.sh` SHALL print that warning as a FAIL line and exit 1 (for `max_above`, see Height envelope: the assertion adds further FAIL lines)
 
 #### Scenario: Only notes are echoed
 - **WHEN** `./build.sh` runs on the current parameters, which echo the "ZEBCASE NOTE (check)" line on the front-edge joints and no warning
@@ -642,6 +647,41 @@ datasheets and the Seeed CAD files, not measurements.
 5. Look at the renders (`renders/*.png`) for ghost-to-ghost clashes, which no check sees.
 6. Commit the SCAD, `out/*.stl` and `renders/*.png` together, and update `enclosure/README.md`.
 7. Re-slice through `print/` (see the slicing-and-printing spec), print the coupons first, then the case.
+
+### Derived values used in this spec
+
+For the current parameters: `hdr_hw` 5.08 (half the housing length, `hdr_pins * 2.54 / 2`); `hole_z` 6.25 (D-shell
+centre, `fl_bot + fl_h / 2`); `ds_top` 10.45 and `ds_bot` 2.05 (`hole_z` +- `ds_h / 2`); `lip_t_bot` 11.5 (top lip
+bottom, `fl_bot + fl_h - lip_reach`); `lc_tip` -1.0 (snap finger tip, `split_z - lc_below`); `lc_hook_top` 0.4
+(`lc_tip + 1.4`); XIAO `xa0` -4.955 and `xa1` 16.0 (antenna and USB ends, X), `yx0` 7.3 and `yx1` 25.08 (front and
+rear edges, Y); `zx0` 10.4 and `zx1` 11.6 (underside and top, Z).
+
+### ZEBCASE echo lines
+
+Every render prints these, in this order, as `ECHO: "..."` (values for the current parameters; `[...]` are lists):
+
+```
+ZEBCASE outer X 40.4 Y 33.458 Z 31.2 (top 25 above PCB top, limit 25)
+ZEBCASE style: side sag 0.66916, rear sag 0.808, front sag 0, corner chamfer 1.5, corner facet 5, edge chamfer 1.5, snap faces at X [19.6602, 19.6754]
+ZEBCASE XIAO X -4.955..16 Y 7.3..25.08 underside z 10.4, USB mouth X 17.5 at Y 16.19 z 13.25, relief depth 2.03084, lid clips at Y [6.3, 27.4]
+ZEBCASE top skin 1.6, floor 1.6, 0.92 under the logo (inlay, 25 x 24.6352 mm, floor flat margins front 2.5074 rear 2.5074 sides 5.53084)
+ZEBCASE XIAO on the DB9 body 5.2 mm; rear edge to the Dupont housing 1.15 mm; front edge 0.2 behind the lid front wall
+ZEBCASE NOTE (check): the front-edge 5V/GND/3V3 joints (X 6.229..14.849, Y 7.3) lie over the DB9 body's +X end and the +X jack screw hardware (top z 9.75, 0.65 under the XIAO): top-side joints only, with nothing under the XIAO there
+ZEBCASE CORNER PINS at X +-13.25 Y 27: 2 across X, 1.5 across Y, top z -0.1; pressers from Y 26.2, 0.25 above the PCB
+ZEBCASE leg-tail keep-out (estimate +-1.5): X +-9.6..15.7 Y 5.55..11.65; ledges from Y 12.15
+ZEBCASE SUPPORT XIAO: on the DB9 body (5.2) and the tongue (gap 0.05, top edges at z 11.8078); pads 0.25 over the shield, USB shell and rear strip; -X stop rib X -6.755..-5.155 Y 15.94..25.08 (antenna to Y 15.67); shield stop X 7.529..9.009 Y 22.79..25.08; 5V/GND corridor X 9.309..14.309
+ZEBCASE PADS: front 5V X 13.079, GND 10.539, 3V3 7.999 (Y 7.3); rear D3 X 5.459, D5 0.379 (Y 25.08); front joints X 6.229..14.849, rear joints X -1.391..7.229
+ZEBCASE DIODE: 2.7 x 5.2 body, centre [6.73, 26.73, 15.1], axis [0, 0, 1]; keep-out radius 1.65, body ends [6.73, 26.73, 12.5] (anode) / [6.73, 26.73, 17.7] (cathode); anode joint on D3 at [5.459, 24.48, 12]
+ZEBCASE LIPS: |X| <= 8, 1.3 proud of Y 0, gap 0.1; top lip z 11.5 (D-shell top 10.45), bottom lip to z 1 (D-shell bottom 2.05)
+ZEBCASE DUPONT: housing X +-5.08 Y 26.23..28.77 to z 16.7, keep-out to Y 30.27 (interior rear face 31, backstop 29.25 below z -0.2); wire-bend zone X +-7.08 Y 25.08..30.27 from z 16.7 to the ceiling at 23.4
+ZEBCASE PIN 9 WIRE: pad X -4.155 Y 7.1 (estimate); run under the board at X -8 +-1, z -3.6..-1.6 (floor top -4.6); riser behind the PCB Y 29..31 up to the ceiling, then +X over the housing to the 5V/GND corridor; 0.6 spare round a 1.4 wire
+ZEBCASE JACK HARDWARE: X +-12.5 z 6.25, d 7, Y 5.1..10.1; front wall cut back beside the DB9 body up to z 10.05
+```
+
+The DIODE, DUPONT, PIN 9 WIRE and JACK HARDWARE lines appear only with `diode_on`, `dupont_on`, `p9_on` and `jack_on`.
+The conditional `ZEBCASE WARNING: ...` lines (see Geometry warnings fail the build) come between them where their
+condition holds. The format strings are the `echo(str(...))` calls in `enclosure/zebserial_case.scad` after the derived
+values.
 
 ### Evidence
 
