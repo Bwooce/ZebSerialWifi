@@ -1,10 +1,13 @@
 # ZebSerialWifi
 
-A Wi-Fi to RS-232 bridge for Zebra label printers that only have a serial port. It plugs into the printer's DB9 and
-shows up on the network as an ordinary network printer: raw TCP on port 9100, advertised over Bonjour, with a web page
-for status and settings.
+A Wi-Fi to RS-232 bridge for Zebra label printers that have a serial port but no network connection. It plugs into
+the printer's DB9 and shows up on the network as an ordinary network printer: raw TCP on port 9100, advertised over
+Bonjour, with a web page for status and settings.
 
 It is a Seeed XIAO ESP32-C6 and a MAX3232 RS-232 module in a small 3D-printed case. The firmware is ESP-IDF 6.1.
+
+One unit is built and in use with a Zebra GX430t. Building one takes a few soldered wires and a diode, an ESP-IDF
+toolchain for the first flash, and a 3D printer for the case.
 
 ## What it does
 
@@ -32,7 +35,7 @@ It is a Seeed XIAO ESP32-C6 and a MAX3232 RS-232 module in a small 3D-printed ca
 | Printer | State |
 |---|---|
 | Zebra GX430t, firmware V56.17.16Z | Tested: printing, status, settings, baud change |
-| Other Zebra ZPL printers with a DB9 RS-232 port (for example the G-series GK420/GK430/GX420) | Not tested. Expected to work: same serial pinout and ZPL commands |
+| Other Zebra ZPL printers with a DB9 RS-232 port (for example the G-series GK420 and GX420) | Not tested. Expected to work: same serial pinout and ZPL commands |
 | Printers in EPL, CPCL or line-print mode | Jobs pass through, but the bridge sends no ZPL, so there are no status details or settings |
 
 The printer needs a DB9 serial port wired as Zebra's G-series is: the printer is the DTE, receives on pin 2 and
@@ -119,8 +122,8 @@ the module, so it needs one extra wire from the pin 9 pad on the back of the mod
   dark through the printer's own start-up and then boots, so it always starts with a printer that is ready. While the
   printer is off, the bridge is off too, and its web page is unreachable.
 - **From USB instead:** the XIAO's USB-C, with no pin 9 wire. Useful on the bench and for flashing.
-- With both, the printer's 5 V and the USB 5 V meet on the XIAO's 5V pad. Check the XIAO's schematic before plugging
-  in USB to a bridge powered by the printer, or unplug it from the printer first.
+- With both, the printer's 5 V and the USB 5 V meet on the XIAO's 5V pad. Unplug the bridge from the printer before
+  connecting USB.
 
 ## The diode, 3.3 V and clone chips
 
@@ -229,9 +232,9 @@ The flash has two firmware slots. After the first flash over USB, new firmware g
 - **Or from a terminal:** `curl --data-binary @firmware/build/zebserial.bin http://zebserial.local/update`
 
 The bridge checks the upload is a ZebSerialWifi image for the ESP32-C6 and that it arrived whole, writes it to the
-other slot and restarts into it. The new firmware must reach the Wi-Fi network within 180 s, or the bridge goes back
-to the previous one; a crash before that also goes back. The Bridge page can also restart into the other slot by hand
-("Go back to ...").
+other slot and restarts into it. The new firmware is kept once it has held a Wi-Fi address for 15 s. If it has none
+within 180 s, or crashes before then, the bridge goes back to the previous firmware. The Bridge page can also restart
+into the other slot by hand ("Go back to ...").
 
 Anyone on the network can upload firmware, as they can already change the settings. Uploads from another web site are
 refused.
@@ -280,8 +283,9 @@ curl --data-binary @label.zpl http://zebserial.local/pstprnt
 ```
 
 It answers to pages from any site (`Access-Control-Allow-Origin: *`), so a label page saved on a computer can print
-and read the reply. That opens nothing new: anyone on the network can already print through port 9100. It is refused
-on the set-up network. The reply says how many bytes went to the printer; 503 means another job held the printer for
+and read the reply. Anyone on the network can already print through port 9100; what is new is that a web page you
+visit can print too, and ZPL can change the printer's settings. Only open label pages you trust. It is refused on the
+set-up network. The reply says how many bytes went to the printer; 503 means another job held the printer for
 15 s, and 504 means the printer stopped taking data for 30 s (paper or ribbon out, head open) and the rest of the job
 was dropped.
 
@@ -312,7 +316,11 @@ project and its settings. The unit plugs straight into the printer's serial sock
 |---|---|
 | Printer not found at any baud | The handshake (see above), a printer fault, the diode the wrong way round, or a module whose charge pump is not running |
 | Printer prints but never answers | A DTR handshake mode, or a fault such as ribbon out |
-| "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within a few minutes. The D5 pull-up stops it at the source. |
+| "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within about 10 minutes. The D5 pull-up stops it at the source. |
 | Printer page: "No complete reply to ^HH" | The printer has stopped running formats (seen once with the head not fully latched). Close the head properly and turn the printer off and on. |
 | Remote log: receiver found, but no lines arrive | The access point no longer forwards the group to the receiver: update the iot_log receiver (it re-joins every 60 s) |
 | No 5 V on pin 9 at the module | The gender changer does not carry pin 9, or a bad connection; measure at the printer's own socket |
+
+## Licence
+
+MIT: see [LICENSE](LICENSE). It covers the firmware, the case files and the label page.
