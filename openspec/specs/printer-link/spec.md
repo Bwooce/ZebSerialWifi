@@ -162,9 +162,9 @@ for the caller's buffer (refused, not cut), SHALL count as no value. The read SH
 
 **Source**: `firmware/main/zpl_status.c` `zpl_sgd_value()`; `firmware/main/printer_link.c` `sgd_get()`, `sgd_done()`, `PROBE_TIMEOUT_MS`; `firmware/test_host/test_main.c` `test_sgd_value()`
 
-#### Scenario: GX430t language reply
-- **WHEN** the printer answers `"epl_zpl"` to `device.languages`
-- **THEN** the value SHALL be `epl_zpl`, without the quotes
+#### Scenario: Quoted value
+- **WHEN** the reply is `"xon/xoff"`, or `"115200"` with CR LF before and after
+- **THEN** the value SHALL be `xon/xoff` or `115200`, without the quotes
 
 #### Scenario: Value longer than the buffer
 - **WHEN** the quoted value does not fit the caller's buffer with its terminating NUL
@@ -361,7 +361,8 @@ not sleep.
 ### Requirement: Link task scheduling
 The link task (`printer_link`; stack and priority in device-settings, Tasks) SHALL wake every 200 ms and run only
 when it gets the link without waiting. It SHALL detect at boot and whenever not detected or a re-detect is
-requested, retrying every 10 s while none is found. A detected printer SHALL be polled 30 s after the last poll or detection while answering and every 10 s while it is not.
+requested, retrying every 10 s while none is found. A detected printer SHALL be polled 30 s after the last poll or
+detection while answering and every 10 s while it is not.
 
 **Source**: `firmware/main/printer_link.c` `link_task()`, `POLL_INTERVAL_MS`, `SCAN_RETRY_MS`, `printer_link_start()`
 
@@ -541,7 +542,8 @@ detected), age of the last reply (-1 if none), byte counters, TX and RX GPIOs an
 
 `detect()` in `firmware/main/printer_link.c`:
 
-1. Scan the bauds (Probing each baud). If none answers and the pins were not fixed, swap the pins and scan again;
+1. Scan the bauds (Probing each baud). If none answers and pin swap is allowed (`s_pin_swap`: the boot pin choice was
+   not certain, and no printer has been found since boot), swap the pins and scan again;
    if that also fails, swap them back and return to the fallback baud (Pin swap fallback).
 2. Clear a partial format (Partial format recovery at detection).
 3. Read the language (Language detection) and reset the language retry count to `LANG_RETRIES`.

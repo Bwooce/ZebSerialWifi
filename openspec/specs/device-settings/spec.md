@@ -169,8 +169,9 @@ The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is th
 ### Requirement: Boot order
 `app_main()` SHALL start the bridge in the order of Notes, Boot sequence: settings and the log hook first, then the
 board, UART pins and printer link driver, then the network stack and its services, then the printer link task and
-the `status` task. An error that `ESP_ERROR_CHECK` catches (steps 1, 4, 7, 8, `mdns_init()`) SHALL restart the
-chip. The status task SHALL run every `STATUS_TICK_MS` (100 ms): `ota_poll()`, `temp_mon_poll()`, the mDNS model update, the LED mode and the BOOT button.
+the `status` task. An error that `ESP_ERROR_CHECK` catches (in steps 1, 4, 7, 8, 9 and 10) SHALL panic and restart
+the chip (`CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT`, the default). The status task SHALL run every
+`STATUS_TICK_MS` (100 ms), as in Notes, Boot sequence.
 
 **Source**: `firmware/main/main.c` `app_main()`, `status_task()`, `STATUS_TICK_MS`
 
@@ -180,13 +181,13 @@ chip. The status task SHALL run every `STATUS_TICK_MS` (100 ms): `ota_poll()`, `
 
 #### Scenario: Boot log on the remote log
 - **WHEN** the remote log is on at level 3 and the bridge boots
-- **THEN** the version line and the board's antenna line SHALL be among the queued lines sent once Wi-Fi is up
+- **THEN** the version line and the board's antenna line SHALL be queued for the remote log (when they are sent is remote-log's)
 
 ### Requirement: Tasks
-The bridge's own tasks SHALL be created with the names, stack sizes and priorities in Notes, Tasks, all with
-`xTaskCreate()` (no core affinity; the ESP32-C6 has one core, `CONFIG_FREERTOS_UNICORE`). A higher number is a higher
-FreeRTOS priority. The port 9100 listener SHALL have the highest priority of them, then the printer link, then the HTTP
-server.
+The bridge's tasks SHALL be created with the names, stack sizes and priorities in Notes, Tasks. The project's five
+(`bridge`, `printer_link`, `status`, `dns_hijack`, `remote_log`) SHALL use `xTaskCreate()`, with no core affinity (the
+ESP32-C6 has one core, `CONFIG_FREERTOS_UNICORE`). A higher number is a higher priority: the port 9100 listener (6)
+SHALL be highest, the printer link and the HTTP server next and equal (5), then the captive DNS server (4).
 
 **Source**: `firmware/main/main.c` `app_main()` (`xTaskCreate(status_task, "status", 4096, NULL, 3, NULL)`); `firmware/main/printer_link.c` `printer_link_start()` (`xTaskCreate(link_task, "printer_link", 6144, NULL, 5, NULL)`); `firmware/main/bridge.c` `bridge_start()` (`xTaskCreate(listen_task, "bridge", 6144, NULL, 6, NULL)`); `firmware/main/remote_log.c` `remote_log_start()`, `SENDER_STACK`, `SENDER_PRIO`; `firmware/main/dns_hijack.c` `dns_hijack_start()` (`xTaskCreate(dns_task, "dns_hijack", 3072, NULL, 4, &s_task)`); `firmware/main/web.c` `web_start()` (`cfg.stack_size`)
 
@@ -215,7 +216,8 @@ server.
 12. `web_start()`: the HTTP server.
 13. `bridge_start()`: the port 9100 listener.
 14. `printer_link_start()`: the link task, which starts printer detection.
-15. The `status` task; `app_main()` then returns.
+15. The `status` task; `app_main()` then returns. Every `STATUS_TICK_MS` (100 ms) the status task runs `ota_poll()`
+    (OTA confirmation), `temp_mon_poll()`, the mDNS model update, the LED mode and the BOOT-button hold.
 
 ### Tasks
 

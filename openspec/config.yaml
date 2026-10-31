@@ -63,10 +63,11 @@ context: |
     CONFIG_ESPTOOLPY_FLASHSIZE_4MB (Hardware, this file); CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG (device-settings,
     Console); CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024 and CONFIG_LWIP_MAX_SOCKETS=16 (Constraints, this file);
     CONFIG_PARTITION_TABLE_CUSTOM with CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv" and
-    CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE (ota-updates); CONFIG_COMPILER_OPTIMIZATION_SIZE (size optimisation,
-    which keeps the app well inside its 0x1E0000 slot); CONFIG_LWIP_IPV6 and CONFIG_LWIP_IPV6_AUTOCONFIG
-    (print-bridge dual-stack listener, wifi-provisioning IPv6 addresses); CONFIG_UART_ISR_IN_IRAM (the printer
-    link's UART interrupt keeps running while flash is busy, for example during an OTA write or an NVS commit).
+    CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE (ota-updates); CONFIG_COMPILER_OPTIMIZATION_SIZE (optimise for size,
+    to keep the app image small against its 0x1E0000 slot); CONFIG_LWIP_IPV6 and CONFIG_LWIP_IPV6_AUTOCONFIG
+    (print-bridge dual-stack listener, wifi-provisioning IPv6 addresses); CONFIG_UART_ISR_IN_IRAM (the UART driver then
+    allocates the printer link's interrupt with ESP_INTR_FLAG_IRAM, so it runs while the flash cache is off, for
+    example during an OTA write or an NVS commit).
     Every other symbol keeps the ESP-IDF default: log level info, CPU 160 MHz, FreeRTOS tick 100 Hz, one core,
     and the default Wi-Fi buffers and mDNS options.
   - The components named in firmware/main/idf_component.yml: bwooce/esp_iot_log from

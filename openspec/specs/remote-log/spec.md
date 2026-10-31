@@ -68,8 +68,8 @@ the saved level, cast the same way.
 **Source**: `firmware/main/remote_log.c` `sender_task()`, `configure()` (`lc.level`); `firmware/main/log_line.c` `log_line_body()`; `firmware/managed_components/bwooce__esp_iot_log/include/esp_iot_log.h` `iot_log_level_t`, `iot_log()`
 
 #### Scenario: Warning line sent
-- **WHEN** "W (5120) printer: no reply at 9600 baud" is logged at level 2
-- **THEN** the sender SHALL call `iot_log(IOT_LOG_WARN, "%s", "printer: no reply at 9600 baud")`
+- **WHEN** "W (5120) printer: printer not found at any baud, staying at 9600" is logged at level 2
+- **THEN** the sender SHALL call `iot_log(IOT_LOG_WARN, "%s", "printer: printer not found at any baud, staying at 9600")`
 
 ### Requirement: On by default, set on the Bridge page
 The remote log SHALL start on at level 3 when nothing is saved (storage and defaults as in device-settings, Remote log
