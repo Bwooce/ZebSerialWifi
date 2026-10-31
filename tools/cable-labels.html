@@ -475,7 +475,7 @@ td.valcell input.value { width: 100%; }
       <details class="settings" id="layoutSettings">
         <summary><svg class="icon" style="width:12px;height:12px"><use href="#i-chev"/></svg>Layout</summary>
         <div class="settings-grid">
-          <div class="field"><label for="wrapMm">Wrap zone</label><div class="unit-input"><input type="number" id="wrapMm" data-k="wrapMm" step="0.5" min="2"><span>mm</span></div></div>
+          <div class="field"><label for="cableMm">Cable diameter</label><div class="unit-input"><input type="number" id="cableMm" data-k="cableMm" step="0.1" min="0.5"><span>mm</span></div></div>
           <div class="field"><label for="maxMm">Largest letters</label><div class="unit-input"><input type="number" id="maxMm" data-k="maxMm" step="0.5" min="1"><span>mm</span></div></div>
           <div class="full settings-note" id="wrapNote"></div>
           <div class="field"><label for="edgeMm">Margin at the ends</label><div class="unit-input"><input type="number" id="edgeMm" data-k="edgeMm" step="0.5" min="0"><span>mm</span></div></div>
@@ -510,12 +510,18 @@ const store = {
 
 // ---------- units: a 300 dpi head is 11.81 dots/mm (Zebra rounds it to 12 in its own mm figures) ----------
 const DPMM = 300 / 25.4;
+/* The wrap zone goes once round the cable, plus a little so the two ends meet without pulling */
+const WRAP_SLACK_MM = 1;
+const wrapMm = () => Math.PI * S.cableMm + WRAP_SLACK_MM;
 const mm2d = mm => Math.round(mm * DPMM);
 
-const DEFAULTS = { ip: 'zebserial.local', wMm: 60, lMm: 20, wrapMm: 10, edgeMm: 2.5, gapMm: 1, vMm: 1.5,
+const DEFAULTS = { ip: 'zebserial.local', wMm: 60, lMm: 20, cableMm: 3, edgeMm: 2.5, gapMm: 1, vMm: 1.5,
                    maxMm: 5, font: 'DIN Condensed', bold: true, marks: false, rot: false, same: true };
 const FONTS = ['DIN Condensed', 'Helvetica Neue', 'Arial', 'Arial Narrow', 'Avenir Next Condensed', 'DIN Alternate', 'Menlo', 'Verdana'];
 const S = Object.assign({}, DEFAULTS, store.get('cable.settings', {}));
+// settings saved before the diameter setting kept the wrap zone itself
+if (S.wrapMm && !store.get('cable.settings', {}).cableMm) S.cableMm = Math.round((S.wrapMm - WRAP_SLACK_MM) / Math.PI * 10) / 10;
+delete S.wrapMm;
 const saveSettings = () => store.set('cable.settings', S);
 
 let rows = store.get('cable.rows', null);
@@ -526,7 +532,7 @@ const saveRows = () => store.set('cable.rows', rows);
 // ---------- layout ----------
 function geom() {
   const W = mm2d(S.wMm), H = mm2d(S.lMm);
-  const halfMm = (S.wMm - S.wrapMm) / 2;
+  const halfMm = (S.wMm - wrapMm()) / 2;
   const boxW = mm2d(halfMm - S.edgeMm - S.gapMm), boxH = mm2d(S.lMm - 2 * S.vMm);
   const lx = mm2d(S.edgeMm);
   // the right box mirrors the left one about the middle, so the two ends line up when folded together
@@ -716,11 +722,11 @@ function refreshPreview() {
   c.style.width = width + 'px'; c.style.height = Math.round(width * out.H / out.W) + 'px';
   const g = out.g, f = n => (100 * n / g.W) + '%';
   $('#flagCaps').style.width = width + 'px';
-  $('#flagCaps').innerHTML = `<span style="width:${f(g.wrap0)}">one side</span><span class="wrap" style="width:${f(g.wrap1 - g.wrap0)}">wrap</span><span style="width:${f(g.W - g.wrap1)}">other side</span>`;
+  $('#flagCaps').innerHTML = `<span style="width:${f(g.wrap0)}">one side</span><span class="wrap" style="width:${f(g.wrap1 - g.wrap0)}">wrap ${wrapMm().toFixed(1)}</span><span style="width:${f(g.W - g.wrap1)}">other side</span>`;
   $('#previewCap').innerHTML = `<span>${sample === r ? `Row ${active + 1}` : 'Sample'}</span><span>·</span><span>${+S.wMm} × ${+S.lMm} mm</span>`
     + (out.capMm ? `<span>·</span><span>letters ${out.capMm.toFixed(1)} mm</span>` : '');
   const w = $('#fitWarn');
-  const msg = !g.ok ? 'The margins and wrap zone leave no room for text: make them smaller.'
+  const msg = !g.ok ? `A ${+S.cableMm} mm cable needs a ${wrapMm().toFixed(1)} mm wrap zone, which leaves too little room for text on a ${+S.wMm} mm label: use smaller margins or a longer label.`
             : !out.fits ? 'This text does not fit: shorten it or use two lines.'
             : out.capMm && out.capMm < 1.5 ? `Letters are only ${out.capMm.toFixed(1)} mm high: hard to read. Shorten the text or split it over two lines.` : '';
   w.textContent = msg; w.classList.toggle('hidden', !msg);
@@ -738,7 +744,7 @@ $('#font').innerHTML = FONTS.map(f => `<option>${esc(f)}</option>`).join('');
 function syncSettings() {
   $$('[data-k]').forEach(el => { const v = S[el.dataset.k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; });
   $('#printerChipAddr').textContent = S.ip;
-  $('#wrapNote').textContent = `The wrap zone goes round the cable: about π × its diameter. ${+S.wrapMm} mm suits a cable about ${(S.wrapMm / Math.PI).toFixed(1)} mm across.`;
+  $('#wrapNote').textContent = `Blank wrap zone ${wrapMm().toFixed(1)} mm: π × ${+S.cableMm} mm, plus ${WRAP_SLACK_MM} mm so the ends meet. That leaves ${((S.wMm - wrapMm()) / 2).toFixed(1)} mm at each end for text.`;
 }
 $$('[data-k]').forEach(el => el.addEventListener('input', () => {
   const k = el.dataset.k;
