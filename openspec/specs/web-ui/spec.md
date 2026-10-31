@@ -403,7 +403,8 @@ percent>` first, each alone; then one `^XA`...`^XZ` with `^PR`, `^MT`, `^MM`, `^
 
 ### Requirement: Media detection as media tracking
 Media type and Media type detection SHALL share `^MN`: when detection is changed to Automatic the bridge MUST send
-`^MNA`; when the media type changes, or detection changes to Fixed, it SHALL send `^MN<Y|M|N>` with the media type.
+`^MNA`; when the media type changes, or detection changes to Fixed, it SHALL send `^MN<Y|M|N>` with the media type,
+and send no `^MN` when the media type is unknown.
 `^MF` always carries both the power-up and head-close actions, so both must be known.
 
 **Source**: `firmware/main/zpl_status.c` `zpl_cfg_commands()` `^MN`, `^MF`; `s_cfg_desc[ZPL_CFG_SENSOR]`
@@ -411,6 +412,10 @@ Media type and Media type detection SHALL share `^MN`: when detection is changed
 #### Scenario: Switch to automatic detection
 - **WHEN** Media type detection changes from Fixed to Automatic
 - **THEN** the format SHALL hold `^MNA`
+
+#### Scenario: Fixed detection with the media type unknown
+- **WHEN** detection changes to Fixed and the width changes, but the printer reported no media type the bridge knows
+- **THEN** the commands SHALL be `^XA^PW<width>^XZ^XA^JUS^XZ`, with no `^MN`
 
 #### Scenario: Head-close action changed
 - **WHEN** only Media at head close changes to Calibrate while power-up is Feed

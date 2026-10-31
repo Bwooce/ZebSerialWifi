@@ -944,7 +944,9 @@ size_t zpl_cfg_commands(const zpl_printer_cfg_t *want, uint32_t changed, char *o
          */
         if (has(changed, ZPL_CFG_SENSOR) && v[ZPL_CFG_SENSOR] == 'A') {
             append(&a, "^MNA");
-        } else if (has(changed, ZPL_CFG_MEDIA) || has(changed, ZPL_CFG_SENSOR)) {
+        } else if ((has(changed, ZPL_CFG_MEDIA) || has(changed, ZPL_CFG_SENSOR)) &&
+                   is_letter_value(&s_cfg_desc[ZPL_CFG_MEDIA], v[ZPL_CFG_MEDIA])) {
+            /* only with a known media letter: an unknown one would put a zero byte in the commands */
             append(&a, "^MN%c", v[ZPL_CFG_MEDIA]);
         }
         if (has(changed, ZPL_CFG_WIDTH)) {

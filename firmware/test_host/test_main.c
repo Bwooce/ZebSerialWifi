@@ -672,6 +672,15 @@ static void test_cfg_commands(void)
     zpl_cfg_commands(&c, 1u << ZPL_CFG_POWER_UP, out, sizeof(out));
     CHECK(strcmp(out, "^XA^MFC,F^XZ^XA^JUS^XZ") == 0);
 
+    /* sensor to manual with the media type unknown: no "^MN" and a zero byte that would cut off the ^XZ */
+    zpl_printer_cfg_t um = c;
+    um.v[ZPL_CFG_MEDIA] = 0;
+    um.v[ZPL_CFG_SENSOR] = 'M';
+    um.v[ZPL_CFG_WIDTH] = 709;
+    size_t um_len = zpl_cfg_commands(&um, (1u << ZPL_CFG_SENSOR) | (1u << ZPL_CFG_WIDTH), out, sizeof(out));
+    CHECK(um_len == strlen(out));
+    CHECK(strcmp(out, "^XA^PW709^XZ^XA^JUS^XZ") == 0);
+
     c.v[ZPL_CFG_SPEED] = 3;
     c.v[ZPL_CFG_METHOD] = 'T';
     c.v[ZPL_CFG_MODE] = 'P';
