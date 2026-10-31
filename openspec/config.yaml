@@ -47,8 +47,7 @@ context: |
   - assets/logo/zebserial-mark.svg: the mark. firmware/main/web.c LOGO_D is its path, copied by hand; the inline page
     logo (LOGO_SVG, currentColor) and /favicon.svg (s_favicon, a self-coloured SVG built in web.c, #222, #ddd in dark
     mode) are both built from LOGO_D, so no SVG file is served. The case inlay imports zebserial-mark-deboss.svg.
-    make_logo.py generates the SVGs (zebserial-mark-lid.svg and zebserial-full.svg are generated too, and nothing in
-    the build uses them); make_icons.py renders firmware/main/icons/favicon.ico and apple-touch-icon.png from
+    make_logo.py generates both SVGs; make_icons.py renders firmware/main/icons/favicon.ico and apple-touch-icon.png from
     zebserial-mark.svg. The two icon files are served as they are (EMBED_FILES in firmware/main/CMakeLists.txt).
   - firmware/main/test_label.c test_label_zpl(): the source of truth for the test label layout (positions, sizes,
     fonts, what is left out on a small label). The web-ui spec states what the label must show; the code holds the
