@@ -13,7 +13,7 @@ The print projects SHALL be sliced for a Bambu Lab H2D with a 0.4 mm nozzle, Bam
 plate, from the system profiles "Bambu Lab H2D 0.4 nozzle" (machine), "0.16mm Balanced Quality @BBL H2D" (process)
 and "Bambu PETG Basic @BBL H2D 0.4 nozzle" (filament).
 
-**Source**: `print/run_slice.sh` `resolve_profile.py` calls; `print/process_overrides.json` `curr_bed_type`
+**Source**: `print/run_slice.sh` (its `print/resolve_profile.py` calls); `print/process_overrides.json` `curr_bed_type`
 
 #### Scenario: Resolving the profiles
 - **WHEN** `run_slice.sh` runs

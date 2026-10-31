@@ -180,15 +180,15 @@ restart the bridge 1.5 s later. It MUST also pass the cross-site check.
 
 ### Requirement: Wi-Fi Join request
 `POST /wifi_join` SHALL start a join trial when the station is connected and no trial is running, then answer `303 See
-Other` to `/`. It MUST answer `400 Bad Request` for an empty network name or a 1 to 7 character password, and `409
-Conflict` when a trial is running or the station is not connected. From the set-up network it SHALL redirect to the
-set-up page.
+Other` to `/`. It MUST answer `400 Bad Request` for an empty network name, a 1 to 7 character password or a name or
+password `wifi_prov_join()` rejects as too long, and `409 Conflict` when a trial is running or the station is not
+connected. From the set-up network it SHALL redirect to the set-up page.
 
 **Source**: `firmware/main/web.c` `wifi_join_post()`, `redirect_to()`; `firmware/main/wifi_prov.c` `wifi_prov_join()`
 
 #### Scenario: Join while one is running
 - **WHEN** a join is requested while another join is in the trying state
-- **THEN** the bridge SHALL answer `409 Conflict`
+- **THEN** the bridge SHALL answer `409 Conflict` with "A join is already running, or Wi-Fi is not connected."
 
 ### Requirement: Join trial with fallback to the saved network
 About 1 s after a join is accepted, the station SHALL leave its network for the new one. If it gets an IPv4 address

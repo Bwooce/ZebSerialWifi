@@ -73,16 +73,16 @@ stored hostname SHALL load as the default, and a stored static set SHALL be used
 - **WHEN** `static_ip` is 1 but the stored mask is 0
 - **THEN** the bridge SHALL use DHCP
 
-### Requirement: Network settings apply at boot
-Saving network settings MUST fail with `ESP_ERR_INVALID_ARG` if the hostname or static set is invalid. The hostname
-and addressing SHALL be read at boot, so a change to the hostname, the static flag or, with static on, any address
-SHALL restart the bridge.
+### Requirement: Network settings read at boot
+Saving network settings MUST fail with `ESP_ERR_INVALID_ARG` if the hostname or static set is invalid. The bridge
+SHALL read the hostname and addressing only at boot, so a saved change takes effect after a restart; which changes
+on the Bridge page restart the bridge is specified in web-ui (Applying the bridge settings).
 
-**Source**: `firmware/main/settings.c` `settings_set_net()`; `firmware/main/web.c` `config_post()` (`reboot`); `firmware/main/wifi_prov.c` `wifi_prov_start()`
+**Source**: `firmware/main/settings.c` `settings_set_net()`; `firmware/main/wifi_prov.c` `wifi_prov_start()`
 
-#### Scenario: Hostname change
-- **WHEN** the hostname is changed from `zebserial` to `label1` and saved
-- **THEN** the bridge SHALL restart and use `label1` from then on
+#### Scenario: Invalid hostname saved
+- **WHEN** `settings_set_net()` is given the hostname `-bad`
+- **THEN** it SHALL return `ESP_ERR_INVALID_ARG` and store nothing
 
 ### Requirement: Remote log settings
 The bridge SHALL store `rlog_on` (u8, default on) and `rlog_lvl` (u8, 1 errors, 2 warnings, 3 info; default 3; an
@@ -153,33 +153,6 @@ setting.
 - **WHEN** the firmware is built with the default configuration
 - **THEN** GPIO14 SHALL be low and the ceramic antenna used
 
-### Requirement: UART pins from the setting
-At boot, the bridge SHALL use TX GPIO21 (D3) and RX GPIO23 (D5) for pin setting 1, and TX GPIO23 and RX GPIO21 for
-pin setting 2, with no detection and no automatic swap. With setting 0 it MUST run pin detection and allow a swap
-when detection was inconclusive.
-
-**Source**: `firmware/main/main.c` `app_main()` (`SETTINGS_PINS_TX_D3`, `SETTINGS_PINS_TX_D5`, `printer_link_allow_pin_swap()`); `firmware/main/board.c` `board_detect_uart_pins()`
-
-#### Scenario: Pins fixed
-- **WHEN** `pins` is 2
-- **THEN** the UART SHALL use TX GPIO23 and RX GPIO21 and SHALL NOT try them swapped
-
-### Requirement: UART pin detection
-Detection SHALL probe GPIO21 and GPIO23 with pull-up then pull-down (the other pin pulled up). If both float, it MUST
-try a loopback drive each way and use the one direction that echoes. If one pin is driven high and the other is driven
-low or toggling, the high pin SHALL be RX. Any other result MUST use `CONFIG_ZEB_UART_TX_GPIO` (23) and
-`CONFIG_ZEB_UART_RX_GPIO` (21), reported as inconclusive.
-
-**Source**: `firmware/main/board.c` `board_detect_uart_pins()`, `probe_pin()`, `probe_pin_other_high()`, `probe_drive_sense()`; `firmware/main/Kconfig.projbuild` `ZEB_UART_TX_GPIO`, `ZEB_UART_RX_GPIO`
-
-#### Scenario: Module at 3.3 V wired directly
-- **WHEN** GPIO21 reads driven high and GPIO23 driven low
-- **THEN** RX SHALL be GPIO21 and TX GPIO23, reported as conclusive
-
-#### Scenario: Inconclusive
-- **WHEN** both pins read toggling
-- **THEN** the bridge SHALL use TX GPIO23 and RX GPIO21, log the state of every XIAO pad that is not floating, and allow a swap
-
 ### Requirement: Console
 The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is the printer link.
 
@@ -188,3 +161,9 @@ The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is th
 #### Scenario: USB connected
 - **WHEN** a computer is connected to the XIAO's USB-C port
 - **THEN** the boot log SHALL appear on its USB serial device
+
+## Notes
+
+The `pins` setting is stored here; how it selects the UART pins, the pin detection at boot and the swap
+fallback are specified in the printer-link spec (Pin selection at boot, Passive pin probe, Loopback pin probe and
+defaults, Pin swap fallback).

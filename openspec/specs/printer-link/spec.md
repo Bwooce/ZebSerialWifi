@@ -87,6 +87,10 @@ including one pin high and one floating, it SHALL use the defaults `CONFIG_ZEB_U
 - **WHEN** GPIO21 reads driven high and GPIO23 reads floating
 - **THEN** the bridge SHALL use TX GPIO23 and RX GPIO21 and allow a swap
 
+#### Scenario: Both pins toggling
+- **WHEN** both pins read toggling
+- **THEN** the bridge SHALL use TX GPIO23 and RX GPIO21, allow a swap, and log the state of every XIAO pad that is not floating
+
 ### Requirement: Pin swap fallback
 When a baud scan finds no printer and a swap is allowed, the bridge SHALL swap TX and RX and scan again. If that
 also fails it SHALL swap back and return to the fallback baud. Once a printer answers while a swap is allowed, the

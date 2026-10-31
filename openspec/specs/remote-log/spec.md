@@ -79,7 +79,7 @@ The bridge SHALL start iot_log with its hostname as device name, no serial mirro
 only to the multicast group 239.255.1.100 port 4210, and only while mDNS discovery of the `_esp-iot-log._udp` service
 has found a receiver. Discovery SHALL run from the sender task through `iot_log_poll()`.
 
-**Source**: `firmware/main/remote_log.c` `configure()` (`IOT_LOG_CONFIG_DEFAULT()`, `lc.device_name`, `lc.serial_mirror`), `sender_task()`; `managed_components/bwooce__esp_iot_log/include/esp_iot_log.h` `IOT_LOG_DEFAULT_MCAST_IP`, `IOT_LOG_DEFAULT_MCAST_PORT`, `IOT_LOG_SERVICE_NAME`
+**Source**: `firmware/main/remote_log.c` `configure()` (`IOT_LOG_CONFIG_DEFAULT()`, `lc.device_name`, `lc.serial_mirror`), `sender_task()`; `firmware/managed_components/bwooce__esp_iot_log/include/esp_iot_log.h` `IOT_LOG_DEFAULT_MCAST_IP`, `IOT_LOG_DEFAULT_MCAST_PORT`, `IOT_LOG_SERVICE_NAME`
 
 #### Scenario: Receiver on the network
 - **WHEN** a receiver advertises `_esp-iot-log._udp` and the bridge's discovery finds it
@@ -103,7 +103,7 @@ While iot_log is not running or the station is not `WIFI_ST_CONNECTED`, the send
 While connected, the sender SHALL take each queued line and pass it to iot_log. If no receiver has been found, the
 line SHALL be discarded without being sent and without being counted as dropped.
 
-**Source**: `firmware/main/remote_log.c` `sender_task()`; `managed_components/bwooce__esp_iot_log/esp_iot_log.c` `iot_log()` (sends only when `listener_active`)
+**Source**: `firmware/main/remote_log.c` `sender_task()`; `firmware/managed_components/bwooce__esp_iot_log/esp_iot_log.c` `iot_log()` (sends only when `listener_active`)
 
 #### Scenario: Connected, receiver not yet found
 - **WHEN** the bridge is connected and discovery has not found a receiver

@@ -488,11 +488,12 @@ In both top corners the test label SHALL draw ticks from each side edge at 0 to 
 least 3 dots wide, about 1.5 mm long on whole mm and 0.75 mm on half mm, numbered at 2 and 4, so the label's edge position
 on each side shows how far the print is off centre.
 
-**Source**: `firmware/main/test_label.c` `test_label_zpl()`, `SCALE_HALF_MM`
+**Source**: `firmware/main/test_label.c` `test_label_zpl()` (edge scale loop), `SCALE_HALF_MM`
 
-#### Scenario: Off-centre print
-- **WHEN** the print sits 1 mm to the right of centre
-- **THEN** the right scale's ticks from 0 to 1 mm SHALL fall past the label's right edge onto the backing
+#### Scenario: Tick positions
+- **WHEN** a test label is built
+- **THEN** each corner SHALL have 9 ticks, tick k (0 to 8) starting `zpl_mm_to_dots(k * 0.5)` dots in from the left edge and ending the same distance in from the right edge, so a tick's outer side is the reading
+- **AND** the ticks at 2 and 4 mm SHALL carry the numbers "2" and "4"
 
 ### Requirement: Test label content
 Below the rulers, as far as each fits, the test label SHALL show the title, model and size in mm, dpi and dots, and
@@ -520,21 +521,6 @@ password); Forget Wi-Fi; a Save form with Network (hostname, static IPv4 address
 - **WHEN** the Bridge page is drawn
 - **THEN** Speed SHALL offer 115200, 57600, 38400, 19200 and 9600 baud and "Leave the printer as it is" (0)
 
-### Requirement: Firmware section
-The Firmware section SHALL show the running version and partition, mark an image not yet confirmed, upload a chosen
-`.bin` to `/update` by script with progress, reload 20 s after a 200 reply, and give a curl command. When another valid
-firmware exists it MUST offer "Go back to <version>" posting `/boot_other` after confirmation.
-
-**Source**: `firmware/main/web.c` `send_firmware_section()`, `boot_other_post()`
-
-#### Scenario: Go back
-- **WHEN** the user confirms "Go back to" and `ota_boot_other()` succeeds
-- **THEN** the bridge SHALL show a restarting page and restart 1.5 s later
-
-#### Scenario: Nothing to go back to
-- **WHEN** `/boot_other` is posted with no other valid image
-- **THEN** the reply SHALL be 400 "There is no other valid firmware to go back to."
-
 ### Requirement: Saving the bridge settings
 `POST /config` SHALL validate everything before saving: a bad static address gives 400 "<key> is not a valid IPv4
 address.", a bad speed, pins or idle 400 "A serial link setting is out of range.", a bad log level 400, a bad hostname
@@ -561,17 +547,6 @@ restart 1500 ms later; otherwise it SHALL redirect 303 to `/bridge?done=saved`.
 #### Scenario: Hostname change
 - **WHEN** the hostname changes
 - **THEN** the bridge SHALL show "Saved. Rebooting." with a link to the new `.local` name and restart
-
-### Requirement: Joining and forgetting Wi-Fi from the Bridge page
-`POST /wifi_join` SHALL refuse an empty name (400), a password of 1 to 7 characters (400), a join already running or no
-connection (409), and an over-long name or password (400); otherwise it MUST start the trial join and redirect 303 to
-`/`. `POST /forget` SHALL clear the Wi-Fi settings, name the set-up network and restart 1500 ms later.
-
-**Source**: `firmware/main/web.c` `wifi_join_post()`, `forget_post()`; `firmware/main/wifi_prov.h` `wifi_prov_join()`
-
-#### Scenario: Join already running
-- **WHEN** `/wifi_join` is posted during a trial join
-- **THEN** the reply SHALL be 409 "A join is already running, or Wi-Fi is not connected."
 
 ### Requirement: Old settings address
 `GET /settings` SHALL redirect 303 See Other to `/printer` (302 to the set-up page over the access point). It MUST NOT
@@ -633,11 +608,15 @@ literals: `STATUS_SCRIPT`, the Firmware upload script in `send_firmware_section(
 | POST | `/printer_config` | `printer_config_post` | 302 | Origin |
 | POST | `/printer_action` | `printer_action_post` | 302 | Origin |
 | POST | `/printer_test` | `printer_test_post` | 302 | Origin |
-| POST | `/update` | `update_post` | 302 | Origin (ota capability) |
-| POST | `/pstprnt` | `pstprnt_post` | 403 | none (raw printing capability) |
+| POST | `/update` | `update_post` | 302 | Origin (ota-updates) |
+| POST | `/pstprnt` | `pstprnt_post` | 403 | none (http-print) |
 | POST | `/boot_other` | `boot_other_post` | 302 | Origin |
 
 "Origin" means `same_origin()`, which includes the Host check. 21 handlers against `max_uri_handlers` 24.
+
+Where a route's behaviour is specified: `/save`, `/wifi_join` and `/forget` in wifi-provisioning; `/update` and
+`/boot_other` in ota-updates; `/pstprnt` in http-print; everything else here. The Bridge page's Remote log fields are
+stored as described in device-settings and act as described in remote-log.
 
 ### /api/status fields
 

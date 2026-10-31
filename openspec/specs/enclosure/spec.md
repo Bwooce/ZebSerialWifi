@@ -60,7 +60,7 @@ The flange SHALL be held fore-aft between the lips, `lip_gap` (0.1 mm) in front 
 lid front wall, which bears on the connector plate back at Y `fl_plate_d` (5.1) with zero gap. The lips SHALL
 stay at least `lip_ds_clr` (1.0) clear of the D-shell outline.
 
-**Source**: `enclosure/zebserial_case.scad` `lip_gap`, `lip_reach`, `lip_ds_clr`, `fl_plate_d`, `front_wall_t`, `y_fw1`, `lid()` front wall boxes; `controls.sh` "board fwd/back" lines
+**Source**: `enclosure/zebserial_case.scad` `lip_gap`, `lip_reach`, `lip_ds_clr`, `fl_plate_d`, `front_wall_t`, `y_fw1`, `lid()` front wall boxes; `enclosure/controls.sh` "board fwd/back" lines
 
 #### Scenario: Board too far forward
 - **WHEN** controls.sh moves the board and DB9 ghosts 0.15 mm forward (`ghost_board_dy=-0.15`)
@@ -79,7 +79,7 @@ The board SHALL be located by two tray corner pins through its rear mounting hol
 lens-shaped with `mh_pin_clr_y` 0.45 in Y) and by the side walls (`pcb_clr` 0.2), stopped at the rear by a backstop
 ledge `bs_clr` (0.25) behind the PCB, and held down by two lid corner pressers `press_gap` (0.25) above the PCB.
 
-**Source**: `enclosure/zebserial_case.scad` `module corner_pin()`, `module corner_presser()`, `mh_*`, `bs_clr`, `bs_top`, `press_gap`, `cp_*`; `controls.sh` "holes", "board +X/-X", "pcb up" lines
+**Source**: `enclosure/zebserial_case.scad` `module corner_pin()`, `module corner_presser()`, `mh_*`, `bs_clr`, `bs_top`, `press_gap`, `cp_*`; `enclosure/controls.sh` "holes", "board +X/-X", "pcb up" lines
 
 #### Scenario: Hole position error within tolerance
 - **WHEN** the PCB ghost's holes move 0.4 mm in Y or 0.15 mm in X
@@ -98,7 +98,7 @@ The tray SHALL leave `below_clear` (3.0 mm) clear under the PCB for through-hole
 enter the board-lock leg-tail keep-out: each tail's estimated position grown by `leg_keepout` (1.5) in X and Y, from
 the PCB underside to the floor. Leg-tail pockets SHALL stay off (`leg_pocket_on = false`) until the tails are measured.
 
-**Source**: `enclosure/zebserial_case.scad` `below_clear`, `leg_y`, `lug_hole_x`, `leg_keepout`, `leg_pocket_on`, `ledge_y0`, `ghost_db9()` orange keep-out; `controls.sh` "leg keep-out" lines
+**Source**: `enclosure/zebserial_case.scad` `below_clear`, `leg_y`, `lug_hole_x`, `leg_keepout`, `leg_pocket_on`, `ledge_y0`, `ghost_db9()` orange keep-out; `enclosure/controls.sh` "leg keep-out" lines
 
 #### Scenario: Leg tails further out than estimated
 - **WHEN** the keep-out moves 0.6 mm in +Y or +X
@@ -109,7 +109,7 @@ The lid front wall SHALL be cut back over a keep-out for the DB9 jack screw tail
 `jack_d` (7.0 mm) across, from Y `fl_plate_d` (or `jack_y0`) `jack_l` (5.0) back, centred on X +-12.5 and the
 D-shell centre height, with `jack_clr` (0.3) above it. The keep-out SHALL be part of the DB9 ghost.
 
-**Source**: `enclosure/zebserial_case.scad` `jack_on`, `jack_d`, `jack_l`, `jack_y0`, `jack_clr`, `jack_cut_z`, `ghost_db9()`, `lid()` cut-back; `controls.sh` "jack hardware" and "rev 3 wings" lines
+**Source**: `enclosure/zebserial_case.scad` `jack_on`, `jack_d`, `jack_l`, `jack_y0`, `jack_clr`, `jack_cut_z`, `ghost_db9()`, `lid()` cut-back; `enclosure/controls.sh` "jack hardware" and "rev 3 wings" lines
 
 #### Scenario: Revision 3 front wall restored
 - **WHEN** controls.sh sets `fw_wings=true`
@@ -135,7 +135,7 @@ The XIAO SHALL be held with no flexing parts: below by the DB9 body and a tray t
 under the USB-C shell; above by lid pads `xpad_gap` (0.25) over the RF shield, the USB-C shell and the rear edge
 strip; in X by the +X wall and a -X end stop rib, both `pcb_clr` off; in Y by the lid front wall and a shield stop block.
 
-**Source**: `enclosure/zebserial_case.scad` `module xiao_pads()`, `module end_stop()`, `module usb_tongue()`, `xpad_gap`, `tongue_gap`, `stop_*`, `shield_stop_clr`; `controls.sh` "xiao" lines
+**Source**: `enclosure/zebserial_case.scad` `module xiao_pads()`, `module end_stop()`, `module usb_tongue()`, `xpad_gap`, `tongue_gap`, `stop_*`, `shield_stop_clr`; `enclosure/controls.sh` "xiao" lines
 
 #### Scenario: XIAO displaced beyond its clearances
 - **WHEN** the XIAO ghost moves up 0.3, down 0.06, +X 0.3, -X 0.3, forward 0.3 or back 0.35 mm
@@ -161,7 +161,7 @@ The case SHALL keep clear a keep-out for the Dupont housing on the module header
 plus `dupont_rear_clr` behind it) and a wire-bend zone above it to the ceiling, `bend_side` wider each side. The
 ceiling SHALL be at least `dupont_ceiling_min` (23.4) and `dupont_top + dupont_bend_h` above the PCB top.
 
-**Source**: `enclosure/zebserial_case.scad` `hdr_*`, `dupont_*`, `bend_side`, `hdr_room`, `z_top`, `module ghost_dupont()`; `controls.sh` "dupont" and "rev 3 rear face" lines
+**Source**: `enclosure/zebserial_case.scad` `hdr_*`, `dupont_*`, `bend_side`, `hdr_room`, `z_top`, `module ghost_dupont()`; `enclosure/controls.sh` "dupont" and "rev 3 rear face" lines
 
 #### Scenario: Housing moved into the case
 - **WHEN** the Dupont keep-out moves 1 mm -Y, 1 mm up or 1 mm +Y
@@ -172,7 +172,7 @@ The lid SHALL stay out of the wire keep-outs: the 5V/GND corridor over the XIAO 
 5V and GND pads' mid-point), the front-edge joint zones at the 5V, GND and 3V3 pads (with a front wall relief,
 `fw_relief`), and the rear-edge zone and joints at D3 and D5.
 
-**Source**: `enclosure/zebserial_case.scad` `module wire_zones()`, `wch_c`, `wch_hw`, `used_pads_front`, `pullup_pad`, `used_pads_rear`, `fw_relief`; `controls.sh` "USB pad over the corridor", "front wall without relief", "corridor zone", "rear zones" lines
+**Source**: `enclosure/zebserial_case.scad` `module wire_zones()`, `wch_c`, `wch_hw`, `used_pads_front`, `pullup_pad`, `used_pads_rear`, `fw_relief`; `enclosure/controls.sh` "USB pad over the corridor", "front wall without relief", "corridor zone", "rear zones" lines
 
 #### Scenario: Front wall without its joint relief
 - **WHEN** controls.sh sets `fw_relief=false`
@@ -198,7 +198,7 @@ The case SHALL keep clear a keep-out for the RX Schottky diode at the D3 pad: by
 2.7 x `diode_l` 5.2) standing up beside the Dupont housing's +X end, anode lead to D3, cathode (band) up to meet the
 module's RXD wire, grown by `diode_clr` (0.3). The rigid diode body SHALL also be swept in `check_lid_path`.
 
-**Source**: `enclosure/zebserial_case.scad` `diode_*`, `dio_c`, `module ghost_diode()`, `module diode_zone()`, `check_lid_path`; `controls.sh` "diode" and "lid block under the diode" lines
+**Source**: `enclosure/zebserial_case.scad` `diode_*`, `dio_c`, `module ghost_diode()`, `module diode_zone()`, `check_lid_path`; `enclosure/controls.sh` "diode" and "lid block under the diode" lines
 
 #### Scenario: Diode moved towards the shield stop block
 - **WHEN** the diode ghost moves 0.4 mm -Y
@@ -213,7 +213,7 @@ The case SHALL keep a path for the wire from the DB9 pin 9 pad (solder side) to 
 under the pad, a run `wire_pass` (2.0) wide under the board at X `p9_run_x`, a notch in the backstop and a riser
 behind the PCB to the ceiling. `wire_pass` MUST leave at least 0.4 mm round `wire_d` (asserted).
 
-**Source**: `enclosure/zebserial_case.scad` `p9_*`, `wire_d`, `wire_pass`, `assert(!p9_on || wire_pass >= wire_d + 0.4 - 1e-6, ...)`, `wire_zones()`, `tray()` backstop notch; `controls.sh` "pin 9 wire" and "no backstop notch" lines
+**Source**: `enclosure/zebserial_case.scad` `p9_*`, `wire_d`, `wire_pass`, `assert(!p9_on || wire_pass >= wire_d + 0.4 - 1e-6, ...)`, `wire_zones()`, `tray()` backstop notch; `enclosure/controls.sh` "pin 9 wire" and "no backstop notch" lines
 
 #### Scenario: Backstop without its notch
 - **WHEN** controls.sh sets `p9_notch=false`
@@ -266,7 +266,7 @@ The logo SHALL be inlaid `logo_depth` (0.68 mm) into the outside of the tray flo
 `out/logo.stl`, in tray coordinates), leaving at least 0.9 mm of floor (asserted), with every stroke and gap at least
 `logo_min` (1.2 mm), checked by `part="check_logo"`.
 
-**Source**: `enclosure/zebserial_case.scad` `logo_*`, `module logo_2d()`, `module logo_body()`, `part == "check_logo"`, the two logo asserts; `enclosure/build.sh` logo gate; `controls.sh` "logo at 25 mm" / "logo at 20 mm"
+**Source**: `enclosure/zebserial_case.scad` `logo_*`, `module logo_2d()`, `module logo_body()`, `part == "check_logo"`, the two logo asserts; `enclosure/build.sh` logo gate; `enclosure/controls.sh` "logo at 25 mm" / "logo at 20 mm"
 
 #### Scenario: Logo made too small
 - **WHEN** `logo_w` is 20
@@ -292,7 +292,7 @@ MUST add or recalibrate a control that shows the check can see it.
 `out/coupon_lid.stl` and every `renders/*.png`, and SHALL print each STL's volume and bounding box. These outputs
 are tracked in git and SHALL be committed with the SCAD change that produced them.
 
-**Source**: `enclosure/build.sh` `rm -f out/*.stl renders/*.png`, STL export and renders sections, final `stlinfo.py` call
+**Source**: `enclosure/build.sh` `rm -f out/*.stl renders/*.png`, STL export and renders sections, final `enclosure/stlinfo.py` call
 
 #### Scenario: Unchanged parameters
 - **WHEN** `build.sh` runs on the committed SCAD with OpenSCAD 2026.06.12 and the manifold backend
@@ -325,7 +325,7 @@ The lid SHALL carry two snap fingers per side wall (`lc_w` 6.0 wide, `lc_t` 1.4 
 `lc_rear_from_back` from the interior rear face) whose hooks catch windows through the tray wall, and the snaps SHALL
 still engage with the lid held up to `lc_win_up` (0.35 mm) high.
 
-**Source**: `enclosure/zebserial_case.scad` `lc_*`, `module lid_clip_finger()`, `module lid_clip_tray_cut()`, `module lid_clip_lid_cut()`; `controls.sh` "lid up", "snap pockets" lines
+**Source**: `enclosure/zebserial_case.scad` `lc_*`, `module lid_clip_finger()`, `module lid_clip_tray_cut()`, `module lid_clip_lid_cut()`; `enclosure/controls.sh` "lid up", "snap pockets" lines
 
 #### Scenario: Lid held high
 - **WHEN** the lid is raised 0.3 mm in `check_traylid`
@@ -347,7 +347,7 @@ The checks SHALL be understood to prove clearance between the case and each ghos
 A change that moves the diode, the XIAO, the header or the wires SHALL be checked against the other parts by
 inspecting renders (for example `renders/diode_iso.png`, `xiao_lid_off.png`, `section_diode_zones.png`).
 
-**Source**: `enclosure/zebserial_case.scad` `check_tray`, `check_lid` (`intersection() { tray-or-lid; ghosts(); }`); `enclosure/README.md` "The RX diode", Other placements
+**Source**: `enclosure/zebserial_case.scad` `part == "check_tray"` and `part == "check_lid"` (each intersects one part with `ghosts()`); `enclosure/README.md` "The RX diode", Other placements
 
 #### Scenario: Diode laid along X
 - **WHEN** `diode_dir = [1, 0, 0]` and `diode_c` is given
@@ -440,8 +440,9 @@ drawing.
 | Logo | `logo_mode`, `logo_w`, `logo_depth`, `logo_file`, `logo_svg_w`, `logo_svg_h`, `logo_svg_c`, `logo_min`, `logo_round` | "inlay", 25.0, 0.68, `../assets/logo/zebserial-mark-deboss.svg`, 52.77, 52.0, [32, 29.93], 1.2, 0.62 |
 | Snaps | `lc_w`, `lc_t`, `lc_gap`, `lc_slot_back`, `lc_hook`, `lc_win_up`, `lc_above`, `lc_below`, `lc_side_gap`, `lc_pry`, `lc_front_y`, `lc_rear_from_back` | 6.0, 1.4, 0.15, 0.6, 0.6, 0.35, 4.0, 5.0, 0.5, 0.9, 6.3, 3.6 |
 | Coupons | `coupon_floor`, `coupon_z` | true, 18.0 |
+| Geometry | `$fn`, `eps` | 48 facets per circle, 0.01 overlap for clean booleans |
 | View only | `part`, `show_ghosts`, `show_pin_zone`, `show_zones`, `show_lid`, `section`, `section_pos`, `section_t`, `explode` | do not affect the STLs |
-| Controls only | `ghost_*`, `ctl_*`, `fw_wings`, `p9_notch`, `fw_relief` | defaults leave the nominal model; `controls.sh` sets them |
+| Controls only | `ghost_*`, `ctl_*`, `fw_wings`, `p9_notch`, `fw_relief` | defaults leave the nominal model; `enclosure/controls.sh` sets them |
 
 Derived results for the current parameters (from the model's `ZEBCASE` echo lines): case 40.4 x 33.458 x 31.2 mm,
 top 25.0 above the PCB top; XIAO X -4.955..16, Y 7.3..25.08, underside z 10.4; USB mouth X 17.5 at Y 16.19, z 13.25,
