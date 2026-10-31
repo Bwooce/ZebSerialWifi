@@ -103,12 +103,12 @@ Wi-Fi, so replies are not delayed by modem sleep.
 - **THEN** Wi-Fi power save SHALL be `WIFI_PS_NONE`
 
 ### Requirement: Captive DNS server
-While the setup access point runs, the bridge SHALL answer DNS queries on UDP port 53 (bound to all interfaces). An A
-query MUST get one answer, 192.168.4.1 with a TTL of 60 s; any other query type SHALL get a reply with no answers.
-Responses, packets with other than one question, and malformed or compressed names MUST be ignored. If the socket
-cannot be created or bound, it SHALL log "bind failed" and try again every 1 s while the server is meant to run.
+While the setup access point runs, the bridge SHALL answer DNS queries on UDP port 53 (IPv4, all interfaces) as in
+Notes, Captive DNS reply: an A query gets one answer, 192.168.4.1 with TTL 60 s; other types get none. Responses,
+packets under 17 bytes or with other than one question, and malformed or compressed names MUST be ignored. If the
+socket cannot be created or bound, it SHALL log "bind failed" and try again every 1 s while the server is meant to run.
 
-**Source**: `firmware/main/dns_hijack.c` `serve()`, `qname_len()`, `DNS_PORT`, `dns_hijack_start()`, `dns_hijack_stop()`
+**Source**: `firmware/main/dns_hijack.c` `serve()`, `qname_len()`, `DNS_PORT`, `DNS_MAX`, `HDR_LEN`, `dns_hijack_start()`, `dns_hijack_stop()`
 
 #### Scenario: Phone probes a portal host
 - **WHEN** a station on the setup network asks for the A record of any name
@@ -117,6 +117,10 @@ cannot be created or bound, it SHALL log "bind failed" and try again every 1 s w
 #### Scenario: AAAA query
 - **WHEN** the query type is not A
 - **THEN** the reply SHALL have no error and zero answers
+
+#### Scenario: Query with an EDNS record
+- **WHEN** an A query carries an OPT record in its additional section
+- **THEN** the reply SHALL keep the query's ID and question, drop the OPT record and give ARCOUNT 0
 
 #### Scenario: Port 53 not yet free
 - **WHEN** `bind()` on UDP port 53 fails
@@ -147,6 +151,22 @@ again" link to `/?rescan=1`. It MUST reuse a scan under 60 s old unless the quer
 #### Scenario: Several captive probes
 - **WHEN** a phone loads the setup page several times within 60 s
 - **THEN** the bridge SHALL scan only for the first load
+
+### Requirement: Network scan
+A scan SHALL be an active, blocking scan of all channels with the driver's default dwell times and hidden networks
+left out (`wifi_scan_config_t` zeroed except `show_hidden = false`), run on the HTTP server task. The bridge SHALL keep
+at most `MAX_SCAN` (20) records, strongest first, in one cache shared by the setup page and the Bridge page's Join
+form. A scan that fails or finds nothing SHALL keep the previous records. The Bridge page SHALL scan only on `?scan=1`.
+
+**Source**: `firmware/main/wifi_prov.c` `wifi_prov_scan()`; `firmware/main/web.c` `wifi_scan_cached()`, `MAX_SCAN`, `SCAN_MAX_AGE_US`, `send_setup_page()`, `send_wifi_section()`
+
+#### Scenario: Busy radio environment
+- **WHEN** 35 access points are in range
+- **THEN** the cache SHALL hold the 20 the driver returns first, strongest first
+
+#### Scenario: Scan finds nothing
+- **WHEN** a rescan returns no access points after an earlier scan found some
+- **THEN** the page SHALL list the earlier networks
 
 ### Requirement: Saving a network from the setup page
 `POST /save` SHALL take the typed name over the listed one, refuse an empty name or a password of 1 to 7 characters with
@@ -265,6 +285,25 @@ from `CONFIG_LWIP_IPV6_AUTOCONFIG`. Up to 3 station IPv6 addresses SHALL be repo
 - **THEN** `/api/status` `wifi.ip6` SHALL list at most 3 addresses
 
 ## Notes
+
+### Captive DNS reply
+
+`serve()` in `firmware/main/dns_hijack.c` overwrites the query in place and sends back the first `qend` bytes (header
+and question), plus the answer for an A query:
+
+| Bytes | Value |
+|---|---|
+| 0-1 ID | echoed from the query |
+| 2 | 0x81: QR 1, opcode 0, AA 0, TC 0, RD 1 (set whatever the query had) |
+| 3 | 0x80: RA 1, Z 0, RCODE 0 (no error) |
+| 4-5 QDCOUNT | echoed (always 1) |
+| 6-7 ANCOUNT | 1 for an A query, else 0 |
+| 8-11 NSCOUNT, ARCOUNT | 0 |
+| question | echoed; anything after it (EDNS and other records) is dropped |
+| answer (A only) | `C0 0C` (name pointer to the question), type 1 (A), class 1 (IN), TTL 60, RDLENGTH 4, 192.168.4.1 |
+
+The receive buffer is `DNS_MAX` (512) bytes, of which 16 are kept free for the answer. The opcode and QCLASS of a
+query are not checked.
 
 Routing of requests that arrive over the setup network is specified in web-ui (Setup access point routing); the
 refusal of port 9100 connections from it in print-bridge; the 403 for `/pstprnt` in http-print.

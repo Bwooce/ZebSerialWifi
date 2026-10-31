@@ -58,6 +58,19 @@ errors, 3 everything) and SHALL strip the "W (1234) " prefix and trailing CR/LF 
 - **WHEN** a line with no level letter and timestamp is logged at level 3
 - **THEN** it SHALL be sent as an info line with its text unchanged
 
+### Requirement: Call into iot_log
+The sender SHALL send each line with one call `iot_log(level, "%s", body)`. `level` SHALL be the line's level number
+cast to `iot_log_level_t` (1 `IOT_LOG_ERROR`, 2 `IOT_LOG_WARN`, 3 `IOT_LOG_INFO`, 4 `IOT_LOG_DEBUG`, 5
+`IOT_LOG_VERBOSE`), with a line that has no prefix sent as `IOT_LOG_INFO`. `body` SHALL be the queued line after its
+prefix. iot_log takes no tag, so the ESP_LOG tag stays at the start of the body. The configured iot_log level SHALL be
+the saved level, cast the same way.
+
+**Source**: `firmware/main/remote_log.c` `sender_task()`, `configure()` (`lc.level`); `firmware/main/log_line.c` `log_line_body()`; `firmware/managed_components/bwooce__esp_iot_log/include/esp_iot_log.h` `iot_log_level_t`, `iot_log()`
+
+#### Scenario: Warning line sent
+- **WHEN** "W (5120) printer: no reply at 9600 baud" is logged at level 2
+- **THEN** the sender SHALL call `iot_log(IOT_LOG_WARN, "%s", "printer: no reply at 9600 baud")`
+
 ### Requirement: On by default, set on the Bridge page
 The remote log SHALL start on at level 3 when nothing is saved (storage and defaults as in device-settings, Remote log
 settings). The Bridge page's Remote log section SHALL offer an on/off checkbox and a level choice (Errors; Warnings and

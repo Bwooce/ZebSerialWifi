@@ -11,11 +11,11 @@ capabilities; they appear here only in the route table.
 
 ### Requirement: HTTP server configuration
 The bridge SHALL start one ESP-IDF HTTP server from `HTTPD_DEFAULT_CONFIG()` with these changes: `max_open_sockets` 4,
-`stack_size` 8192 bytes, `lru_purge_enable` true and `max_uri_handlers` 24. All other fields keep the ESP-IDF 6.1
-defaults, so the server listens on TCP port 80. If `httpd_start` fails the bridge MUST log "HTTP server failed to
+`stack_size` 8192 bytes, `lru_purge_enable` true and `max_uri_handlers` 24. All other fields keep the ESP-IDF
+defaults (as read in ESP-IDF 6.1), so the server listens on TCP port 80. If `httpd_start` fails the bridge MUST log "HTTP server failed to
 start" and register no handlers.
 
-**Source**: `firmware/main/web.c` `web_start()`; `HTTPD_DEFAULT_CONFIG` in ESP-IDF 6.1 `esp_http_server.h` (`.server_port = 80`, `.stack_size = 4096`)
+**Source**: `firmware/main/web.c` `web_start()`; `HTTPD_DEFAULT_CONFIG` in ESP-IDF's `esp_http_server.h` (in 6.1: `.server_port = 80`, `.stack_size = 4096`, `.task_priority = tskIDLE_PRIORITY+5`)
 
 #### Scenario: Fifth connection
 - **GIVEN** four clients hold open connections to port 80
@@ -159,8 +159,8 @@ from 0x80 passed through. It MUST stop before an escape that would not fit, neve
 ### Requirement: Page frame and notices
 The Status, Printer and Bridge pages SHALL share one frame: the inline logo, a heading, and a bar linking `/` (Status),
 `/printer` (Printer) and `/bridge` (Bridge) with `aria-current=page` on the current one. The head MUST link
-`/favicon.svg` and `/apple-touch-icon.png`. A `?done=<code>` query SHALL show a note only for a code in the page's
-fixed list, with the list's text.
+`/favicon.svg` and `/apple-touch-icon.png`. A `?done=<code>` query SHALL show a `<p class=note>` only for a code in
+the page's fixed list (Notes, Notice texts), with the list's text. Every code a redirect sends SHALL be in the list.
 
 **Source**: `firmware/main/web.c` `PAGE_HEAD`, `send_page_start()`, `send_notice()`, `s_printer_notices`, `s_bridge_notices`
 
@@ -523,7 +523,8 @@ on each side shows how far the print is off centre.
 ### Requirement: Test label content
 Below the rulers, as far as each fits, the test label SHALL show the title, model and size in mm, dpi and dots, and
 bridge version; vertical and horizontal 1 to 4 dot lines, 8 mm long; a solid band 4 mm high; a 20 mm circle; a QR code
-of the bridge URL; and a Code 128 barcode of `ZEBSERIAL`. Parts that do not fit MUST be left out.
+of the bridge URL; and a Code 128 barcode of `ZEBSERIAL`. Parts that do not fit MUST be left out. The dot-level layout
+is the reference artefact `test_label_zpl()` (`openspec/config.yaml`).
 
 **Source**: `firmware/main/test_label.c` `test_label_zpl()`, `put_text()`
 
@@ -611,6 +612,36 @@ on the first two; the others are checked on a running bridge.
 - **THEN** `node --check` on each SHALL exit 0
 
 ## Notes
+
+### Notice texts
+
+`s_printer_notices` (`/printer?done=<code>`), in `firmware/main/web.c`:
+
+| Code | Sent by | Text |
+|---|---|---|
+| `sent` | `printer_config_post()` after sending the changed settings | Sent to the printer and saved there. |
+| `same` | `printer_config_post()` when nothing changed | Nothing was changed, so nothing was sent. |
+| `calibrate` | `printer_action_post()` | Calibrating: the printer feeds labels while it measures them. |
+| `feed` | `printer_action_post()` | Fed one label. |
+| `config_label` | `printer_action_post()` | Printing the configuration label. |
+| `reset_counter1` | `printer_action_post()` | User counter 1 set to zero. |
+| `reset_counter2` | `printer_action_post()` | User counter 2 set to zero. |
+| `reset_head_cleaned` | `printer_action_post()` | Head cleaning recorded. |
+| `reload_saved` | `printer_action_post()` | The printer reloaded its saved settings. |
+| `factory_defaults` | `printer_action_post()` | Factory defaults restored. The bridge is finding the printer again to set its serial port. |
+| `redetect` | `redetect_post()` | Finding the printer again. |
+| `test_label` | `printer_test_post()` | Printing the test label. |
+
+`printer_action_post()` redirects to `?done=<action>`, so its codes are the action names of `zpl_action_command()`
+(`firmware/main/zpl_status.c`).
+
+`s_bridge_notices` (`/bridge?done=<code>`):
+
+| Code | Sent by | Text |
+|---|---|---|
+| `saved` | `config_post()` | Saved. |
+
+The Status page has no notice list.
 
 ### Route table
 

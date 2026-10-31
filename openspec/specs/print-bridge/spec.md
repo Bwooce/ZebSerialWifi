@@ -247,19 +247,35 @@ discards queued output. If the read callback returns below 0 it MUST return `ESP
 - **THEN** the call SHALL return `ESP_OK`, release the link and request a status read
 
 ### Requirement: Job statistics
-The bridge SHALL keep, under a spinlock, `active`, `client_ip` (current or last client, IPv4 or IPv6 text),
-`sessions`, `aborted`, `bytes_to_printer` (bytes queued to the UART) and `bytes_from_printer`, counting port 9100 and
-HTTP jobs alike. They MUST start at zero at boot; nothing resets them.
+The bridge SHALL keep, under a spinlock, `active`, `client_ip` (current or last client), `sessions`, `aborted`,
+`bytes_to_printer` (bytes queued to the UART) and `bytes_from_printer`, counting port 9100 and HTTP jobs alike. They
+MUST start at zero at boot; nothing resets them.
 
-**Source**: `firmware/main/bridge.h` `bridge_stats_t`; `firmware/main/bridge.c` `STATS_UPDATE`, `bridge_get_stats()`; `firmware/main/web.c` `status_get()`
+**Source**: `firmware/main/bridge.h` `bridge_stats_t`; `firmware/main/bridge.c` `STATS_UPDATE`, `bridge_get_stats()`; `firmware/main/web.c` `status_get()`, `STATUS_SCRIPT` ("Print client" and "Jobs" rows)
 
 #### Scenario: Status API
 - **WHEN** a client reads `/api/status`
 - **THEN** the `bridge` object SHALL hold `active`, `client_ip`, `sessions`, `aborted`, `to_printer` and `from_printer`
 
 #### Scenario: Status page
-- **WHEN** the Status page is shown
-- **THEN** its Jobs row SHALL show `sessions` followed by `aborted` as "dropped"
+- **WHEN** the Status page is shown with 12 sessions and 1 aborted
+- **THEN** its Jobs row SHALL read "12 (1 dropped)"
+- **AND** its Print client row SHALL read "printing from <client_ip>" while `active`, else "idle, last <client_ip>", or "idle, last none" when `client_ip` is empty
+
+### Requirement: Client address text
+`client_ip` SHALL be a dotted quad for an IPv4 client, on port 9100 and HTTP alike, never `::FFFF:a.b.c.d`. For an
+IPv6 client it SHALL be lwIP's `inet_ntop()` text (compressed, upper-case hex). It SHALL be `?` for an HTTP job whose
+peer cannot be read, and empty before the first job. Notes, Client address text, gives the reasons.
+
+**Source**: `firmware/main/bridge.c` `listen_task()` (`inet_ntop()` by `peer.ss_family`), `bridge_send_job()`; `firmware/main/web.c` `pstprnt_post()` (`IN6_IS_ADDR_V4MAPPED`)
+
+#### Scenario: IPv4 client on port 9100
+- **WHEN** a client at 192.168.1.20 prints over IPv4 to port 9100
+- **THEN** `client_ip` SHALL be `192.168.1.20`
+
+#### Scenario: IPv4 client over HTTP
+- **WHEN** the same client posts a job to `/pstprnt`
+- **THEN** `client_ip` SHALL also be `192.168.1.20`
 
 ## Notes
 
@@ -273,6 +289,13 @@ HTTP jobs alike. They MUST start at zero at boot; nothing resets them.
 | `STALL_LIMIT_MS` | 30 min | port 9100 stall and drain limit |
 | keepalive | 10 s idle, 5 s interval, 3 probes | dead-client detection |
 | final reply window | 300 ms | after the drain |
+
+### Client address text
+
+lwIP's `accept()` on the dual-stack socket gives an IPv4 peer as `AF_INET` (it does not map it), so `listen_task()`
+prints it with `inet_ntop(AF_INET, ...)`. lwIP's `getpeername()` does map it to `::FFFF:a.b.c.d`, so
+`pstprnt_post()` checks `IN6_IS_ADDR_V4MAPPED` and prints the last four bytes as IPv4. lwIP writes IPv6 hex digits in
+upper case (`lwip_xchar` in `ip6_addr.c`).
 
 Printer replies dropped during a port 9100 drain after the client has gone are not added to `bytes_from_printer`;
 replies dropped by `bridge_send_job` are.

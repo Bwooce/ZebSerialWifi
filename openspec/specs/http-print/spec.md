@@ -119,7 +119,7 @@ configuration command.
 
 ### Requirement: Stall reply after 30 s
 When `bridge_send_job()` returns `ESP_ERR_TIMEOUT` after some bytes were sent, the bridge SHALL reply `504 Gateway
-Timeout` with a body saying the printer stopped taking data after N bytes and the rest of the job was dropped. The
+Timeout` with the body given for "Printer stalled 30 s" in the Notes table. The
 stall limit MUST be 30 s (`PSTPRNT_STALL_MS`), not the 30 minutes of a port 9100 job.
 
 **Source**: `firmware/main/web.c` `pstprnt_post()`, `PSTPRNT_STALL_MS`; `firmware/main/bridge.c` `bridge_send_job()`
@@ -160,11 +160,12 @@ log the client address, bytes sent of the content length, elapsed time and resul
 | Content length 0 | 400 Bad Request | `Send the print job (ZPL) as the request body.` |
 | Job sent | 200 OK | `Sent N bytes to the printer.` |
 | Link busy 15 s | 503 Service Unavailable | `The printer is busy with another job. Try again.` |
-| Printer stalled 30 s | 504 Gateway Timeout | `The printer stopped taking data ... after N bytes; the rest of the job was dropped.` |
+| Printer stalled 30 s | 504 Gateway Timeout | `The printer stopped taking data (paper or ribbon out, or head open?) after N bytes; the rest of the job was dropped.` |
 | Sender went away | none | connection closed |
 | Method other than POST | 405 (server default) | server default text, no CORS header |
 
-All handler replies are `text/plain` with `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`.
+Each body in backticks is the exact text, with N the decimal byte count, followed by one newline (`\n`). All handler
+replies are `text/plain` with `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`.
 
 ### Known deviations
 None. The last ones were fixed in the change archived as `2026-10-31-fix-known-deviations`.

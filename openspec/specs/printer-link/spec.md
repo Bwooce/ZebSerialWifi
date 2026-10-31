@@ -154,6 +154,26 @@ parsing SHALL skip lines that start with `!`.
 - **WHEN** `! U1 getvar "device.languages"` comes back unchanged
 - **THEN** XON/XOFF SHALL be switched off and no value SHALL be read from the echo
 
+### Requirement: SGD reply value
+The bridge SHALL take an SGD value as the bytes between the first two double quotes of the reply, after skipping
+leading CR, LF and spaces and any lines that start with `!`. The quotes SHALL be stripped and nothing else changed (no
+unescaping, trimming or case change); `""` is a valid empty value. A reply without both quotes, or a value too long
+for the caller's buffer (refused, not cut), SHALL count as no value. The read SHALL end once a value can be taken.
+
+**Source**: `firmware/main/zpl_status.c` `zpl_sgd_value()`; `firmware/main/printer_link.c` `sgd_get()`, `sgd_done()`, `PROBE_TIMEOUT_MS`; `firmware/test_host/test_main.c` `test_sgd_value()`
+
+#### Scenario: GX430t language reply
+- **WHEN** the printer answers `"epl_zpl"` to `device.languages`
+- **THEN** the value SHALL be `epl_zpl`, without the quotes
+
+#### Scenario: Value longer than the buffer
+- **WHEN** the quoted value does not fit the caller's buffer with its terminating NUL
+- **THEN** the read SHALL report no value
+
+#### Scenario: No reply
+- **WHEN** no quoted value arrives
+- **THEN** the read SHALL end after `PROBE_TIMEOUT_MS` (500 ms) with no value
+
 ### Requirement: ~HS reply parsing
 The bridge SHALL accept a `~HS` reply only as three consecutive STX...ETX frames of 12, 11 and 2 comma-separated
 fields, each field at most 11 printable characters, with the decoded fields numeric. Flags SHALL be true when
@@ -199,8 +219,8 @@ other value SHALL be non-ZPL. While the language text is empty, up to 20 later p
 ### Requirement: Language gate
 For a printer whose language is non-ZPL the bridge SHALL send no ZPL of its own: no `~HS`, `~HI`, `^HH` or `^SC`,
 and no port configuration. Probes SHALL use SGD only, `printer_link_refresh_config()` and `printer_link_send_zpl()`
-SHALL return `ESP_ERR_NOT_SUPPORTED`, and the status field `zpl` SHALL be false. A failed detection SHALL reset the
-language to unknown.
+SHALL return `ESP_ERR_NOT_SUPPORTED`, and the status field `zpl` SHALL be false. A detection in which no baud
+answers SHALL reset the language to unknown, so the next scan tries `~HS` again.
 
 **Source**: `firmware/main/printer_link.c` `detect()`, `scan()`, `probe_alive_publish()`, `read_model()`, `read_handshake()`, `printer_link_refresh_config()`, `printer_link_send_zpl()`, `printer_link_get_status()`
 
@@ -248,11 +268,12 @@ alone SHALL mean the value contains `xon` and none of `dtr`, `dsr`, `rts` or `ct
 
 ### Requirement: Checking an ^SC
 After each `^SC` the bridge SHALL wait up to 1 s for it to leave the UART, wait 1500 ms, move the UART to the
-`^SC` baud, and check for the printer up to 3 times, 500 ms apart. When the handshake `^SC` is answered it SHALL
+`^SC` baud, and check for the printer up to 3 times with the liveness probe (`probe_alive()`, as in Liveness
+probe), 500 ms after each miss, publishing each miss as not answering. When the handshake `^SC` is answered it SHALL
 set NVS flag `sc_sent` and read the handshake again; when it is not, it SHALL rescan the bauds, and the detection
 fails if that finds nothing.
 
-**Source**: `firmware/main/printer_link.c` `send_sc()`, `configure_printer()`
+**Source**: `firmware/main/printer_link.c` `send_sc()`, `probe_alive()`, `probe_alive_publish()`, `configure_printer()`
 
 #### Scenario: Printer silent after ^SC
 - **WHEN** the printer does not answer after the handshake `^SC`
@@ -297,10 +318,27 @@ printer's baud alone.
 - **WHEN** the target changes from 115200 to 57600 while running
 - **THEN** the stored cap SHALL be cleared and detection SHALL run again at the next idle moment
 
+### Requirement: Detection order
+A detection SHALL run the steps of Notes, Detection steps, in that order, each as specified in its own requirement:
+find the printer, clear a partial format, read the language, model and sleep setting, then configure the port.
+Only two things SHALL fail a detection: no baud answering in step 1, and step 6 losing the printer (an `^SC` that
+no rescan recovers). A read in steps 2 to 5 that gets no answer SHALL leave its value unknown or as it was.
+
+**Source**: `firmware/main/printer_link.c` `detect()`, `configure_printer()`, `LANG_RETRIES`
+
+#### Scenario: ZPL printer that needs both ^SC
+- **WHEN** a ZPL printer answers `~HS` at 9600 with no partial format, its `comm.handshake` reads `DTR & XON/XOFF`, the target is 115200 and no cap is stored
+- **THEN** the bridge SHALL send, in order, `~HS`, SGD `device.languages`, `~HI`, SGD `power.energy_star.enable` and `power.sleep.enable` (the second only when the first is not `on`), SGD `comm.handshake`, the handshake `^SC` at 9600 and its check (Checking an ^SC), SGD `comm.handshake` again, and the `^SC` to 115200 and its check
+
+#### Scenario: Printer lost during configuration
+- **WHEN** no rescan finds the printer after an `^SC`
+- **THEN** the detection SHALL fail, with the language, model and sleep setting read in steps 3 to 5 kept
+
 ### Requirement: Detection outcome
-A successful detection SHALL mark the printer detected and answering and save the current baud in NVS key `baud`.
-A printer found only through SGD, and not non-ZPL, SHALL be configured at the first later poll that `~HS`
-answers, followed by a model read. Detection SHALL fail when no baud answers or a configuration loses the printer.
+A successful detection SHALL mark the printer detected and answering, turn XON/XOFF back on after a loopback echo,
+and save the current baud in NVS key `baud`. A printer found only through SGD, and not non-ZPL, SHALL be configured
+at the first later poll that `~HS` answers, followed by a model read. A failed detection SHALL leave the printer not
+detected and save no baud; only one in which no baud answered SHALL reset the language to unknown.
 
 **Source**: `firmware/main/printer_link.c` `detect()`, `poll_once()`, `s_config_pending`, `settings_set_baud()`
 
@@ -321,9 +359,9 @@ not sleep.
 - **THEN** the printer SHALL be polled on the timer
 
 ### Requirement: Link task scheduling
-The link task SHALL wake every 200 ms and run only when it gets the link without waiting. It SHALL detect at boot
-and whenever not detected or a re-detect is requested, retrying every 10 s while none is found. A detected printer
-SHALL be polled 30 s after the last poll or detection while answering and every 10 s while it is not.
+The link task (`printer_link`; stack and priority in device-settings, Tasks) SHALL wake every 200 ms and run only
+when it gets the link without waiting. It SHALL detect at boot and whenever not detected or a re-detect is
+requested, retrying every 10 s while none is found. A detected printer SHALL be polled 30 s after the last poll or detection while answering and every 10 s while it is not.
 
 **Source**: `firmware/main/printer_link.c` `link_task()`, `POLL_INTERVAL_MS`, `SCAN_RETRY_MS`, `printer_link_start()`
 
@@ -498,6 +536,21 @@ detected), age of the last reply (-1 if none), byte counters, TX and RX GPIOs an
 - **THEN** `zpl` SHALL be true and `language` SHALL be empty
 
 ## Notes
+
+### Detection steps
+
+`detect()` in `firmware/main/printer_link.c`:
+
+1. Scan the bauds (Probing each baud). If none answers and the pins were not fixed, swap the pins and scan again;
+   if that also fails, swap them back and return to the fallback baud (Pin swap fallback).
+2. Clear a partial format (Partial format recovery at detection).
+3. Read the language (Language detection) and reset the language retry count to `LANG_RETRIES`.
+4. Read the model (Model read).
+5. Read the sleep setting (Sleep setting read).
+6. Configure the printer, only for a printer that is not non-ZPL and answered `~HS`: read the handshake (Handshake
+   read), send `^SC` if it is not XON/XOFF alone and read the handshake again (Setting XON/XOFF with ^SC, Checking
+   an ^SC), then move to the target baud (Moving the printer to the target baud). A non-ZPL printer is not
+   configured; a printer found through SGD only is configured later (Detection outcome).
 
 `printer_link_set_pins()` (`firmware/main/printer_link.c:942`) moves the UART to other pins at run time, but nothing
 calls it: a pin change on the Bridge page saves the setting and restarts the bridge (`firmware/main/web.c:1444`),

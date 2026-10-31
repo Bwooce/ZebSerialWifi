@@ -166,7 +166,73 @@ The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is th
 - **WHEN** a computer is connected to the XIAO's USB-C port
 - **THEN** the boot log SHALL appear on its USB serial device
 
+### Requirement: Boot order
+`app_main()` SHALL start the bridge in the order of Notes, Boot sequence: settings and the log hook first, then the
+board, UART pins and printer link driver, then the network stack and its services, then the printer link task and
+the `status` task. An error that `ESP_ERROR_CHECK` catches (steps 1, 4, 7, 8, `mdns_init()`) SHALL restart the
+chip. The status task SHALL run every `STATUS_TICK_MS` (100 ms): `ota_poll()`, `temp_mon_poll()`, the mDNS model update, the LED mode and the BOOT button.
+
+**Source**: `firmware/main/main.c` `app_main()`, `status_task()`, `STATUS_TICK_MS`
+
+#### Scenario: Printer detection waits for the network stack
+- **WHEN** the bridge boots
+- **THEN** the printer link task SHALL start after the Wi-Fi, mDNS, web server and port 9100 listener have been started
+
+#### Scenario: Boot log on the remote log
+- **WHEN** the remote log is on at level 3 and the bridge boots
+- **THEN** the version line and the board's antenna line SHALL be among the queued lines sent once Wi-Fi is up
+
+### Requirement: Tasks
+The bridge's own tasks SHALL be created with the names, stack sizes and priorities in Notes, Tasks, all with
+`xTaskCreate()` (no core affinity; the ESP32-C6 has one core, `CONFIG_FREERTOS_UNICORE`). A higher number is a higher
+FreeRTOS priority. The port 9100 listener SHALL have the highest priority of them, then the printer link, then the HTTP
+server.
+
+**Source**: `firmware/main/main.c` `app_main()` (`xTaskCreate(status_task, "status", 4096, NULL, 3, NULL)`); `firmware/main/printer_link.c` `printer_link_start()` (`xTaskCreate(link_task, "printer_link", 6144, NULL, 5, NULL)`); `firmware/main/bridge.c` `bridge_start()` (`xTaskCreate(listen_task, "bridge", 6144, NULL, 6, NULL)`); `firmware/main/remote_log.c` `remote_log_start()`, `SENDER_STACK`, `SENDER_PRIO`; `firmware/main/dns_hijack.c` `dns_hijack_start()` (`xTaskCreate(dns_task, "dns_hijack", 3072, NULL, 4, &s_task)`); `firmware/main/web.c` `web_start()` (`cfg.stack_size`)
+
+#### Scenario: Job running while a page loads
+- **WHEN** a port 9100 job and a page request are both ready to run
+- **THEN** the `bridge` task (priority 6) SHALL run before `httpd` (priority 5)
+
 ## Notes
+
+### Boot sequence
+
+`app_main()` in `firmware/main/main.c`:
+
+1. `settings_init()`: NVS (NVS storage).
+2. `remote_log_init()`: the log hook, before anything else logs, so the boot log is queued for the remote log.
+3. One log line "ZebSerialWifi <version> built <date> <time>, IDF <idf version>" from `esp_app_get_description()`.
+4. `board_init()`: RF switch and antenna, LED off, BOOT button input with pull-up, the LED timer.
+5. `temp_mon_init()`: the chip temperature sensor.
+6. The UART pins: fixed by the `pins` setting, else `board_detect_uart_pins()`.
+7. `printer_link_init()` with those pins (the UART at the saved baud, else the default), pin swap allowed only when
+   the pins were not certain, and the target baud from the settings.
+8. `esp_netif_init()` and `esp_event_loop_create_default()`.
+9. `wifi_prov_start()`: the station or the setup access point (wifi-provisioning).
+10. `mdns_setup()`: hostname and services (discovery).
+11. `remote_log_start()`: the sender task.
+12. `web_start()`: the HTTP server.
+13. `bridge_start()`: the port 9100 listener.
+14. `printer_link_start()`: the link task, which starts printer detection.
+15. The `status` task; `app_main()` then returns.
+
+### Tasks
+
+| Task name | Created by | Stack (bytes) | Priority | Notes |
+|---|---|---|---|---|
+| `main` | ESP-IDF, runs `app_main()` | 3584 (`CONFIG_ESP_MAIN_TASK_STACK_SIZE` default) | 1 (`ESP_TASK_MAIN_PRIO`) | ends when `app_main()` returns |
+| `bridge` | `bridge_start()` | 6144 | 6 | port 9100 listener and its jobs |
+| `printer_link` | `printer_link_start()` | 6144 | 5 | detection and polling |
+| `httpd` | `web_start()` through `httpd_start()` | 8192 (`cfg.stack_size`) | 5 (`tskIDLE_PRIORITY+5`, `HTTPD_DEFAULT_CONFIG`) | every HTTP handler, HTTP print jobs, OTA uploads, scans |
+| `dns_hijack` | `dns_hijack_start()`, the first time the setup access point starts | 3072 | 4 | lives for good once created |
+| `status` | `app_main()` | 4096 | 3 | the 100 ms status loop |
+| `remote_log` | `remote_log_start()` | 6144 (`SENDER_STACK`) | 2 (`SENDER_PRIO`) | only if the log queue was allocated |
+| `mdns` | `mdns_init()` in `mdns_setup()` | 4096 (`CONFIG_MDNS_TASK_STACK_SIZE` default) | 1 (`CONFIG_MDNS_TASK_PRIORITY` default) | pinned to core 0 (`CONFIG_MDNS_TASK_AFFINITY`), the only core |
+
+The Wi-Fi, lwIP, event loop and `esp_timer` tasks are ESP-IDF's, at their defaults. The project's `esp_timer`
+callbacks (`led`, `wifi_fb`, `wifi_retry`, `wifi_noip`, `wifi_join`, `wifi_trial`, `restart`) run in the `esp_timer`
+task. The bridge, printer link and status tasks each log their unused stack once.
 
 ### Stored lengths
 
