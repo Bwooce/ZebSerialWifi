@@ -592,9 +592,10 @@ from the embedded icon files, all with `Cache-Control: max-age=86400` and on eve
 ### Requirement: Page script syntax gate
 Page JavaScript in `web.c` MUST parse under `node --check` before a build is pushed. The script sits in C string
 literals: `STATUS_SCRIPT`, the Firmware upload script in `send_firmware_section()`, the `var UI` script built by
-`send_ui_script()`, and inline `onchange`, `oninput` and `onsubmit` attributes. No repository script runs this check.
+`send_ui_script()`, and inline `onchange`, `oninput` and `onsubmit` attributes. CI runs `tools/check_page_js.py`
+on the first two; the others are checked on a running bridge.
 
-**Source**: `firmware/main/web.c` `STATUS_SCRIPT`, `send_firmware_section()`, `send_ui_script()`, `send_action()`, `send_printer_field()`
+**Source**: `firmware/main/web.c` `STATUS_SCRIPT`, `send_firmware_section()`, `send_ui_script()`, `send_action()`, `send_printer_field()`; `tools/check_page_js.py` `web_c_scripts()`; `.github/workflows/ci.yml` job `page-js`
 
 #### Scenario: Checking from the source
 - **WHEN** the C literals of `STATUS_SCRIPT` are joined, C escapes decoded and the `<script>` tags removed

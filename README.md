@@ -1,5 +1,7 @@
 # ZebSerialWifi
 
+[![CI](https://github.com/Bwooce/ZebSerialWifi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Bwooce/ZebSerialWifi/actions/workflows/ci.yml)
+
 A Wi-Fi to RS-232 bridge for Zebra label printers that have a serial port but no network connection. It plugs into
 the printer's DB9 and shows up on the network as an ordinary network printer: raw TCP on port 9100, advertised over
 Bonjour, with a web page for status and settings.
