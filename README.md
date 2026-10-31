@@ -286,7 +286,9 @@ on the set-up network. The reply says how many bytes went to the printer; 503 me
 was dropped.
 
 `tools/cable-labels.html` is such a page: flag labels for cables on 60 x 20 mm stock, the same text on both ends with a
-blank middle that wraps round the cable. Open it in a browser and type one cable per row.
+blank middle that wraps round the cable. Open it in a browser and type one cable per row. On a Mac the browser must be
+allowed Local Network access (macOS asks the first time; otherwise System Settings, Privacy & Security, Local Network),
+or every print fails with "Couldn't reach".
 
 ## Remote log
 

@@ -783,7 +783,7 @@ $('#printBtn').addEventListener('click', async () => {
     if (res.ok) { showStatus('ok', `<span class="dot ok"></span><span><span class="lead">Sent ${n} label${n === 1 ? '' : 's'}</span> at ${t}. ${esc(text)}</span>`); setDot('ok', `${S.ip} took a job at ${t}`); }
     else { showStatus('err', `<span class="dot err"></span><span>The bridge said: ${esc(text || res.status)}</span>`); setDot('err', text); }
   } catch {
-    showStatus('err', `<span class="dot err"></span><span>Couldn't reach ${addr}. Check the bridge is on and the address is right, or try its IP address.</span>`);
+    showStatus('err', `<span class="dot err"></span><span>Couldn't reach ${addr}. Check the bridge is on and the address is right. On a Mac, the browser needs Local Network access: allow it if asked, or in System Settings, Privacy &amp; Security, Local Network.</span>`);
     setDot('err', `Couldn't reach ${S.ip}`); $('#printerSettings').open = true;
   } finally { b.disabled = false; refresh(); }
 });
