@@ -2,11 +2,13 @@
 
 ## Purpose
 The two-part PETG case (tray and lid, snap clips, no screws) that holds the HW-044 MAX3232 RS-232 module and the
-Seeed XIAO ESP32-C6 and plugs into the printer's DB9 through a male-to-male gender changer. It is one parametric OpenSCAD model,
-`enclosure/zebserial_case.scad` (revision 5), with mechanical gates in `enclosure/build.sh` and
-`enclosure/controls.sh`. The likely next change is a different RS-232 module, so this spec says which parameters
-describe which part, what was measured and what was borrowed, and how to regenerate and check the STLs. The Notes
-section at the end holds the parameter tables and the regeneration procedure.
+Seeed XIAO ESP32-C6 and plugs into the printer's DB9 through a male-to-male gender changer. It is one parametric
+OpenSCAD model, `enclosure/zebserial_case.scad` (revision 5), with mechanical gates in `enclosure/build.sh` and
+`enclosure/controls.sh`. Those two scripts, `wallprobe.py` and `stlinfo.py` are reference artefacts
+(`openspec/config.yaml`): this spec states what the gates must catch, and the scripts hold the exact checks. The
+likely next change is a different RS-232 module, so this spec says which parameters describe which part, what was
+measured and what was borrowed, and how to regenerate and check the STLs. The Notes section at the end holds the
+parameter tables and the regeneration procedure.
 
 ## Requirements
 
@@ -183,7 +185,8 @@ ceiling SHALL be at least `dupont_ceiling_min` (23.4) and `dupont_top + dupont_b
 ### Requirement: Wire and joint keep-outs
 The lid SHALL stay out of the wire keep-outs: the 5V/GND corridor over the XIAO (`wch_hw` 2.5 either side of the
 5V and GND pads' mid-point), the front-edge joint zones at the 5V, GND and 3V3 pads (with a front wall relief,
-`fw_relief`), and the rear-edge zone and joints at D3 and D5.
+`fw_relief`), and the rear-edge zone and joints at D3 and D5. The 3V3 joint zone is optional room for a pull-up
+(see Pads match the firmware's pins).
 
 **Source**: `enclosure/zebserial_case.scad` `module wire_zones()`, `wch_c`, `wch_hw`, `used_pads_front`, `pullup_pad`, `used_pads_rear`, `fw_relief`; `enclosure/controls.sh` "USB pad over the corridor", "front wall without relief", "corridor zone", "rear zones" lines
 
@@ -197,14 +200,19 @@ The lid SHALL stay out of the wire keep-outs: the 5V/GND corridor over the XIAO 
 
 ### Requirement: Pads match the firmware's pins
 The pads the case leaves room for SHALL be the ones the firmware and wiring use: `used_pads_rear = [4, 6]` (D3 RX
-through the diode, D5 TX; GPIO21 and GPIO23 in `firmware/main/board.c`) and `used_pads_front = [1, 2]` (5V, GND),
-plus `pullup_pad = 3` (3V3). A pin change in the firmware or wiring MUST be mirrored in these parameters.
+through the diode, D5 TX; GPIO21 and GPIO23 in `firmware/main/board.c`) and `used_pads_front = [1, 2]` (5V, GND).
+A pin change in the firmware or wiring MUST be mirrored in these parameters. `pullup_pad = 3` (3V3) SHALL only
+reserve optional room for an external pull-up (Notes, Optional pull-up); `pullup_pad = 0` removes it.
 
-**Source**: `enclosure/zebserial_case.scad` `used_pads_front`, `pullup_pad`, `used_pads_rear`, `function pad_x()`; `README.md` Wiring
+**Source**: `enclosure/zebserial_case.scad` `used_pads_front`, `pullup_pad`, `front_pads`, `used_pads_rear`, `function pad_x()`; `README.md` Parts and Wiring; `enclosure/README.md` "Pull-up (optional)"
 
 #### Scenario: Pad positions
 - **WHEN** the model is rendered with the current parameters
 - **THEN** the echo "ZEBCASE PADS" SHALL put D3 at X 5.459 and D5 at X 0.379 on the rear edge (Y 25.08), and 5V at X 13.079 and GND at X 10.539 on the front edge (Y 7.3)
+
+#### Scenario: No pull-up room
+- **WHEN** `pullup_pad` is 0
+- **THEN** the front-edge joint zones and the front wall relief SHALL span only the 5V and GND joints, and the "ZEBCASE NOTE (check)" line SHALL say "5V/GND" without "/3V3"
 
 ### Requirement: RX diode keep-out
 The case SHALL keep clear a keep-out for the RX Schottky diode at the D3 pad: by default a DO-41 body (`diode_d`
@@ -311,11 +319,12 @@ The logo SHALL be inlaid `logo_depth` (0.68 mm) into the outside of the tray flo
 - **THEN** `check_logo` SHALL hit and the gate SHALL fail
 
 ### Requirement: Positive and negative controls
-`controls.sh` SHALL run 97 controls, each moving one ghost or feature and stating whether a named check must find a
-hit or none, and SHALL exit non-zero on any mismatch. A change that adds or moves a keep-out or a locating feature
+`controls.sh` SHALL run its controls, one `ctl` line each (the script is a reference artefact and holds the list; see
+`openspec/config.yaml`), each moving one ghost or feature and stating whether a named check must find a hit or none,
+and SHALL exit non-zero on any mismatch. A change that adds or moves a keep-out or a locating feature
 MUST add or recalibrate a control that shows the check can see it.
 
-**Source**: `enclosure/controls.sh` `ctl()` and its 97 `ctl` lines; `enclosure/README.md` Interference checks table
+**Source**: `enclosure/controls.sh` `ctl()` and its `ctl` lines; `enclosure/README.md` Interference checks table
 
 #### Scenario: Current model
 - **WHEN** `./controls.sh` is run
@@ -333,8 +342,9 @@ are tracked in git and SHALL be committed with the SCAD change that produced the
 **Source**: `enclosure/build.sh` `rm -f out/*.stl renders/*.png`, STL export and renders sections, final `enclosure/stlinfo.py` call
 
 #### Scenario: Unchanged parameters
-- **WHEN** `build.sh` runs on the committed SCAD with OpenSCAD 2026.06.12 and the manifold backend
+- **WHEN** `build.sh` runs on the committed SCAD with the OpenSCAD build that made the committed STLs (the 2026.06.12 nightly, manifold backend)
 - **THEN** the five STLs SHALL be byte-identical to the committed ones
+- **AND** another OpenSCAD version may give STLs that differ in bytes; the gates, not byte identity, SHALL decide whether the case is good
 
 ### Requirement: Fit coupons
 The model SHALL provide two single-colour fit coupons in print orientation: `coupon_tray` (the whole tray with the
@@ -460,6 +470,14 @@ with `dupont_on`, the larger of `dupont_top + dupont_bend_h` and `dupont_ceiling
 
 ## Notes
 
+### Optional pull-up
+
+`pullup_pad = 3` gives the 3V3 pad a front-edge joint zone and front wall relief, so that an external 10 kΩ
+resistor from D3 to 3V3 can be fitted. README.md (Parts) lists it as optional, wanted with a 1N5817/1N5819 diode at
+115200 baud and helpful for the automatic pin detection; `enclosure/README.md` ("Pull-up (optional)") gives a route
+for it. The firmware does not rely on it: it turns on D3's internal pull-up (printer-link, Internal pull-up on RX), so
+there is no conflict between the two. The room is a side effect and did not drive the design.
+
 ### Where the model leaves the module's shape to assumptions
 
 These are built into the geometry, not parameters. A module that breaks one needs a SCAD change, not a parameter edit.
@@ -568,7 +586,7 @@ drawing.
 | `shield_w`, `shield_d0`, `shield_d1`, `shield_h` | 12.6, 6.71, 17.31, 2.2 (measured) |
 | `ant_w`, `ant_d`, `ufl_w`, `ufl_d`, `ufl_h` | ceramic antenna w 0.52..5.72, d 18.8..20.8; U.FL w -5.6..-3.0, d 18.25..20.85, 2.5 high mated |
 | `btn_w`, `btn_d` | buttons at abs(w) 5.3..7.9, d 0.3..1.9 |
-| `used_pads_front`, `pullup_pad`, `used_pads_rear` | [1, 2] (5V, GND), 3 (3V3), [4, 6] (D3, D5) |
+| `used_pads_front`, `pullup_pad`, `used_pads_rear` | [1, 2] (5V, GND), 3 (3V3, optional pull-up room; 0 for none), [4, 6] (D3, D5) |
 | `xiao_x0`, `xiao_front_y` | -1 (derived) |
 | Capture: `xiao_top_clear`, `front_rest_min`, `xpad_gap`, `xpad_inset`, `xpad_wall`, `xlead`, `shield_stop_clr`, `tongue_gap`, `tongue_side_clr`, `tongue_tip`, `stop_ant_clr`, `stop_t`, `stop_web_t`, `stop_z_clr`, `stop_lead` | 4.5, 2.0, 0.25, 0.5, 1.6, 0.4, 0.3, 0.05, 0.3, 0.5, 0.27, 1.6, 1.6, 0.1, 0.4 |
 | Corridor: `wch_c`, `wch_hw` | -1 (mid-point of 5V and GND), 2.5 |

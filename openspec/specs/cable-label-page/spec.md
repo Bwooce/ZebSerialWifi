@@ -49,9 +49,11 @@ of what remains, and the Layout settings SHALL show the wrap zone and the room l
 ### Requirement: Same text at both ends, same way up
 The page SHALL draw the row's text in a box at each end, the right box mirroring the left about the label's middle,
 both the same way up, each box inset by the end margin, the margin by the wrap and the top and bottom margin. Text
-SHALL be centred in each box by its ink, not its font box.
+SHALL be centred in each box by its ink, not its font box, using the canvas `measureText()` ink bounds: each line
+across by its own ink width, the block of lines vertically by its ink height, positions rounded to whole dots
+(Notes, Ink measurement).
 
-**Source**: `tools/cable-labels.html` `geom()` (`boxes`), `render()`
+**Source**: `tools/cable-labels.html` `geom()` (`boxes`), `render()`, `fitLines()`
 
 #### Scenario: Label folded round the cable
 - **WHEN** a row's text is printed and the two ends are pressed together back to back
@@ -59,7 +61,8 @@ SHALL be centred in each box by its ink, not its font box.
 
 ### Requirement: Text size fitting
 The page SHALL use the largest whole-dot font size, from twice the largest-letters height down to 8 dots, at which the
-capital H is no taller than the largest-letters setting and every line's ink fits the box, with lines 1.12 em apart.
+capital H is no taller than the largest-letters setting and every line's ink fits the box, with lines 1.12 em apart
+(rounded to whole dots). The capital height is `measureText('H').actualBoundingBoxAscent` at that font.
 Up to two lines (Line 1, optional Line 2) SHALL be used; empty lines are left out.
 
 **Source**: `tools/cable-labels.html` `fitLines()`, `fontFor()`, `render()`
@@ -184,11 +187,27 @@ sending nothing, if any row of the batch does not fit, and SHALL ask for confirm
 - **WHEN** the batch totals 51 labels
 - **THEN** the page SHALL ask "Print 51 labels?" before sending
 
+### Requirement: Active row
+The previewed ("active") row SHALL be row 1 when the page loads, and SHALL then become the row that last took focus
+in any of its fields, the new row after Add row (or Enter in the last field), or the first pasted row after a list is
+pasted. Removing a row SHALL keep the active row number, or move to the last row if that number no longer exists.
+The active row is not saved, and SHALL be marked in the table (`tr.active`).
+
+**Source**: `tools/cable-labels.html` `active`, `setActive()`, the `#rows` `focusin` and `paste` handlers, `addRow()`, `renderRows()`, `rowEl()`
+
+#### Scenario: Editing a later row
+- **WHEN** the user clicks into Line 2 of row 3, which holds text
+- **THEN** the preview SHALL show row 3 and its caption SHALL read "Row 3"
+
+#### Scenario: Active row removed
+- **WHEN** the active row is the last of four and is removed
+- **THEN** row 3 SHALL become the active row
+
 ### Requirement: Preview, captions and Print button
-The preview SHALL show the active row, or "Sample text" when that row is empty, with captions "wrap X.X" over the wrap
-zone and "letters X.X mm" for the capital height. The Print button SHALL read "Print N label(s)", or "Print" with 0
-labels, and SHALL be disabled with 0 labels and while a batch is being sent. A success message SHALL clear on the next
-edit to the rows.
+The preview SHALL show the active row (Active row), or "Sample text" when that row is empty, with captions "wrap
+X.X" over the wrap zone and "letters X.X mm" for the capital height. The Print button SHALL read "Print N label(s)",
+or "Print" with 0 labels, and SHALL be disabled with 0 labels and while a batch is being sent. A success message
+SHALL clear on the next edit to the rows.
 
 **Source**: `tools/cable-labels.html` `refreshPreview()` (`#flagCaps`, `#previewCap`), `refresh()` (`#printBtn`), print button handler, `clearOkStatus()`
 
@@ -261,6 +280,23 @@ and the field SHALL show `zebserial.local` again when it is left empty.
 - The page notes that the end margin should stay at 2.5 mm or more on the GX430t, as the last 2 mm at one side does
   not print.
 - Left-right position is not set by the page; it is the printer's Left Position, set on the bridge's Printer page.
+
+### Ink measurement
+
+`fitLines()` and `render()` in `tools/cable-labels.html` draw on a canvas the size of the label in dots
+(`mm2d()`, 300 dpi), with `textBaseline` `alphabetic` and `textAlign` `left`. For lines L1..Ln at size `em`, with
+`m[i] = ctx.measureText(Li)` and `pitch = Math.round(em * 1.12)`:
+
+- ink width of line i: `m[i].actualBoundingBoxLeft + m[i].actualBoundingBoxRight`; the block fits when the widest
+  line is no wider than the box;
+- ink height of the block: `m[0].actualBoundingBoxAscent + (n - 1) * pitch + m[n-1].actualBoundingBoxDescent`; it
+  must be no taller than the box;
+- first baseline: `box top + (box height - ink height) / 2 + m[0].actualBoundingBoxAscent`, then `+ pitch` per line;
+- x of line i: `box left + (box width - ink width of line i) / 2 + m[i].actualBoundingBoxLeft`;
+- x and baseline are rounded with `Math.round()` before `fillText()`.
+
+The "letters X.X mm" caption is `measureText('H').actualBoundingBoxAscent / DPMM` at the size used. The page is then
+thresholded to 1 bit (red channel under 128 prints).
 
 ### Stored data
 

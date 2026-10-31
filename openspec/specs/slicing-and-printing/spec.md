@@ -54,7 +54,7 @@ logo is a second part of the tray object on filament 2 (`filament_overrides_logo
 
 #### Scenario: Two identical filament presets
 - **WHEN** both filament presets share a name
-- **THEN** the CLI crashes; `filament_overrides_logo.json` SHALL therefore give the logo filament a distinct name ("ZebSerial Bambu PETG Basic logo @BBL H2D 0.4 nozzle")
+- **THEN** the CLI crashes (observed with Bambu Studio 02.08.03.66, 2026-10-08); `filament_overrides_logo.json` SHALL therefore give the logo filament a distinct name ("ZebSerial Bambu PETG Basic logo @BBL H2D 0.4 nozzle")
 
 ### Requirement: Coupon project
 `run_slice.sh <workdir> coupon` SHALL slice `coupon_tray.stl` and `coupon_lid.stl`, single colour, as
@@ -110,6 +110,10 @@ down, as exported, and both print without supports.
 ## Notes
 
 When to print the coupons, and what a good coupon fit is, are specified in the enclosure spec (Fit coupons).
+
+Known to work with Bambu Studio 02.08.03.66, the version that made both committed 3MFs (the `Application` metadata
+in their `3D/3dmodel.model`). That is an observed outcome, not a requirement; another version may resolve the
+profiles or slice differently, so check `return_code` and the estimates after an upgrade.
 
 ### Override files
 
