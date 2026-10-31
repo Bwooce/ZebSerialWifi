@@ -20,7 +20,8 @@ constraints and conventions that every spec and change follows. Read both before
 
 ## Checks before committing
 
-Run the ones your change touches. CI runs all of them; report what you ran, and never claim a check you did not run.
+Run the ones your change touches. CI runs all of them, the enclosure gates only when `enclosure/` or the workflow
+changes. Report what you ran, and never claim a check you did not run.
 
 | Check | Command | When |
 |---|---|---|

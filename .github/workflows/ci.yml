@@ -56,14 +56,12 @@ jobs:
     name: Firmware build
     runs-on: ubuntu-24.04
     container: espressif/idf:v6.1
-    env:
-      IDF_COMPONENT_CACHE_PATH: ${{ github.workspace }}/.cache/components
-      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the app version comes from git describe
       - run: git config --global --add safe.directory '*'
+      # component manager downloads and ccache, inside the workspace (the container sees it at $GITHUB_WORKSPACE)
       - uses: actions/cache@v6
         with:
           path: .cache
@@ -72,9 +70,12 @@ jobs:
       - name: idf.py build
         shell: bash
         run: |
+          export IDF_COMPONENT_CACHE_PATH="$GITHUB_WORKSPACE/.cache/components" CCACHE_DIR="$GITHUB_WORKSPACE/.cache/ccache"
           . "$IDF_PATH/export.sh" > /dev/null
           cd firmware
           idf.py build 2>&1 | tee build.log
+          ccache -s | grep -iE 'hits|misses' || true
+          # -Werror already fails on a compiler warning; this also catches one ESP-IDF leaves as a warning
           if grep -E '(^|[^-])[Ww]arning:' build.log; then echo "::error::the build printed warnings"; exit 1; fi
       - name: App image size
         shell: bash
@@ -85,6 +86,9 @@ jobs:
   changes:
     name: Changed paths
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read # paths-filter lists a pull request's files through the API
     outputs:
       enclosure: ${{ steps.filter.outputs.enclosure }}
     steps:
