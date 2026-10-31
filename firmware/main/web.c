@@ -93,7 +93,7 @@ static void restart_soon(void)
 
 /*
  * True if the request came in over the setup AP. That network is open to
- * anyone in range, so it only gets the setup page, /save and the favicon.
+ * anyone in range, so it only gets the setup page, /save and the icons.
  */
 static bool on_ap(httpd_req_t *req)
 {
@@ -448,7 +448,7 @@ static const char STATUS_SCRIPT[] =
     "return si(k,v)}"
     /* a setting the printer form changes reads as the form does: its option text, or its number (and mm) */
     "function val(k,v){if(has(UI,k)&&has(C,k)){var u=UI[k],c=C[k];if(has(u[3],c))return u[3][c];"
-    "if(u[2])return D?len(c/D)+' ('+c+' dots)':c+' dots';if(!Object.keys(u[3]).length)return c}return nice(k,v)}"
+    "if(u[2])return D?len(c/tdm(D))+' ('+c+' dots)':c+' dots';if(!Object.keys(u[3]).length)return c}return nice(k,v)}"
     /* one clean value per row; the printer's own name and text in the tooltip, or under it when asked */
     "function srow(k,v,m){var s=val(k,v),u=m?unused(k,m):'',t=k+': '+v;if(s==null)s=v;"
     "return '<tr title=\"'+e(t)+'\"'+(u?' style=opacity:.45':'')+'><td>'+e(nm(k))+'</td><td>'+e(s)+"
@@ -592,8 +592,14 @@ static esp_err_t save_post(httpd_req_t *req)
     ESP_LOGI(TAG, "saved WiFi network \"%s\", rebooting", ssid);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr_chunk(req, PAGE_HEAD);
-    httpd_resp_sendstr_chunk(req, "<p>Saved. Rebooting and joining the network. "
-                                  "Then open <a href='http://zebserial.local/'>http://zebserial.local/</a>.</p>");
+    settings_net_t net;
+    settings_get_net(&net);
+    const char *host = net.hostname[0] != '\0' ? net.hostname : "zebserial";
+    char msg[200];
+    snprintf(msg, sizeof(msg),
+             "<p>Saved. Rebooting and joining the network. Then open <a href='http://%s.local/'>http://%s.local/</a>.</p>",
+             host, host);
+    httpd_resp_sendstr_chunk(req, msg);
     httpd_resp_sendstr_chunk(req, PAGE_TAIL);
     httpd_resp_sendstr_chunk(req, NULL);
     restart_soon();
@@ -1247,7 +1253,7 @@ static void send_firmware_section(httpd_req_t *req, const char *hostname)
              "<p><small>The new firmware has %d s to reach the network after it starts, or the bridge goes back to "
              "this one. From a terminal: <code>curl --data-binary @build/zebserial.bin http://%s.local/update</code>"
              "</small></p>",
-             ver, st.running, st.pending ? ", new and not yet confirmed" : "", 180, hostname);
+             ver, st.running, st.pending ? ", new and not yet confirmed" : "", OTA_CONFIRM_DEADLINE_S, hostname);
     httpd_resp_sendstr_chunk(req, buf);
     if (st.other_version[0] != '\0') {
         snprintf(buf, sizeof(buf),
@@ -1723,6 +1729,26 @@ static esp_err_t pstprnt_reply(httpd_req_t *req, const char *status, const char 
     return httpd_resp_sendstr(req, text);
 }
 
+/*
+ * OPTIONS /pstprnt: the CORS preflight a browser sends before a POST that is
+ * not a "simple" request (a JSON body, a custom header), and before any request
+ * from a public page to a private address (Chrome's Private Network Access).
+ * Never touches the printer link.
+ */
+static esp_err_t pstprnt_options(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return pstprnt_reply(req, "403 Forbidden", "Printing is not available on the setup network.\n");
+    }
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "POST, OPTIONS");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Private-Network", "true");
+    httpd_resp_set_hdr(req, "Access-Control-Max-Age", "600");
+    return httpd_resp_send(req, NULL, 0);
+}
+
 static esp_err_t pstprnt_post(httpd_req_t *req)
 {
     if (on_ap(req)) {
@@ -1948,6 +1974,7 @@ void web_start(void)
         {.uri = "/printer_test", .method = HTTP_POST, .handler = printer_test_post},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},
         {.uri = "/pstprnt", .method = HTTP_POST, .handler = pstprnt_post},
+        {.uri = "/pstprnt", .method = HTTP_OPTIONS, .handler = pstprnt_options},
         {.uri = "/boot_other", .method = HTTP_POST, .handler = boot_other_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {

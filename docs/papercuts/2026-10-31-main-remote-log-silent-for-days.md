@@ -15,3 +15,7 @@ Workaround: list gaps over an hour in the bridge's lines before treating a missi
 Suggested fix: log a line when the listener is lost and found (with the count dropped meanwhile), keep the dropped
 count across reboots or show it with the time it last changed, and have the receiver warn per device when a device
 that was sending goes quiet for more than a few minutes.
+
+Update, same day (OpenSpec review): with no receiver found, `iot_log()` returns without counting the line, so lines
+lost that way are not in the dropped count at all (firmware/main/remote_log.h). Lines are now held while the bridge
+is offline (a 12288-byte queue), so the 2026-10-18 entry's offline loss is partly fixed; the send-time stamps remain.

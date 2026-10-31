@@ -12,21 +12,23 @@ toolchain for the first flash, and a 3D printer for the case.
 ## What it does
 
 - **Printing:** raw TCP on port 9100, so the printer is added on a Mac as an IP printer ("HP Jetdirect – Socket") or
-  picked from the Bonjour list. Status replies (`~HS`, SGD) go back to the client.
+  picked from the Bonjour list. On port 9100, status replies (`~HS`, SGD) go back to the client.
 - **Bonjour:** the bridge advertises itself as "Zebra *model* (*hostname*)", for example "Zebra GX430t (zebserial)",
-  and macOS picks its built-in "Zebra ZPL Label Printer" driver.
-- **Serial link set-up:** it finds the printer by trying each baud rate, moves it to 115200 baud with XON/XOFF flow
+  or "ZebSerial (*hostname*)" until it knows the model, and macOS picks its built-in "Zebra ZPL Label Printer" driver.
+- **Serial link set-up:** it finds the printer by trying each baud rate, moves it to the target speed (115200 baud
+  by default, set on the Bridge page; it steps down if the printer does not answer at that speed) with XON/XOFF flow
   control, and saves that in the printer.
 - **Printer status:** it asks the printer for its status (`~HS`) every 30 s while no job is printing. A printer
   with an Energy Star or sleep timeout switched on (SGD `power.energy_star.enable` or `power.sleep.enable`, for
   example on the ZD421) would never get to sleep that way, so it is asked only while the Status page is open or
-  something reads `/api/status`, at most every 30 s, and once after each job. If it stops answering it is polled
-  as before, so a printer switched off or replaced is still noticed. The GX430t has neither setting and is polled.
+  something reads `/api/status`, at most every 30 s, and once after each job. If it stops answering it is asked
+  every 10 s, so a printer switched off or replaced is still noticed. The GX430t has neither setting and is polled.
 - **Web pages:** Status (printer state, configuration, the bridge's own state), Printer (the printer's settings and
-  actions such as feed and calibrate) and Bridge (Wi-Fi, network, serial link and remote log).
+  actions such as feed and calibrate) and Bridge (Wi-Fi, network, serial link, remote log and firmware updates).
 - **Wi-Fi:** first set-up through its own access point; later changes from the Bridge page. A new network is tried for
   30 s and the bridge goes back to the old one if it fails.
-- **Remote log:** optionally sends its log to an [iot_log](https://github.com/Bwooce/esp-iot-log) receiver.
+- **Remote log:** sends its log to an [iot_log](https://github.com/Bwooce/esp-iot-log) receiver (on by default; it
+  can be turned off on the Bridge page).
 - **Chip temperature:** shown on the Status page, read every 30 s. At 85 °C it logs a warning (about 56 °C is
   normal in the case); the warning clears below 80 °C.
 
@@ -131,7 +133,8 @@ the module, so it needs one extra wire from the pin 9 pad on the back of the mod
 
 The MAX3232's output to the microcontroller (R1OUT, the module's RXD) swings between 0 V and the module's supply. On
 5 V that is too much for the ESP32-C6, whose pins are not 5 V tolerant. The Schottky diode lets the module pull the
-XIAO's D3 low but never drive it high; the firmware turns on D3's internal pull-up, which brings it up to 3.3 V.
+XIAO's D3 low but never drive it high; the firmware turns on the RX pin's internal pull-up (D3 in this wiring),
+which brings it up to 3.3 V.
 
 - The internal pull-up is weak (about 45 kΩ), so the diode's capacitance sets how fast the line rises. A BAT54 (about
   10 pF) rises in 1 to 2 µs, well inside the 8.7 µs bit at 115200 baud. A 1N5817 or 1N5819 (about 110 pF) takes about
@@ -232,9 +235,9 @@ The flash has two firmware slots. After the first flash over USB, new firmware g
 - **Or from a terminal:** `curl --data-binary @firmware/build/zebserial.bin http://zebserial.local/update`
 
 The bridge checks the upload is a ZebSerialWifi image for the ESP32-C6 and that it arrived whole, writes it to the
-other slot and restarts into it. The new firmware is kept once it has held a Wi-Fi address for 15 s. If it has none
-within 180 s, or crashes before then, the bridge goes back to the previous firmware. The Bridge page can also restart
-into the other slot by hand ("Go back to ...").
+other slot and restarts into it. The new firmware is kept if it is on Wi-Fi once it has been running 15 s. If it is
+not on Wi-Fi within 180 s, or crashes before then, the bridge goes back to the previous firmware. The Bridge page
+can also restart into the other slot by hand ("Go back to ...").
 
 Anyone on the network can upload firmware, as they can already change the settings. Uploads from another web site are
 refused.
@@ -285,9 +288,11 @@ curl --data-binary @label.zpl http://zebserial.local/pstprnt
 It answers to pages from any site (`Access-Control-Allow-Origin: *`), so a label page saved on a computer can print
 and read the reply. Anyone on the network can already print through port 9100; what is new is that a web page you
 visit can print too, and ZPL can change the printer's settings. Only open label pages you trust. It is refused on the
-set-up network. The reply says how many bytes went to the printer; 503 means another job held the printer for
-15 s, and 504 means the printer stopped taking data for 30 s (paper or ribbon out, head open) and the rest of the job
-was dropped.
+set-up network. It also answers a browser's CORS preflight (OPTIONS, including Chrome's private network check), so
+a page may send JSON or its own headers. The reply says how many bytes went to the printer; the printer's own
+replies are not passed back. 503 means the printer was busy for 15 s (another job, or the bridge reading its status
+or settings), and 504 means the printer stopped taking data for 30 s (paper or ribbon out, head open) and the rest
+of the job was dropped.
 
 `tools/cable-labels.html` is such a page: flag labels for cables on 60 x 20 mm stock, the same text on both ends with a
 blank middle that wraps round the cable. Open it in a browser and type one cable per row. On a Mac the browser must be
@@ -316,7 +321,7 @@ project and its settings. The unit plugs straight into the printer's serial sock
 |---|---|
 | Printer not found at any baud | The handshake (see above), a printer fault, the diode the wrong way round, or a module whose charge pump is not running |
 | Printer prints but never answers | A DTR handshake mode, or a fault such as ribbon out |
-| "Printer language: unknown" for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within about 10 minutes. The D5 pull-up stops it at the source. |
+| No Language row on the Status page for a while after boot | Reset noise left the printer mid-format; the bridge clears it and reads the language again within about 10 minutes. The D5 pull-up stops it at the source. |
 | Printer page: "No complete reply to ^HH" | The printer has stopped running formats (seen once with the head not fully latched). Close the head properly and turn the printer off and on. |
 | Remote log: receiver found, but no lines arrive | The access point no longer forwards the group to the receiver: update the iot_log receiver (it re-joins every 60 s) |
 | No 5 V on pin 9 at the module | The gender changer does not carry pin 9, or a bad connection; measure at the printer's own socket |

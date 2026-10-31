@@ -69,7 +69,7 @@ static void serve(void)
         size_t qend = HDR_LEN + ql + 4;
         uint16_t qtype = (uint16_t)(buf[HDR_LEN + ql] << 8 | buf[HDR_LEN + ql + 1]);
 
-        buf[2] = 0x81;  /* response, recursion desired copied as set */
+        buf[2] = 0x81;  /* response, recursion desired always set */
         buf[3] = 0x80;  /* recursion available, no error */
         buf[6] = 0;
         buf[7] = qtype == 1 ? 1 : 0;  /* answer only A queries; others get an empty answer */

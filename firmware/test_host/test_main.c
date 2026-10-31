@@ -1025,6 +1025,13 @@ static void test_label(void)
     CHECK(test_label_zpl(&bad, out, TEST_LABEL_ZPL_MAX) > 0 && strstr(out, "X XZ JA") != NULL &&
           strstr(out, "~JA") == NULL);
 
+    /* 10 mm at the true 300 dpi pitch is 118 dots (10 x 11.81), not 120: it builds; 9.9 mm (117) does not */
+    test_label_t ten = {.width = 118, .length = 118, .dpmm = 12, .model = "", .version = "v", .url = "u"};
+    CHECK(test_label_zpl(&ten, out, TEST_LABEL_ZPL_MAX) > 0);
+    CHECK(label_fields_inside(out, 118, 118) == 0);
+    ten.width = 117;
+    CHECK(test_label_zpl(&ten, out, TEST_LABEL_ZPL_MAX) == 0);
+
     /* unusable: under 10 mm, no resolution, or no room */
     test_label_t tiny = t;
     tiny.width = 100;

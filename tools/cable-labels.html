@@ -523,6 +523,8 @@ const S = Object.assign({}, DEFAULTS, store.get('cable.settings', {}));
 if (S.wrapMm && !store.get('cable.settings', {}).cableMm) S.cableMm = Math.round((S.wrapMm - WRAP_SLACK_MM) / Math.PI * 10) / 10;
 delete S.wrapMm;
 const saveSettings = () => store.set('cable.settings', S);
+/* The bridge's address; an empty field means the default */
+const addr = () => (S.ip || '').trim() || DEFAULTS.ip;
 
 let rows = store.get('cable.rows', null);
 if (!Array.isArray(rows) || !rows.length) rows = [{ a: 'NAS → SW1 port 12', b: '', q: 1 }];
@@ -742,26 +744,32 @@ function refresh() {
 // ---------- settings ----------
 $('#font').innerHTML = FONTS.map(f => `<option>${esc(f)}</option>`).join('');
 function syncSettings() {
-  $$('[data-k]').forEach(el => { const v = S[el.dataset.k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; });
-  $('#printerChipAddr').textContent = S.ip;
+  // the field being typed in keeps what was typed, even when empty
+  $$('[data-k]').forEach(el => { if (el === document.activeElement) return; const v = S[el.dataset.k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; });
+  $('#printerChipAddr').textContent = addr();
   $('#wrapNote').textContent = `Blank wrap zone ${wrapMm().toFixed(1)} mm: π × ${+S.cableMm} mm, plus ${WRAP_SLACK_MM} mm so the ends meet. That leaves ${((S.wMm - wrapMm()) / 2).toFixed(1)} mm at each end for text.`;
 }
 $$('[data-k]').forEach(el => el.addEventListener('input', () => {
   const k = el.dataset.k;
   if (el.type === 'checkbox') S[k] = el.checked;
   else if (el.type === 'number') { const v = parseFloat(el.value); if (!isFinite(v)) return; S[k] = v; }
-  else S[k] = el.value.trim() || DEFAULTS[k];
+  else S[k] = el.value.trim();
   saveSettings(); syncSettings(); refresh();
 }));
+// a text field left empty goes back to its default
+$$('[data-k]').forEach(el => el.addEventListener('change', () => {
+  if (el.type !== 'text' || el.value.trim()) return;
+  S[el.dataset.k] = DEFAULTS[el.dataset.k]; el.value = S[el.dataset.k]; saveSettings(); syncSettings();
+}));
 $('#printerChip').addEventListener('click', () => { const d = $('#printerSettings'); d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
-$('#openBridge').addEventListener('click', e => { e.preventDefault(); window.open(`http://${S.ip}/printer`, '_blank'); });
+$('#openBridge').addEventListener('click', e => { e.preventDefault(); window.open(`http://${addr()}/printer`, '_blank'); });
 function setDot(state, title) { const d = $('#printerDot'); d.className = 'dot ' + (state || ''); d.title = title || ''; }
 $('#testConn').addEventListener('click', async () => {
   const out = $('#connResult'); out.textContent = 'Checking…';
   try {
-    await withTimeout(8000, sig => fetch(`http://${S.ip}/`, { mode: 'no-cors', cache: 'no-store', signal: sig }));
-    out.textContent = 'The bridge answered.'; setDot('ok', `${S.ip} answered`);
-  } catch { out.textContent = `No answer from ${S.ip}.`; setDot('err', `No answer from ${S.ip}`); }
+    await withTimeout(8000, sig => fetch(`http://${addr()}/`, { mode: 'no-cors', cache: 'no-store', signal: sig }));
+    out.textContent = 'The bridge answered.'; setDot('ok', `${addr()} answered`);
+  } catch { out.textContent = `No answer from ${addr()}.`; setDot('err', `No answer from ${addr()}`); }
 });
 async function withTimeout(ms, fn) {
   const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
@@ -780,17 +788,17 @@ $('#printBtn').addEventListener('click', async () => {
   if (bad.length) { showStatus('err', `<span class="dot err"></span><span>${bad.length} row${bad.length === 1 ? '' : 's'} won't fit the label (first: “${esc(bad[0].r.a || bad[0].r.b)}”). Shorten the text or use two lines.</span>`); return; }
   if (n > 50 && !confirm(`Print ${n} labels?`)) return;
   const zpl = rendered.map(x => labelZpl(x.out, x.r.q)).join('');
-  const addr = esc(S.ip), b = $('#printBtn'); b.disabled = true;
-  showStatus('sending', `<span class="spinner"></span><span>Sending ${n} label${n === 1 ? '' : 's'} (${(zpl.length / 1024).toFixed(1)} KB) to ${addr}…</span>`);
+  const where = esc(addr()), b = $('#printBtn'); b.disabled = true;
+  showStatus('sending', `<span class="spinner"></span><span>Sending ${n} label${n === 1 ? '' : 's'} (${(zpl.length / 1024).toFixed(1)} KB) to ${where}…</span>`);
   try {
-    const res = await withTimeout(120000, sig => fetch(`http://${S.ip}/pstprnt`, { method: 'POST', body: zpl, headers: { 'Content-Type': 'text/plain' }, signal: sig }));
+    const res = await withTimeout(120000, sig => fetch(`http://${addr()}/pstprnt`, { method: 'POST', body: zpl, headers: { 'Content-Type': 'text/plain' }, signal: sig }));
     const text = (await res.text()).trim();
     const t = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-    if (res.ok) { showStatus('ok', `<span class="dot ok"></span><span><span class="lead">Sent ${n} label${n === 1 ? '' : 's'}</span> at ${t}. ${esc(text)}</span>`); setDot('ok', `${S.ip} took a job at ${t}`); }
+    if (res.ok) { showStatus('ok', `<span class="dot ok"></span><span><span class="lead">Sent ${n} label${n === 1 ? '' : 's'}</span> at ${t}. ${esc(text)}</span>`); setDot('ok', `${addr()} took a job at ${t}`); }
     else { showStatus('err', `<span class="dot err"></span><span>The bridge said: ${esc(text || res.status)}</span>`); setDot('err', text); }
   } catch {
-    showStatus('err', `<span class="dot err"></span><span>Couldn't reach ${addr}. Check the bridge is on and the address is right. On a Mac, the browser needs Local Network access: allow it if asked, or in System Settings, Privacy &amp; Security, Local Network.</span>`);
-    setDot('err', `Couldn't reach ${S.ip}`); $('#printerSettings').open = true;
+    showStatus('err', `<span class="dot err"></span><span>Couldn't reach ${where}. Check the bridge is on and the address is right. On a Mac, the browser needs Local Network access: allow it if asked, or in System Settings, Privacy &amp; Security, Local Network.</span>`);
+    setDot('err', `Couldn't reach ${addr()}`); $('#printerSettings').open = true;
   } finally { b.disabled = false; refresh(); }
 });
 

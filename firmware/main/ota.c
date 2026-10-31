@@ -11,8 +11,6 @@
 
 static const char *TAG = "ota";
 
-#define OTA_CONFIRM_AFTER_S 15     /* a new image has run this long with a station IP: keep it */
-#define OTA_CONFIRM_DEADLINE_S 180 /* no station IP by now: go back to the previous image */
 #define OTA_BUF 4096
 #define OTA_RECV_RETRIES 5
 /* the image header, its first segment header and the app description, which the checks read */

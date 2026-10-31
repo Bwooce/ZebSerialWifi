@@ -64,7 +64,9 @@ static void put_line(buf_t *b, int x, int y, int h, const char *text)
 size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
 {
     const int m = t->dpmm;
-    if (out_len == 0 || m <= 0 || t->width < 10 * m || t->length < 10 * m) {
+    /* at least 10 mm either way at the true pitch: 118 dots at 300 dpi, not 10 x 12 */
+    const int min_dots = m > 0 ? zpl_mm_to_dots(10, m) : 0;
+    if (out_len == 0 || m <= 0 || t->width < min_dots || t->length < min_dots) {
         return 0;
     }
     const int w = t->width;

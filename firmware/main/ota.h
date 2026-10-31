@@ -10,6 +10,9 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 
+#define OTA_CONFIRM_AFTER_S 15     /* a new image has run this long and is on Wi-Fi: keep it */
+#define OTA_CONFIRM_DEADLINE_S 180 /* not on Wi-Fi by now: go back to the previous image */
+
 /* Call once from the status loop, about every 100 ms: confirms or rolls back a new image. */
 void ota_poll(void);
 
