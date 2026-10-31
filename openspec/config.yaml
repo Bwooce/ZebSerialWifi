@@ -1,7 +1,7 @@
 schema: spec-driven
 
 # Project context for OpenSpec artifacts (proposals, designs, specs, tasks).
-# The specs in openspec/specs/ describe ZebSerialWifi as built on 2026-10-31 (main at 2eb08d6).
+# The specs in openspec/specs/ describe ZebSerialWifi as built on 2026-11-01 (main at 0683988).
 # Where this file, a spec, README.md or docs/superpowers/* disagree with the code, the code wins: fix the document.
 context: |
   ## Purpose

@@ -6,10 +6,10 @@ radiating from its top edge. Everything is on a 64 x 64 grid, with the main edge
 on pixel boundaries at 16 px. The mark itself spans 56 units, so at the 22 mm deboss width one unit is 0.39 mm
 and the 0.8 mm minimum stroke/gap for a 0.4 mm nozzle is 2.0 units.
 
-zebserial-mark-lid.svg is a bolder, simpler variant for the 3D-printed lid (two-colour inlay or deboss): two wide
-stripes, two constant-width arcs with round caps, and every corner rounded, so that at the lid's logo_w (30 mm,
-about 0.54 mm per unit) every stroke and gap is at least 1.2 mm (three 0.4 mm lines). enclosure/build.sh checks that
-with part="check_logo".
+The case debosses zebserial-mark-deboss.svg (logo_file in enclosure/zebserial_case.scad, at logo_w), and
+enclosure/build.sh checks its strokes and gaps with part="check_logo". zebserial-mark-lid.svg is a bolder, simpler
+variant (two wide stripes, two constant-width arcs with round caps, every corner rounded) for a two-colour inlay; the
+case does not use it at present.
 
 Usage: python3 make_logo.py [font.ttf]
 After changing the mark, update LOGO_D in firmware/main/web.c and, if the outline moved, logo_svg_w / logo_svg_c in
