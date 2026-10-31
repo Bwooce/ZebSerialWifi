@@ -267,6 +267,27 @@ bootloader that does the rollback are not updated over the network. The settings
 
 Holding the XIAO's BOOT button for 5 s clears the Wi-Fi and network settings and restarts it in set-up mode.
 
+The test label also has 0 to 4 mm scales at the two top corners, measured in from each side edge. Where the label's
+edge falls on each shows how far the print is off centre; the Printer page says how to turn the two readings into a
+Left Position change.
+
+## Printing from a web page
+
+Like Zebra's own network printers, the bridge prints whatever ZPL is posted to `/pstprnt`:
+
+```
+curl --data-binary @label.zpl http://zebserial.local/pstprnt
+```
+
+It answers to pages from any site (`Access-Control-Allow-Origin: *`), so a label page saved on a computer can print
+and read the reply. That opens nothing new: anyone on the network can already print through port 9100. It is refused
+on the set-up network. The reply says how many bytes went to the printer; 503 means another job held the printer for
+15 s, and 504 means the printer stopped taking data for 30 s (paper or ribbon out, head open) and the rest of the job
+was dropped.
+
+`tools/cable-labels.html` is such a page: flag labels for cables on 60 x 20 mm stock, the same text on both ends with a
+blank middle that wraps round the cable. Open it in a browser and type one cable per row.
+
 ## Remote log
 
 The Bridge page's Remote log section sends a copy of the log to an [iot_log](https://github.com/Bwooce/esp-iot-log)

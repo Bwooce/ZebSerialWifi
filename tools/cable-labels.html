@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Cable Labels</title>
+<style>
+/* ---------- Tokens ---------- */
+:root {
+  color-scheme: light dark;
+  --bg: #f2f2ef;            /* window background */
+  --surface: #ffffff;       /* cards, panels */
+  --surface-2: #f7f7f4;     /* panel section headers, table header, toolbar */
+  --field: #ffffff;         /* input background */
+  --ink: #1c2229;           /* primary text */
+  --ink-2: #4b5563;         /* secondary text */
+  --muted: #7b8390;         /* captions, disabled */
+  --line: #e2e2dd;          /* hairlines */
+  --line-strong: #c9cac4;   /* input borders, dividers with emphasis */
+  --accent: #223441;        /* brand slate (logo colour) */
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(34, 52, 65, 0.08);
+  --sel: #2f6fdb;           /* canvas selection, handles, focus ring */
+  --sel-soft: rgba(47, 111, 219, 0.12);
+  --var: #6b4fbb;           /* variable-field tint */
+  --var-soft: rgba(107, 79, 187, 0.12);
+  --ok: #1f7a4d;
+  --warn: #9a6b12;
+  --err: #b42318;
+  --paper: #ffffff;         /* the label itself — always white */
+  --stage: #e4e4df;         /* editor canvas surround */
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --appbar-h: 44px;
+  --toolbar-h: 40px;
+  --statusbar-h: 26px;
+  --panel-left-w: 240px;
+  --panel-right-w: 300px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131618; --surface: #1b1f23; --surface-2: #21262b; --field: #15191c;
+    --ink: #e6e8eb; --ink-2: #b4bac3; --muted: #838b96;
+    --line: #2b3137; --line-strong: #3a4149;
+    --accent: #9dbdd6; --accent-ink: #0f161b; --accent-soft: rgba(157,189,214,.14);
+    --sel: #5b9cf6; --sel-soft: rgba(91,156,246,.16);
+    --var: #a893ef; --var-soft: rgba(168,147,239,.16);
+    --ok: #5cc28f; --warn: #e0b04f; --err: #f07167;
+    --stage: #0e1113; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131618; --surface: #1b1f23; --surface-2: #21262b; --field: #15191c;
+  --ink: #e6e8eb; --ink-2: #b4bac3; --muted: #838b96;
+  --line: #2b3137; --line-strong: #3a4149;
+  --accent: #9dbdd6; --accent-ink: #0f161b; --accent-soft: rgba(157,189,214,.14);
+  --sel: #5b9cf6; --sel-soft: rgba(91,156,246,.16);
+  --var: #a893ef; --var-soft: rgba(168,147,239,.16);
+  --ok: #5cc28f; --warn: #e0b04f; --err: #f07167;
+  --stage: #0e1113; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35);
+}
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+kbd { font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 2px 5px; background: var(--surface); }
+
+/* ---------- Controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
+.btn-lg { height: 40px; padding: 0 16px; font-size: 15px; width: 100%; justify-content: center; }
+.btn-icon { width: 28px; padding: 0; justify-content: center; }
+.btn-ghost { border-color: transparent; background: transparent; }
+.btn-ghost:hover { background: var(--accent-soft); }
+.btn-quiet { border-style: dashed; background: transparent; color: var(--ink-2); }
+.btn-link { border: 0; background: none; color: var(--accent); padding: 0; height: auto; }
+
+input[type=text], input[type=number], input[type=search], select, textarea {
+  height: 28px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--field); color: var(--ink); width: 100%; min-width: 0;
+}
+input[type=number] { font-variant-numeric: tabular-nums; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+.field-row.c4 input { padding: 0 6px; }
+input:focus-visible, select:focus-visible, button:focus-visible, .seg button:focus-visible {
+  outline: 2px solid var(--sel); outline-offset: -1px;
+}
+select { -webkit-appearance: none; appearance: none; padding-right: 26px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' fill='none' stroke='%237b8390' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 8px center; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > label { font-size: 11.5px; color: var(--muted); }
+.field-row { display: grid; gap: 8px; }
+.field-row.c2 { grid-template-columns: 1fr 1fr; }
+.field-row.c4 { grid-template-columns: repeat(4, 1fr); }
+.unit-input { position: relative; }
+.unit-input input { padding-right: 30px; }
+.unit-input span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--muted); pointer-events: none; }
+.check { display: flex; align-items: center; gap: 8px; }
+.check input { margin: 0; accent-color: var(--accent); }
+
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); height: 22px; padding: 0 9px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg.stretch { display: flex; } .seg.stretch button { flex: 1; justify-content: center; }
+.seg.subtle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); }
+
+.switch { position: relative; width: 30px; height: 18px; border-radius: 9px; background: var(--line-strong); border: 0; flex: none; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .12s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { left: 14px; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 10px; font-size: 11.5px; font-weight: 500; }
+.chip-var { background: var(--var-soft); color: var(--var); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+
+/* ---------- App bar ---------- */
+.appbar {
+  height: var(--appbar-h); display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.brand h1 { font-size: 14px; letter-spacing: -.01em; white-space: nowrap; }
+.brand span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mode-switch { margin: 0 auto; }
+.mode-switch button { padding: 0 14px; }
+.appbar-right { display: flex; align-items: center; gap: 8px; }
+.printer-chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--ink-2); }
+.printer-chip:hover { border-color: var(--line-strong); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+
+/* ---------- Print view ---------- */
+.view { display: none; }
+.view.active { display: block; }
+#view-print { max-width: 920px; margin: 0 auto; padding: 20px 16px 40px; }
+.print-layout { display: grid; grid-template-columns: minmax(0, 1fr) 352px; gap: 16px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.card-head h2 { font-size: 13px; }
+
+.design-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-bottom: 14px; }
+.design-picker select { height: 32px; font-weight: 500; }
+.design-meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+table.rows { width: 100%; border-collapse: collapse; }
+table.rows th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 0 6px 6px; }
+table.rows th .fmt { text-transform: none; letter-spacing: 0; font-weight: 500; }
+table.rows td { padding: 3px 4px; }
+table.rows td:first-child { padding-left: 0; }
+table.rows td.qty { width: 84px; }
+table.rows td.rm { width: 32px; text-align: center; padding-right: 0; }
+table.rows input { height: 32px; font-size: 15px; }
+table.rows tr.active input.value { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+table.rows tr.active td:first-child { position: relative; }
+table.rows tr.active td:first-child::before { content: ""; position: absolute; left: -10px; top: 50%; width: 4px; height: 18px; margin-top: -9px; border-radius: 2px; background: var(--accent); }
+.value-wrap { position: relative; }
+.value-wrap .prefix { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 15px; pointer-events: none; }
+.value-wrap input { padding-left: 22px; }
+.rows-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 10px; flex-wrap: wrap; }
+.rows-foot .hint { font-size: 12px; color: var(--muted); }
+.rm-btn { border: 0; background: none; color: var(--muted); width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; }
+.rm-btn:hover { color: var(--err); background: var(--accent-soft); }
+
+.preview-card { position: sticky; top: calc(var(--appbar-h) + 16px); }
+.preview-frame { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 6px; }
+.label-preview { image-rendering: pixelated; image-rendering: crisp-edges; background: var(--paper); border: 1px solid var(--line-strong); border-radius: 3px; box-shadow: var(--shadow); display: block; }
+#view-print .label-preview { width: 288px; height: 324px; }  /* 192×216 dots at 1.5× (3 device px per dot on Retina) */
+.preview-cap { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.summary { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.summary strong { font-size: 15px; }
+.status { margin-top: 10px; font-size: 12.5px; line-height: 1.4; display: flex; gap: 8px; align-items: flex-start; min-height: 1.4em; }
+.status .dot { margin-top: 5px; }
+.status.ok { color: var(--ink-2); } .status.ok .lead { color: var(--ok); font-weight: 600; }
+.status.err { color: var(--err); } .status.sending { color: var(--ink-2); }
+.spinner { width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; margin-top: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details.settings { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.settings summary { cursor: pointer; color: var(--ink-2); font-weight: 500; list-style: none; display: flex; align-items: center; gap: 6px; }
+details.settings summary::-webkit-details-marker { display: none; }
+details.settings summary svg { transition: transform .12s; color: var(--muted); }
+details.settings[open] summary svg { transform: rotate(90deg); }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 10px; margin-top: 12px; }
+.settings-grid .full { grid-column: 1 / -1; }
+.settings-note { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+@media (max-width: 720px) {
+  .print-layout { grid-template-columns: 1fr; }
+  .preview-card { position: static; }
+  #view-print .label-preview { width: 192px; height: 216px; }
+  .brand span { display: none; }
+  .appbar { gap: 10px; padding: 0 10px; }
+  .mode-switch button { padding: 0 10px; }
+  .printer-chip .addr { display: none; }
+  table.rows td.qty { width: 72px; }
+}
+
+/* ---------- Editor view ---------- */
+#view-editor.active { display: grid; }
+#view-editor {
+  height: calc(100vh - var(--appbar-h));
+  grid-template-rows: var(--toolbar-h) minmax(0, 1fr) var(--statusbar-h);
+  grid-template-columns: var(--panel-left-w) minmax(0, 1fr) var(--panel-right-w);
+  grid-template-areas: "toolbar toolbar toolbar" "left stage right" "status status status";
+  background: var(--stage);
+}
+.editor-narrow { display: none; }
+@media (max-width: 1023px) {
+  #view-editor.active { display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #view-editor > *:not(.editor-narrow) { display: none !important; }
+  .editor-narrow { display: block; text-align: center; max-width: 320px; color: var(--ink-2); }
+  .editor-narrow h2 { margin-bottom: 6px; font-size: 15px; }
+}
+
+.toolbar { grid-area: toolbar; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.toolbar .sep { width: 1px; height: 20px; background: var(--line-strong); margin: 0 6px; }
+.toolbar .grow { flex: 1; }
+.tool { width: 30px; height: 28px; border: 0; background: transparent; border-radius: var(--radius-sm); color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; position: relative; }
+.tool:hover { background: var(--accent-soft); color: var(--ink); }
+.tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.tool:disabled { opacity: .4; cursor: default; }
+.design-menu { position: relative; }
+.design-menu > .btn { font-weight: 600; gap: 8px; }
+.design-menu .unsaved { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.menu { position: absolute; top: 32px; left: 0; min-width: 260px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); padding: 4px; z-index: 30; }
+.menu button { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 4px; }
+.menu button:hover { background: var(--accent-soft); }
+.menu button .kbd { margin-left: auto; color: var(--muted); font-size: 11px; }
+.menu .menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
+.menu .menu-head { font-size: 11px; color: var(--muted); padding: 6px 8px 2px; text-transform: uppercase; letter-spacing: .05em; }
+.zoom { display: inline-flex; align-items: center; gap: 2px; }
+.zoom .val { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+/* Panels */
+.panel { background: var(--surface); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.panel-left { grid-area: left; border-right: 1px solid var(--line); }
+.panel-right { grid-area: right; border-left: 1px solid var(--line); }
+.panel-section { border-bottom: 1px solid var(--line); padding: 9px 12px 11px; }
+.panel-section > h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.panel-section .stack { display: flex; flex-direction: column; gap: 8px; }
+.panel-tabs { display: flex; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.panel-tabs button { flex: 1; border: 0; background: none; height: 32px; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.panel-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabpanel { display: none; } .tabpanel.active { display: block; }
+
+/* Layers */
+.layers { list-style: none; margin: 0; padding: 4px 0; }
+.layer { display: grid; grid-template-columns: 14px 18px minmax(0, 1fr) 22px 22px; align-items: center; gap: 6px; padding: 5px 8px 5px 10px; cursor: default; }
+.layer:hover { background: var(--surface-2); }
+.layer[aria-selected="true"] { background: var(--sel-soft); }
+.layer .grip { color: var(--line-strong); cursor: grab; }
+.layer .grip svg { width: 10px; height: 14px; }
+.layer .name { display: flex; flex-direction: column; min-width: 0; }
+.layer .name b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer .name small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer .name b .chip { height: 16px; padding: 0 5px; font-size: 10.5px; margin-left: 4px; vertical-align: 1px; }
+.layer .tgl { width: 22px; height: 22px; border: 0; background: none; color: var(--muted); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+.layer .tgl:hover { background: var(--accent-soft); color: var(--ink); }
+.layer .tgl[aria-pressed="false"] { opacity: .3; }
+.layer .tgl[aria-pressed="false"]:hover { opacity: 1; }
+.layer .type { color: var(--ink-2); }
+.layer[aria-selected="true"] .type { color: var(--sel); }
+.layer-actions { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--line); margin-top: auto; }
+
+/* Stage */
+.stage { grid-area: stage; overflow: auto; display: grid; place-items: center; padding: 24px; }
+.stage-inner { display: grid; grid-template-columns: 20px auto; grid-template-rows: 20px auto; gap: 0; }
+.ruler { background: var(--surface); color: var(--muted); font-size: 9.5px; position: relative; overflow: hidden; user-select: none; font-variant-numeric: tabular-nums; }
+.ruler-x { grid-column: 2; grid-row: 1; border-bottom: 1px solid var(--line-strong); }
+.ruler-y { grid-column: 1; grid-row: 2; border-right: 1px solid var(--line-strong); }
+.ruler-corner { grid-column: 1; grid-row: 1; background: var(--surface); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); display: grid; place-items: center; color: var(--muted); font-size: 9px; }
+.ruler .t { position: absolute; background: var(--line-strong); }
+.ruler-x .t { bottom: 0; width: 1px; height: 4px; } .ruler-x .t.major { height: 8px; }
+.ruler-y .t { right: 0; height: 1px; width: 4px; } .ruler-y .t.major { width: 8px; }
+.ruler .l { position: absolute; }
+.ruler-x .l { top: 2px; transform: translateX(3px); }
+.ruler-y .l { left: 3px; transform: translateY(2px); }
+.ruler .cursor { position: absolute; background: var(--sel); }
+.ruler-x .cursor { top: 0; bottom: 0; width: 1px; } .ruler-y .cursor { left: 0; right: 0; height: 1px; }
+
+.label-canvas { grid-column: 2; grid-row: 2; position: relative; background: var(--paper); box-shadow: var(--shadow); overflow: visible; }
+.label-canvas img { display: block; image-rendering: pixelated; image-rendering: crisp-edges; width: 100%; height: 100%; }
+.grid-overlay { position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(to right, rgba(47,111,219,.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(47,111,219,.10) 1px, transparent 1px);
+  background-size: 24px 24px; }
+.grid-overlay.mm5 { background-image: linear-gradient(to right, rgba(47,111,219,.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(47,111,219,.10) 1px, transparent 1px),
+  linear-gradient(to right, rgba(47,111,219,.22) 1px, transparent 1px), linear-gradient(to bottom, rgba(47,111,219,.22) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px, 120px 120px, 120px 120px; }
+.feed-arrow { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+
+.selection { position: absolute; border: 1px solid var(--sel); pointer-events: none; }
+.selection .h { position: absolute; width: 8px; height: 8px; background: var(--surface); border: 1.5px solid var(--sel); border-radius: 1px; margin: -4.5px 0 0 -4.5px; }
+.selection .h.nw { left: 0; top: 0; } .selection .h.n { left: 50%; top: 0; } .selection .h.ne { left: 100%; top: 0; }
+.selection .h.w { left: 0; top: 50%; } .selection .h.e { left: 100%; top: 50%; }
+.selection .h.sw { left: 0; top: 100%; } .selection .h.s { left: 50%; top: 100%; } .selection .h.se { left: 100%; top: 100%; }
+.selection .tag { position: absolute; left: -1px; top: -22px; height: 18px; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--sel); color: #fff; font-size: 10.5px; font-weight: 600; border-radius: 3px; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.selection .dim { position: absolute; left: 50%; bottom: -20px; transform: translateX(-50%); font-size: 10.5px; color: var(--sel); background: var(--surface); padding: 1px 5px; border-radius: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hover-outline { position: absolute; border: 1px dashed var(--sel); opacity: .5; pointer-events: none; }
+
+/* Properties */
+.prop-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.prop-head .type-icon { width: 26px; height: 26px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
+.prop-head input { font-weight: 600; border-color: transparent; background: transparent; padding-left: 4px; }
+.prop-head input:hover { border-color: var(--line-strong); }
+.prop-head .kind { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.rot-seg button { min-width: 0; padding: 0 6px; }
+.align-row { display: flex; gap: 2px; }
+.align-row .tool { width: 26px; height: 26px; }
+.sample-preview { font: 15px/1 Arial, Helvetica, sans-serif; padding: 8px 10px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface-2); display: flex; justify-content: space-between; align-items: center; }
+.sample-preview small { font: 11px -apple-system, BlinkMacSystemFont, sans-serif; color: var(--muted); }
+.range-row { display: grid; grid-template-columns: 1fr 64px; gap: 8px; align-items: center; }
+.range-row .unit-input input { padding-right: 22px; }
+.range-row input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+.empty-state { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.empty-state kbd { margin: 0 1px; }
+.prop-footer { margin-top: auto; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+
+/* Status bar */
+.statusbar { grid-area: status; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: var(--surface); border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.statusbar .grow { flex: 1; }
+.statusbar b { color: var(--ink-2); font-weight: 500; }
+
+/* ---------- Additions for the working app ---------- */
+#view-print .label-preview { width: auto; height: auto; }
+.label-canvas { overflow: visible; }
+.label-canvas #bitmapCanvas { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.label-canvas .grid-overlay { z-index: 1; }
+.fabric-host { position: absolute; z-index: 2; }
+.fabric-host .canvas-container { position: absolute !important; left: 0; top: 0; }
+.label-canvas.tool-place .upper-canvas { cursor: crosshair !important; }
+table.rows td.valcell { min-width: 90px; }
+table.rows .value-wrap.no-prefix input { padding-left: 8px; }
+table.rows .value-wrap .suffix { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 15px; pointer-events: none; }
+.layer.dragging { opacity: .4; }
+.layer.drop-before { box-shadow: inset 0 2px 0 var(--sel); }
+.layer.drop-after { box-shadow: inset 0 -2px 0 var(--sel); }
+.layer.outside .name small { color: var(--err); }
+.layer.hidden-el .name { opacity: .45; }
+.layers-empty { padding: 10px 12px; color: var(--muted); font-size: 12px; }
+.menu button .check-slot { width: 12px; display: inline-flex; }
+.menu button.danger { color: var(--err); }
+.prop-note { font-size: 11px; color: var(--muted); margin-top: -4px; }
+.thumb { width: 72px; height: 36px; object-fit: contain; background: #fff; border: 1px solid var(--line-strong); border-radius: 4px; padding: 2px; image-rendering: pixelated; }
+textarea.fixed-text { height: auto; min-height: 28px; padding: 5px 8px; resize: vertical; line-height: 1.35; }
+.print-empty { padding: 10px 0; color: var(--muted); font-size: 12.5px; }
+.status .conn-inline { font-size: inherit; }
+
+.stock-line { font-size: 12.5px; line-height: 1.4; color: var(--ink-2); margin: 0 0 10px; display: flex; gap: 8px; align-items: flex-start; }
+.stock-line .dot { margin-top: 5px; }
+.stock-line.bad { color: var(--err); }
+.stock-line .btn-link { font-size: inherit; }
+
+</style>
+<style>
+/* Cable labels: additions to the shared styles above */
+.flag-caps { display: flex; font-size: 11px; color: var(--muted); margin-top: 4px; }
+.flag-caps span { text-align: center; overflow: hidden; white-space: nowrap; }
+.flag-caps .wrap { color: var(--sel); }
+.how { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 10px 0 0; }
+.warn-line { font-size: 12px; color: var(--warn); margin-top: 6px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+td.valcell input.value { width: 100%; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3l14 9-6 1.5L16 20l-3 1-3-6.5L5 18z"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 5h14M12 5v15M9 20h6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20 16l-4.5-4.5L8 19"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M4 20L20 4"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l4-4-4-4"/><path d="M19 10h-9a5 5 0 0 0 0 10h3"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/></symbol>
+    <symbol id="i-snap" viewBox="0 0 24 24"><path d="M6 4v7a6 6 0 0 0 12 0V4"/><path d="M4 4h4M16 4h4"/></symbol>
+    <symbol id="i-bit" viewBox="0 0 24 24"><path d="M4 4h8v8H4zM12 12h8v8h-8z" fill="currentColor" stroke="none"/><path d="M4 4h16v16H4z"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 10 14"><circle cx="3" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="7" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="7" cy="11" r="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-al" viewBox="0 0 24 24"><path d="M4 4v16M8 8h10M8 16h6"/></symbol>
+    <symbol id="i-ac" viewBox="0 0 24 24"><path d="M12 4v16M6 8h12M8 16h8"/></symbol>
+    <symbol id="i-ar" viewBox="0 0 24 24"><path d="M20 4v16M6 8h10M10 16h6"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><rect x="9" y="9" width="6" height="6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+    <symbol id="i-front" viewBox="0 0 24 24"><rect x="8" y="4" width="12" height="12"/><path d="M4 8v12h12"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><rect x="4" y="8" width="12" height="12"/><path d="M8 4h12v12"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16z"/><path d="M13 7l4 4"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></symbol>
+  </defs>
+</svg>
+<header class="appbar">
+  <div class="brand"><h1>Cable Labels</h1><span>Zebra GX430t via ZebSerialWifi · 60 × 20 mm flag</span></div>
+  <div class="appbar-right">
+    <button class="printer-chip" id="printerChip" title="Printer settings">
+      <span class="dot" id="printerDot"></span><span class="addr" id="printerChipAddr"></span>
+      <svg class="icon" style="width:14px;height:14px"><use href="#i-gear"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="view-print" class="view active">
+  <div class="print-layout">
+    <section class="card" id="jobs">
+      <table class="rows" id="rowsTable">
+        <thead><tr><th scope="col">Line 1</th><th scope="col">Line 2 <span class="fmt muted">· optional</span></th><th scope="col">Qty</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="rows-foot">
+        <button class="btn btn-quiet" id="addRow"><svg class="icon"><use href="#i-plus"/></svg>Add row</button>
+        <span class="hint"><kbd>⏎</kbd> next field · paste a list (one cable per line, a tab before line 2) into Line 1 to add many</span>
+      </div>
+      <p class="how">The same text prints on both ends, the same way up. Wrap the blank middle round the cable and press the two ends together, back to back: each side then reads the right way up. Text shrinks to fit each end.</p>
+    </section>
+
+    <aside class="card preview-card" id="previewCard">
+      <div class="preview-frame">
+        <canvas class="label-preview" id="previewCanvas" aria-label="Preview of the selected row"></canvas>
+        <div class="flag-caps" id="flagCaps"></div>
+        <div class="preview-cap" id="previewCap"></div>
+        <div class="warn-line hidden" id="fitWarn"></div>
+      </div>
+      <div class="summary"><span class="muted" id="sumRows"></span><strong class="num" id="sumLabels"></strong></div>
+      <button class="btn btn-primary btn-lg" id="printBtn">Print</button>
+      <div class="status hidden" id="status"></div>
+
+      <details class="settings" id="printerSettings">
+        <summary><svg class="icon" style="width:12px;height:12px"><use href="#i-chev"/></svg>Printer</summary>
+        <div class="settings-grid">
+          <div class="field full"><label for="ip">Address</label><input type="text" id="ip" data-k="ip" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+          <div class="field"><label for="wMm">Label width</label><div class="unit-input"><input type="number" id="wMm" data-k="wMm" step="0.5" min="20"><span>mm</span></div></div>
+          <div class="field"><label for="lMm">Label length</label><div class="unit-input"><input type="number" id="lMm" data-k="lMm" step="0.5" min="8"><span>mm</span></div></div>
+          <div class="full check"><input type="checkbox" id="rot" data-k="rot"><label for="rot">Rotate 180° (if labels come out upside down)</label></div>
+          <div class="full settings-note">300 dpi. Left–right position is the printer's Left Position, set on the bridge's Printer page; its test label measures it.</div>
+          <div class="full" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn" id="testConn">Test connection</button>
+            <span class="muted" id="connResult" style="font-size:11.5px"></span>
+            <a href="#" id="openBridge" style="font-size:12px;margin-left:auto">Bridge web page ↗</a>
+          </div>
+        </div>
+      </details>
+
+      <details class="settings" id="layoutSettings">
+        <summary><svg class="icon" style="width:12px;height:12px"><use href="#i-chev"/></svg>Layout</summary>
+        <div class="settings-grid">
+          <div class="field"><label for="wrapMm">Wrap zone</label><div class="unit-input"><input type="number" id="wrapMm" data-k="wrapMm" step="0.5" min="2"><span>mm</span></div></div>
+          <div class="field"><label for="maxMm">Largest letters</label><div class="unit-input"><input type="number" id="maxMm" data-k="maxMm" step="0.5" min="1"><span>mm</span></div></div>
+          <div class="full settings-note" id="wrapNote"></div>
+          <div class="field"><label for="edgeMm">Margin at the ends</label><div class="unit-input"><input type="number" id="edgeMm" data-k="edgeMm" step="0.5" min="0"><span>mm</span></div></div>
+          <div class="field"><label for="gapMm">Margin by the wrap</label><div class="unit-input"><input type="number" id="gapMm" data-k="gapMm" step="0.5" min="0"><span>mm</span></div></div>
+          <div class="field"><label for="vMm">Margin top and bottom</label><div class="unit-input"><input type="number" id="vMm" data-k="vMm" step="0.5" min="0"><span>mm</span></div></div>
+          <div class="field"><label for="font">Font</label><select id="font" data-k="font"></select></div>
+          <div class="full check"><input type="checkbox" id="bold" data-k="bold"><label for="bold">Bold</label></div>
+          <div class="full check"><input type="checkbox" id="same" data-k="same"><label for="same">Same text size on every label (the size the longest one fits)</label></div>
+          <div class="full check"><input type="checkbox" id="marks" data-k="marks"><label for="marks">Fold marks at the edges of the wrap zone</label></div>
+          <div class="full settings-note">Keep the end margin at 2.5 mm or more on this printer: the last 2 mm at one side can't be printed. Lines thinner than 0.3 mm print patchily on silver PET, so bold text is the safer choice.</div>
+        </div>
+      </details>
+    </aside>
+  </div>
+</main>
+
+<script>
+'use strict';
+/* Cable flag labels for a Zebra GX430t behind a ZebSerialWifi bridge.
+ * Each label is drawn on a canvas at the printer's 300 dpi, turned into a
+ * 1-bit image and sent as ZPL (^GFA, ASCII-compressed) to the bridge's
+ * /pstprnt, which answers with Access-Control-Allow-Origin: * so the result
+ * can be shown. */
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+// ---------- units: a 300 dpi head is 11.81 dots/mm (Zebra rounds it to 12 in its own mm figures) ----------
+const DPMM = 300 / 25.4;
+const mm2d = mm => Math.round(mm * DPMM);
+
+const DEFAULTS = { ip: 'zebserial.local', wMm: 60, lMm: 20, wrapMm: 10, edgeMm: 2.5, gapMm: 1, vMm: 1.5,
+                   maxMm: 5, font: 'DIN Condensed', bold: true, marks: false, rot: false, same: true };
+const FONTS = ['DIN Condensed', 'Helvetica Neue', 'Arial', 'Arial Narrow', 'Avenir Next Condensed', 'DIN Alternate', 'Menlo', 'Verdana'];
+const S = Object.assign({}, DEFAULTS, store.get('cable.settings', {}));
+const saveSettings = () => store.set('cable.settings', S);
+
+let rows = store.get('cable.rows', null);
+if (!Array.isArray(rows) || !rows.length) rows = [{ a: 'NAS → SW1 port 12', b: '', q: 1 }];
+let active = 0;
+const saveRows = () => store.set('cable.rows', rows);
+
+// ---------- layout ----------
+function geom() {
+  const W = mm2d(S.wMm), H = mm2d(S.lMm);
+  const halfMm = (S.wMm - S.wrapMm) / 2;
+  const boxW = mm2d(halfMm - S.edgeMm - S.gapMm), boxH = mm2d(S.lMm - 2 * S.vMm);
+  const lx = mm2d(S.edgeMm);
+  // the right box mirrors the left one about the middle, so the two ends line up when folded together
+  return { W, H, boxW, boxH, y0: mm2d(S.vMm), boxes: [lx, W - lx - boxW], wrap0: mm2d(halfMm), wrap1: W - mm2d(halfMm),
+           ok: boxW >= mm2d(5) && boxH >= mm2d(3) };
+}
+
+const fontFor = em => `${S.bold ? 700 : 400} ${em}px "${S.font}", "Helvetica Neue", Helvetica, Arial, sans-serif`;
+
+/* The largest size at which every line fits the box, measured by ink, not by font box. 0 if none does. */
+function fitLines(ctx, lines, boxW, boxH, maxEm) {
+  const capMax = mm2d(S.maxMm);
+  for (let em = Math.min(maxEm || 1e9, capMax * 2); em >= 8; em--) {
+    ctx.font = fontFor(em);
+    if (ctx.measureText('H').actualBoundingBoxAscent > capMax) continue;   // "largest letters" is the capital height
+    const m = lines.map(t => ctx.measureText(t));
+    const pitch = Math.round(em * 1.12);
+    const h = m[0].actualBoundingBoxAscent + (lines.length - 1) * pitch + m[m.length - 1].actualBoundingBoxDescent;
+    const w = Math.max(...m.map(x => x.actualBoundingBoxLeft + x.actualBoundingBoxRight));
+    if (w <= boxW && h <= boxH) return { em, m, pitch, h };
+  }
+  return null;
+}
+
+function render(row, maxEm) {
+  const g = geom();
+  const c = document.createElement('canvas'); c.width = g.W; c.height = g.H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, g.W, g.H);
+  ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  const lines = [row.a, row.b].map(s => (s || '').trim()).filter(Boolean);
+  let fit = null;
+  if (lines.length && g.ok) {
+    fit = fitLines(ctx, lines, g.boxW, g.boxH, maxEm);
+    if (fit) {
+      ctx.font = fontFor(fit.em);
+      for (const bx of g.boxes) {
+        let base = g.y0 + (g.boxH - fit.h) / 2 + fit.m[0].actualBoundingBoxAscent;
+        fit.m.forEach((mt, i) => {
+          const inkW = mt.actualBoundingBoxLeft + mt.actualBoundingBoxRight;
+          ctx.fillText(lines[i], Math.round(bx + (g.boxW - inkW) / 2 + mt.actualBoundingBoxLeft), Math.round(base));
+          base += fit.pitch;
+        });
+      }
+    }
+  }
+  if (S.marks) {
+    const t = 4, len = mm2d(1.5);   // 4 dots: thinner lines break up on this stock
+    for (const x of [g.wrap0, g.wrap1]) { ctx.fillRect(x - t / 2, 0, t, len); ctx.fillRect(x - t / 2, g.H - len, t, len); }
+  }
+  // 1-bit: anything darker than mid grey prints
+  const px = ctx.getImageData(0, 0, g.W, g.H).data, BPR = Math.ceil(g.W / 8), bits = new Uint8Array(BPR * g.H);
+  for (let y = 0; y < g.H; y++) for (let x = 0; x < g.W; x++)
+    if (px[(y * g.W + x) * 4] < 128) bits[y * BPR + (x >> 3)] |= 0x80 >> (x & 7);
+  if (fit) ctx.font = fontFor(fit.em);
+  const capMm = fit ? ctx.measureText('H').actualBoundingBoxAscent / DPMM : 0;
+  return { bits, W: g.W, H: g.H, BPR, g, lines, fits: !lines.length || !!fit, capMm, em: fit ? fit.em : 0 };
+}
+
+/* With "same size" on, every label in the batch uses the size the longest text fits at */
+function batchEm() {
+  if (!S.same) return 0;
+  const ems = jobs().map(r => render(r).em).filter(Boolean);
+  return ems.length ? Math.min(...ems) : 0;
+}
+
+function paint(canvas, r) {
+  const { bits, W, H, BPR, g } = r;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d'), img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const on = bits[y * BPR + (x >> 3)] & (0x80 >> (x & 7)), i = (y * W + x) * 4, v = on ? 0 : 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  // the wrap zone, on screen only
+  ctx.fillStyle = 'rgba(47,111,219,0.10)'; ctx.fillRect(g.wrap0, 0, g.wrap1 - g.wrap0, H);
+  ctx.strokeStyle = 'rgba(47,111,219,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
+  for (const x of [g.wrap0, g.wrap1]) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+}
+
+// ---------- ZPL ----------
+/* ZPL's ASCII compression for ^GFA rows: a repeat count before a hex digit
+ * (G..Y = 1..19, g..z = 20..400 in steps of 20, added together), "," fills
+ * the rest of the row with 0, ":" repeats the previous row. */
+function repeatCode(n) {
+  let s = '';
+  while (n >= 400) { s += 'z'; n -= 400; }
+  if (n >= 20) { s += String.fromCharCode(0x67 + Math.floor(n / 20) - 1); n %= 20; }
+  if (n > 0) s += String.fromCharCode(0x47 + n - 1);
+  return s;
+}
+function compressRow(hex) {
+  const t = hex.replace(/0+$/, '');
+  if (!t) return ',';
+  let out = '';
+  for (let i = 0; i < t.length;) {
+    let j = i; while (j < t.length && t[j] === t[i]) j++;
+    const n = j - i;
+    out += (n > 1 ? repeatCode(n) : '') + t[i];
+    i = j;
+  }
+  return t.length < hex.length ? out + ',' : out;
+}
+function gfa({ bits, H, BPR }) {
+  const HEX = '0123456789ABCDEF';
+  let out = '', prev = null;
+  for (let y = 0; y < H; y++) {
+    let hex = '';
+    for (let b = 0; b < BPR; b++) { const v = bits[y * BPR + b]; hex += HEX[v >> 4] + HEX[v & 15]; }
+    out += hex === prev ? ':' : compressRow(hex);
+    prev = hex;
+  }
+  return out;
+}
+function labelZpl(r, qty) {
+  const total = r.BPR * r.H;
+  // orientation and width go with every job: Label LIVE and other senders change them
+  return `^XA^PO${S.rot ? 'I' : 'N'}^PW${r.W}^LH0,0^MNY^FO0,0^GFA,${total},${total},${r.BPR},${gfa(r)}^FS^PQ${Math.max(1, qty | 0)},0,1,Y^XZ\n`;
+}
+
+// ---------- rows ----------
+function rowEl(r, i) {
+  const tr = document.createElement('tr');
+  tr.className = 'row' + (i === active ? ' active' : ''); tr.dataset.row = i;
+  tr.innerHTML = `<td class="valcell"><div class="value-wrap no-prefix"><input type="text" class="value" data-f="a" placeholder="Line 1" aria-label="Line 1, row ${i + 1}" autocomplete="off"></div></td>
+    <td class="valcell"><div class="value-wrap no-prefix"><input type="text" class="value" data-f="b" placeholder="—" aria-label="Line 2, row ${i + 1}" autocomplete="off"></div></td>
+    <td class="qty"><input type="number" class="qty num" min="1" step="1" aria-label="Quantity, row ${i + 1}"></td>
+    <td class="rm"><button class="rm-btn" title="Remove row"><svg class="icon"><use href="#i-x"/></svg></button></td>`;
+  $('[data-f=a]', tr).value = r.a || ''; $('[data-f=b]', tr).value = r.b || ''; $('input.qty', tr).value = r.q || 1;
+  return tr;
+}
+function renderRows() {
+  if (active >= rows.length) active = rows.length - 1;
+  const tb = $('#rows'); tb.innerHTML = '';
+  rows.forEach((r, i) => tb.appendChild(rowEl(r, i)));
+  refresh();
+}
+function readRows() {
+  rows = $$('#rows tr').map(tr => ({ a: $('[data-f=a]', tr).value, b: $('[data-f=b]', tr).value,
+                                     q: Math.max(1, parseInt($('input.qty', tr).value, 10) || 1) }));
+  saveRows();
+}
+const jobs = () => rows.filter(r => (r.a || '').trim() || (r.b || '').trim());
+function setActive(i) { active = i; $$('#rows tr').forEach((tr, k) => tr.classList.toggle('active', k === i)); refreshPreview(); }
+
+$('#rows').addEventListener('input', () => { readRows(); refresh(); clearOkStatus(); });
+$('#rows').addEventListener('focusin', e => { const tr = e.target.closest('tr'); if (tr) setActive(+tr.dataset.row); });
+$('#rows').addEventListener('click', e => {
+  const b = e.target.closest('.rm-btn'); if (!b) return;
+  rows.splice(+b.closest('tr').dataset.row, 1);
+  if (!rows.length) rows = [{ a: '', b: '', q: 1 }];
+  saveRows(); renderRows();
+});
+$('#rows').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const inputs = $$('#rows input'), i = inputs.indexOf(e.target);
+  if (i < inputs.length - 1) inputs[i + 1].focus(); else addRow();
+});
+// a pasted list becomes rows: one cable per line, a tab before line 2
+$('#rows').addEventListener('paste', e => {
+  const inp = e.target; if (!inp.matches('[data-f=a]')) return;
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return;
+  e.preventDefault();
+  const at = +inp.closest('tr').dataset.row;
+  const add = lines.map(l => { const [a, b] = l.split('\t'); return { a: (a || '').trim(), b: (b || '').trim(), q: 1 }; });
+  const replace = !(rows[at].a || '').trim() && !(rows[at].b || '').trim();
+  rows.splice(at, replace ? 1 : 0, ...add);
+  active = at; saveRows(); renderRows();
+});
+function addRow() {
+  readRows(); rows.push({ a: '', b: '', q: 1 }); active = rows.length - 1; saveRows(); renderRows();
+  const tr = $$('#rows tr')[active]; tr && $('input', tr).focus();
+}
+$('#addRow').addEventListener('click', addRow);
+
+// ---------- preview and summary ----------
+function refreshPreview() {
+  const r = rows[active] || rows[0];
+  const sample = (r.a || '').trim() || (r.b || '').trim() ? r : { a: 'Sample text', b: '' };
+  const out = render(sample, sample === r ? batchEm() : 0), c = $('#previewCanvas');
+  paint(c, out);
+  const width = Math.min(320, c.parentElement.clientWidth || 320);
+  c.style.width = width + 'px'; c.style.height = Math.round(width * out.H / out.W) + 'px';
+  const g = out.g, f = n => (100 * n / g.W) + '%';
+  $('#flagCaps').style.width = width + 'px';
+  $('#flagCaps').innerHTML = `<span style="width:${f(g.wrap0)}">one side</span><span class="wrap" style="width:${f(g.wrap1 - g.wrap0)}">wrap</span><span style="width:${f(g.W - g.wrap1)}">other side</span>`;
+  $('#previewCap').innerHTML = `<span>${sample === r ? `Row ${active + 1}` : 'Sample'}</span><span>·</span><span>${+S.wMm} × ${+S.lMm} mm</span>`
+    + (out.capMm ? `<span>·</span><span>letters ${out.capMm.toFixed(1)} mm</span>` : '');
+  const w = $('#fitWarn');
+  const msg = !g.ok ? 'The margins and wrap zone leave no room for text: make them smaller.'
+            : !out.fits ? 'This text does not fit: shorten it or use two lines.'
+            : out.capMm && out.capMm < 1.5 ? `Letters are only ${out.capMm.toFixed(1)} mm high: hard to read. Shorten the text or split it over two lines.` : '';
+  w.textContent = msg; w.classList.toggle('hidden', !msg);
+}
+function refresh() {
+  const j = jobs(), n = j.reduce((a, r) => a + r.q, 0);
+  $('#sumRows').textContent = `${j.length} cable${j.length === 1 ? '' : 's'}`;
+  $('#sumLabels').textContent = `${n} label${n === 1 ? '' : 's'}`;
+  const b = $('#printBtn'); b.textContent = n ? `Print ${n} label${n === 1 ? '' : 's'}` : 'Print'; b.disabled = !n;
+  refreshPreview();
+}
+
+// ---------- settings ----------
+$('#font').innerHTML = FONTS.map(f => `<option>${esc(f)}</option>`).join('');
+function syncSettings() {
+  $$('[data-k]').forEach(el => { const v = S[el.dataset.k]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; });
+  $('#printerChipAddr').textContent = S.ip;
+  $('#wrapNote').textContent = `The wrap zone goes round the cable: about π × its diameter. ${+S.wrapMm} mm suits a cable about ${(S.wrapMm / Math.PI).toFixed(1)} mm across.`;
+}
+$$('[data-k]').forEach(el => el.addEventListener('input', () => {
+  const k = el.dataset.k;
+  if (el.type === 'checkbox') S[k] = el.checked;
+  else if (el.type === 'number') { const v = parseFloat(el.value); if (!isFinite(v)) return; S[k] = v; }
+  else S[k] = el.value.trim() || DEFAULTS[k];
+  saveSettings(); syncSettings(); refresh();
+}));
+$('#printerChip').addEventListener('click', () => { const d = $('#printerSettings'); d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+$('#openBridge').addEventListener('click', e => { e.preventDefault(); window.open(`http://${S.ip}/printer`, '_blank'); });
+function setDot(state, title) { const d = $('#printerDot'); d.className = 'dot ' + (state || ''); d.title = title || ''; }
+$('#testConn').addEventListener('click', async () => {
+  const out = $('#connResult'); out.textContent = 'Checking…';
+  try {
+    await withTimeout(8000, sig => fetch(`http://${S.ip}/`, { mode: 'no-cors', cache: 'no-store', signal: sig }));
+    out.textContent = 'The bridge answered.'; setDot('ok', `${S.ip} answered`);
+  } catch { out.textContent = `No answer from ${S.ip}.`; setDot('err', `No answer from ${S.ip}`); }
+});
+async function withTimeout(ms, fn) {
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
+  try { return await fn(ac.signal); } finally { clearTimeout(t); }
+}
+
+// ---------- printing ----------
+function showStatus(kind, html) { const s = $('#status'); s.className = 'status ' + kind; s.innerHTML = html; }
+function clearOkStatus() { const s = $('#status'); if (s.classList.contains('ok')) s.className = 'status hidden'; }
+$('#printBtn').addEventListener('click', async () => {
+  readRows();
+  const j = jobs(), n = j.reduce((a, r) => a + r.q, 0);
+  if (!n) return;
+  const em = batchEm(), rendered = j.map(r => ({ r, out: render(r, em) }));
+  const bad = rendered.filter(x => !x.out.fits || !x.out.g.ok);
+  if (bad.length) { showStatus('err', `<span class="dot err"></span><span>${bad.length} row${bad.length === 1 ? '' : 's'} won't fit the label (first: “${esc(bad[0].r.a || bad[0].r.b)}”). Shorten the text or use two lines.</span>`); return; }
+  if (n > 50 && !confirm(`Print ${n} labels?`)) return;
+  const zpl = rendered.map(x => labelZpl(x.out, x.r.q)).join('');
+  const addr = esc(S.ip), b = $('#printBtn'); b.disabled = true;
+  showStatus('sending', `<span class="spinner"></span><span>Sending ${n} label${n === 1 ? '' : 's'} (${(zpl.length / 1024).toFixed(1)} KB) to ${addr}…</span>`);
+  try {
+    const res = await withTimeout(120000, sig => fetch(`http://${S.ip}/pstprnt`, { method: 'POST', body: zpl, headers: { 'Content-Type': 'text/plain' }, signal: sig }));
+    const text = (await res.text()).trim();
+    const t = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+    if (res.ok) { showStatus('ok', `<span class="dot ok"></span><span><span class="lead">Sent ${n} label${n === 1 ? '' : 's'}</span> at ${t}. ${esc(text)}</span>`); setDot('ok', `${S.ip} took a job at ${t}`); }
+    else { showStatus('err', `<span class="dot err"></span><span>The bridge said: ${esc(text || res.status)}</span>`); setDot('err', text); }
+  } catch {
+    showStatus('err', `<span class="dot err"></span><span>Couldn't reach ${addr}. Check the bridge is on and the address is right, or try its IP address.</span>`);
+    setDot('err', `Couldn't reach ${S.ip}`); $('#printerSettings').open = true;
+  } finally { b.disabled = false; refresh(); }
+});
+
+syncSettings();
+renderRows();
+window.addEventListener('resize', refreshPreview);
+</script>
+</body>
+</html>
