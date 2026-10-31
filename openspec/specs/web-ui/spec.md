@@ -4,7 +4,7 @@
 The bridge's HTTP server and its pages: Status, Printer and Bridge, the JSON API behind them, the printer settings
 form and the ZPL it sends, one-shot printer actions, the test label, and the Host and cross-site guards. It lives in
 `firmware/main/web.c`, with `zpl_status.c` (settings to ZPL), `zpl_units.h`, `test_label.c` and `urlcodec.c`.
-The Wi-Fi set-up page and `/save`, `POST /pstprnt` and the `/update` upload internals are specified by other
+The Wi-Fi setup page and `/save`, `POST /pstprnt` and the `/update` upload internals are specified by other
 capabilities; they appear here only in the route table.
 
 ## Requirements
@@ -17,10 +17,10 @@ start" and register no handlers.
 
 **Source**: `firmware/main/web.c` `web_start()`; `HTTPD_DEFAULT_CONFIG` in ESP-IDF 6.1 `esp_http_server.h` (`.server_port = 80`, `.stack_size = 4096`)
 
-#### Scenario: Server starts
-- **WHEN** `web_start()` runs at boot
-- **THEN** the HTTP server SHALL listen on port 80 with an 8192-byte task stack, at most 4 open sockets and LRU purge on
-- **AND** it SHALL log "HTTP server on port 80"
+#### Scenario: Fifth connection
+- **GIVEN** four clients hold open connections to port 80
+- **WHEN** a fifth client connects
+- **THEN** the server SHALL close the least recently used of the four (LRU purge) and serve the new one
 
 #### Scenario: Handler registration fails
 - **WHEN** `httpd_register_uri_handler` fails for one route
@@ -28,7 +28,7 @@ start" and register no handlers.
 
 ### Requirement: Route table
 The bridge SHALL register exactly the 21 URI handlers listed in the route table in Notes, each for one method, and a
-404 error handler. A request for any other URI off the set-up access point MUST get HTTP 404 with the text "not
+404 error handler. A request for any other URI off the setup access point MUST get HTTP 404 with the text "not
 found".
 
 **Source**: `firmware/main/web.c` `web_start()` `uris[]`, `not_found()`
@@ -41,21 +41,25 @@ found".
 - **WHEN** a client sends `GET /printer_config` (registered only for POST)
 - **THEN** the bridge SHALL NOT run the POST handler
 
-### Requirement: Set-up access point routing
-For a request that arrived over the set-up access point (`wifi_prov_sock_on_ap()` true for its socket), the bridge
-SHALL serve the set-up page for `GET /`, and SHALL answer every other page, API and POST route except `/save`,
-`/pstprnt` and the icon routes with `302 Found` and `Location: http://192.168.4.1/`. An unregistered URI over the access
-point MUST get the same redirect.
+### Requirement: Setup access point routing
+For a request that arrived over the setup access point (`wifi_prov_sock_on_ap()` true for its socket), the bridge
+SHALL serve the setup page for `GET /`, accept `POST /save` and serve the icon routes, answer `POST /pstprnt` with
+403 (see http-print), and answer every other route with `302 Found` and `Location: http://192.168.4.1/`. An
+unregistered URI over the access point MUST get the same redirect.
 
 **Source**: `firmware/main/web.c` `on_ap()`, `to_setup_page()`, `AP_HOME`, `root_get()`, `not_found()`, `settings_get_page()`
 
-#### Scenario: Printer page asked over the set-up network
-- **WHEN** a phone on the set-up network requests `GET /printer`
+#### Scenario: Printer page asked over the setup network
+- **WHEN** a phone on the setup network requests `GET /printer`
 - **THEN** the bridge SHALL reply 302 with `Location: http://192.168.4.1/`
 
 #### Scenario: Captive-portal probe
-- **WHEN** a phone on the set-up network requests `GET /generate_204`
+- **WHEN** a phone on the setup network requests `GET /generate_204`
 - **THEN** the bridge SHALL reply 302 with `Location: http://192.168.4.1/`
+
+#### Scenario: Status API from the setup network
+- **WHEN** a client on the setup network requests `GET /api/status`
+- **THEN** the bridge SHALL reply 302 to the setup page
 
 ### Requirement: Host header guard
 Against DNS rebinding, the bridge SHALL accept a request off the access point only if its Host header, with any port
@@ -103,6 +107,10 @@ read Origin, or Referer when Origin is absent. A request with neither header MUS
 - **WHEN** curl posts `action=feed` to `/printer_action` with `Host: zebserial.local` and no Origin or Referer
 - **THEN** the guard SHALL pass
 
+#### Scenario: Firmware upload from another web site
+- **WHEN** a browser posts to `/update` with an Origin that does not match the Host header
+- **THEN** the bridge SHALL reply 403 "cross-site request refused" and SHALL NOT read the image
+
 #### Scenario: Opaque origin
 - **WHEN** a POST carries `Origin: null`
 - **THEN** the guard SHALL refuse it, since the value has no `://`
@@ -123,7 +131,7 @@ The bridge SHALL find a form field by exact name in `name=value` pairs split on 
 decode its value: `+` becomes a space and `%XX` with two hex digits (either case) becomes that byte. A malformed
 escape MUST be copied literally. The result is truncated to fit the caller's buffer and always NUL-terminated.
 
-**Source**: `firmware/main/urlcodec.c` `form_get()`, `decode_n()`, `hex_val()`, `url_decode()`
+**Source**: `firmware/main/urlcodec.c` `form_get()`, `decode_n()`, `hex_val()`
 
 #### Scenario: Escapes decoded
 - **WHEN** the body is `ssid=My+Net%21&pass=x`
@@ -204,7 +212,7 @@ memory"; if the JSON would not fit it MUST log "status JSON needs ... bytes" and
 `GET /api/printer_config` SHALL return the cached `^HH` reading, asking the printer again (waiting up to 2000 ms for
 the link) when the cache is missing, older than 60000 ms, or the query holds `refresh=1`. The reply is
 `{"age_ms":n,"error":text|null,"pairs":[[name,value],...],"cfg":{hh_name:value,...}}` with `no-store`; `age_ms` is -1
-and `pairs` empty when no reading exists.
+and `pairs` empty when no reading exists. If its working buffer cannot be allocated it MUST reply 500 "out of memory".
 
 **Source**: `firmware/main/web.c` `printer_config_get()`, `printer_config()`, `CFG_MAX_AGE_MS`, `CFG_LINK_WAIT_MS`
 
@@ -324,7 +332,7 @@ dot count shown live as the user types. Without a resolution they MUST fall back
 ### Requirement: True dots per millimetre
 The bridge SHALL convert mm and dots with the true head pitch: a reported 12 dots/mm is 300/25.4 and 24 dots/mm is
 600/25.4 dots per mm; any other positive figure is used as reported. mm to dots MUST round to the nearest dot either
-side of zero. The dpi for 8, 12 and 24 dots/mm is 203, 300 and 600.
+side of zero. The dpi for 8, 12 and 24 dots/mm is 203, 300 and 600. Three places do not yet follow this (see Known deviations).
 
 **Source**: `firmware/main/zpl_units.h` `zpl_true_dpmm()`, `zpl_mm_to_dots()`, `zpl_dots_to_mm()`, `zpl_dpi()`
 
@@ -458,7 +466,8 @@ mm on the corner scales, Left Position is lowered by (L - R) / 2 mm, raised if n
 
 ### Requirement: Printing the test label
 `POST /printer_test` SHALL need the resolution, else 503. Width MUST be 10 mm to the head width (108 mm if unknown) and
-length 10 to 1000 mm, else 400. It SHALL build the label for the hostname's `.local` URL and the printer model in an
+length 10 to 1000 mm, else 400; 10 mm means `zpl_mm_to_dots(10, m)` dots at the true pitch, and the label SHALL build
+for any size that passes. It SHALL build the label for the hostname's `.local` URL and the printer model in an
 8192-byte buffer, send it waiting up to 5000 ms with no hold, and redirect 303 to `/printer?done=test_label`.
 
 **Source**: `firmware/main/web.c` `printer_test_post()`, `parse_mm()`; `firmware/main/test_label.h` `TEST_LABEL_ZPL_MAX`
@@ -479,9 +488,9 @@ room allows, up to 300 mm.
 
 **Source**: `firmware/main/test_label.c` `test_label_zpl()`, `RULER_MAX_MM`
 
-#### Scenario: Label too small
-- **WHEN** the width or length is under 10 times the reported dots/mm
-- **THEN** `test_label_zpl()` SHALL return 0 and the bridge SHALL reply 500 "Could not build the test label."
+#### Scenario: Smallest label
+- **WHEN** `w=10` and `l=10` are posted for a 300 dpi printer
+- **THEN** the bridge SHALL print a 10 x 10 mm test label (it currently replies 500; see Known deviations)
 
 ### Requirement: Test label edge scales
 In both top corners the test label SHALL draw ticks from each side edge at 0 to 4 mm in 0.5 mm steps (true mm), at
@@ -549,7 +558,7 @@ restart 1500 ms later; otherwise it SHALL redirect 303 to `/bridge?done=saved`.
 - **THEN** the bridge SHALL show "Saved. Rebooting." with a link to the new `.local` name and restart
 
 ### Requirement: Old settings address
-`GET /settings` SHALL redirect 303 See Other to `/printer` (302 to the set-up page over the access point). It MUST NOT
+`GET /settings` SHALL redirect 303 See Other to `/printer` (302 to the setup page over the access point). It MUST NOT
 apply the Host guard.
 
 **Source**: `firmware/main/web.c` `settings_get_page()`, `redirect_to()`
@@ -588,9 +597,9 @@ literals: `STATUS_SCRIPT`, the Firmware upload script in `send_firmware_section(
 
 ### Route table
 
-| Method | URI | Handler | Set-up AP | Guard |
+| Method | URI | Handler | Setup AP | Guard |
 |---|---|---|---|---|
-| GET | `/` | `root_get` | set-up page | Host |
+| GET | `/` | `root_get` | setup page | Host |
 | POST | `/save` | `save_post` | served | Origin (wifi-provisioning) |
 | GET | `/api/status` | `status_get` | 302 | Host |
 | GET | `/favicon.svg` | `favicon_get` | served | none |
@@ -629,7 +638,7 @@ stored as described in device-settings and act as described in remote-log.
   `rx_bytes`
 - `bridge`: `active`, `client_ip`, `sessions`, `aborted`, `to_printer`, `from_printer`
 - `rlog`: `enabled`, `listener`, `sent`, `dropped`
-- `ota`: `running`, `pending`, `other_version`
+- `ota`: see ota-updates (OTA state in the status API)
 - `chip_temp`: `null` or {`c`, `max_c`, `hot`, `warn_c`}
 - `uptime_s`, `version`, `built` ("<date> <time>" of the build)
 
@@ -639,3 +648,15 @@ Form key, `^HH` name: `darkness` DARKNESS, `speed` PRINT SPEED, `method` PRINT M
 MEDIA TYPE, `sensor` SENSOR SELECT, `zpl` ZPL MODE, `width` PRINT WIDTH, `length` LABEL LENGTH, `max_length` MAXIMUM
 LENGTH, `tear_off` TEAR OFF, `label_top` LABEL TOP, `left_pos` LEFT POSITION, `power_up` MEDIA POWER UP, `head_close`
 HEAD CLOSE, `backfeed` BACKFEED, `early_warning` EARLY WARNING.
+
+### Known deviations
+
+- Lengths on the Status page: `val()` converts a dot count the printer form changes to mm with the rounded dots/mm
+  `D` (`len(c/D)`, `firmware/main/web.c:451`), not the true pitch, so at 300 dpi the Status page and the Printer form
+  show different mm for the same setting.
+- MAXIMUM LENGTH is decoded from the printer's mm figure with the rounded dots/mm (`zpl_status.c:662-681`,
+  `*out = t * cfg->dpmm`, which matches how the printer converts) but shown with the true pitch, so it reads about
+  1.6 % long at 300 dpi (975 mm shows as about 990.6 mm).
+- Smallest test label: `test_label_zpl()` refuses a width or length under `10 * m` dots (`test_label.c:67`), but
+  10 mm at 300 dpi is 118 dots, so a 10 mm label passes the form check and then gets 500 "Could not build the test
+  label." (See Printing the test label.)

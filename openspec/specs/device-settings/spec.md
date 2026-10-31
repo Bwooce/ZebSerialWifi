@@ -115,7 +115,7 @@ kept. Releasing the button earlier SHALL reset the count.
 
 #### Scenario: Locked out by a bad static address
 - **WHEN** BOOT is held for 5 s
-- **THEN** the bridge SHALL restart in set-up mode with DHCP and hostname `zebserial`
+- **THEN** the bridge SHALL restart in setup mode with DHCP and hostname `zebserial`
 - **AND** the serial link options, remote log settings, saved baud, baud cap, `sc_sent` and model SHALL be kept
 
 #### Scenario: Short press
@@ -123,7 +123,7 @@ kept. Releasing the button earlier SHALL reset the count.
 - **THEN** nothing SHALL be cleared
 
 ### Requirement: Status LED patterns
-The user LED (GPIO15, active low) SHALL be driven from a 50 ms tick: set-up access point running, 100 ms on and 100 ms
+The user LED (GPIO15, active low) SHALL be driven from a 50 ms tick: setup access point running, 100 ms on and 100 ms
 off; connecting, 500 ms on and 500 ms off; connected with the printer answering, solid on; connected with no printer
 answering, two 100 ms flashes 100 ms apart every 2 s. It MUST be off until the first status update.
 
@@ -149,9 +149,13 @@ setting.
 
 **Source**: `firmware/main/board.c` `board_init()`, `GPIO_RF_SWITCH_EN`, `GPIO_ANT_SELECT`; `firmware/main/Kconfig.projbuild` `ZEB_EXTERNAL_ANTENNA`; `firmware/main/settings.h`
 
+#### Scenario: U.FL build
+- **WHEN** the firmware is built with `CONFIG_ZEB_EXTERNAL_ANTENNA=y`
+- **THEN** GPIO14 SHALL be driven high at boot and the log SHALL say "antenna: external U.FL"
+
 #### Scenario: Default build
-- **WHEN** the firmware is built with the default configuration
-- **THEN** GPIO14 SHALL be low and the ceramic antenna used
+- **WHEN** the firmware is built without `CONFIG_ZEB_EXTERNAL_ANTENNA`
+- **THEN** GPIO14 SHALL be driven low and the log SHALL say "antenna: onboard ceramic"
 
 ### Requirement: Console
 The bridge SHALL send its console log over the USB Serial/JTAG port; UART1 is the printer link.

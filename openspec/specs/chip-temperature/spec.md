@@ -7,7 +7,7 @@ when the bridge gets too hot, and the reading on the Status page. Implemented in
 
 ## Requirements
 
-### Requirement: Sensor set-up
+### Requirement: Sensor setup
 At start-up the bridge SHALL install and enable the internal temperature sensor with the 20 to 100 °C range. If the
 sensor will not start, the bridge MUST log a warning "chip temperature sensor would not start: <error>" and carry
 on with no temperature readings.

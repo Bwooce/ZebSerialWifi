@@ -22,6 +22,16 @@ remote log's own sender task MUST NOT be queued.
 - **WHEN** the remote log's sender task itself logs a line
 - **THEN** the line SHALL go to the console only
 
+### Requirement: No log queue, no remote log
+If `remote_log_init()` cannot allocate its 12288-byte ring buffer (`QUEUE_BYTES`), the bridge MUST log "no memory for
+the log queue: remote log off" and SHALL leave the remote log off for that boot, without installing the log hook.
+
+**Source**: `firmware/main/remote_log.c` `remote_log_init()`, `xRingbufferCreate()`, `QUEUE_BYTES`
+
+#### Scenario: Allocation fails at boot
+- **WHEN** `xRingbufferCreate()` returns NULL
+- **THEN** log lines SHALL go to the USB console only and nothing SHALL be sent to a receiver
+
 ### Requirement: Split lines are joined
 When a task's log output arrives in several calls, the hook SHALL hold the text until a newline arrives and queue
 it as one line. If another task logs while a line is unfinished, the unfinished line SHALL be queued as it stands.
@@ -49,9 +59,9 @@ errors, 3 everything) and SHALL strip the "W (1234) " prefix and trailing CR/LF 
 - **THEN** it SHALL be sent as an info line with its text unchanged
 
 ### Requirement: On by default, set on the Bridge page
-With nothing saved, the remote log SHALL be on at level 3. The Bridge page's Remote log section SHALL offer an on/off
-checkbox and a level choice (Errors; Warnings and errors; Everything), saved in NVS as `rlog_on` and `rlog_lvl`; a
-level outside 1 to 3 MUST be refused with 400 "Unknown remote log level.".
+The remote log SHALL start on at level 3 when nothing is saved (storage and defaults as in device-settings, Remote log
+settings). The Bridge page's Remote log section SHALL offer an on/off checkbox and a level choice (Errors; Warnings and
+errors; Everything); a level outside 1 to 3 MUST be refused with 400 "Unknown remote log level.".
 
 **Source**: `firmware/main/settings.c` `settings_get_rlog()`, `settings_set_rlog()`; `firmware/main/settings.h` `SETTINGS_RLOG_LEVEL_MIN`, `SETTINGS_RLOG_LEVEL_MAX`; `firmware/main/web.c` `bridge_get_page()`, `config_post()`
 

@@ -31,8 +31,9 @@ gyroid infill, supports off, seam at the back, no brim, first layer 40 mm/s (inf
 
 ### Requirement: Fully resolved profiles for the CLI
 `resolve_profile.py` SHALL flatten a system profile's `inherits` chain, apply an overrides JSON (a one-element list
-override broadcast to every extruder variant), and mark the result as a user preset inheriting the system profile,
-so that the CLI's compatibility check accepts it.
+override broadcast to every extruder variant), mark the result as a user preset (`from` "User", `inherits` the
+system profile) so that the CLI's compatibility check accepts it, and set the ID the CLI matches presets by
+(`printer_settings_id`, `print_settings_id` or `filament_settings_id`) to the preset's name.
 
 **Source**: `print/resolve_profile.py` `resolve()`, `main()`; `print/README.md` "Rebuilding"
 

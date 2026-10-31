@@ -1,7 +1,7 @@
 # printer-link Specification
 
 ## Purpose
-The printer link owns the RS-232 serial line from the bridge to the Zebra printer: UART set-up and pin selection,
+The printer link owns the RS-232 serial line from the bridge to the Zebra printer: UART setup and pin selection,
 baud detection, moving the printer to XON/XOFF and a target baud, language detection, status polling with `~HS`,
 the `^HH` configuration cache, and the exclusive byte I/O API that the TCP bridge and web pages use. It lives in
 `firmware/main/printer_link.c` and `printer_link.h`, with the pure reply parsers in `firmware/main/zpl_status.c`
@@ -36,11 +36,11 @@ pauses and resumes transmission in hardware. Flow control SHALL be off only whil
 - **THEN** the UART SHALL stop transmitting until the printer sends XON
 
 ### Requirement: Internal pull-up on RX
-The bridge SHALL enable the internal pull-up on whichever GPIO is the UART RX pin, at UART set-up and every time
-the pins are moved or swapped, so that RX idles at mark behind a Schottky level-shift diode or with the module
+The bridge SHALL enable the internal pull-up on whichever GPIO is the UART RX pin, at UART setup and every time
+the pins are swapped, so that RX idles at mark behind a Schottky level-shift diode or with the module
 unpowered.
 
-**Source**: `firmware/main/printer_link.c` `uart_setup()`, `swap_pins()`, `printer_link_set_pins()` (`gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY)`)
+**Source**: `firmware/main/printer_link.c` `uart_setup()`, `swap_pins()` (`gpio_set_pull_mode(s_rx_gpio, GPIO_PULLUP_ONLY)`)
 
 #### Scenario: Pins swapped
 - **WHEN** detection swaps TX and RX
@@ -436,9 +436,10 @@ when none is cached. `printer_link_invalidate_config()` SHALL drop the cache.
 
 **Source**: `firmware/main/printer_link.c` `printer_link_get_config()`, `printer_link_invalidate_config()`, `s_cfg_time_us`
 
-#### Scenario: Cache dropped
-- **WHEN** `printer_link_invalidate_config()` has been called
-- **THEN** `printer_link_get_config()` SHALL return false
+#### Scenario: Cache dropped after a command
+- **GIVEN** a `^HH` reading is cached
+- **WHEN** `printer_link_send_zpl()` sends a command (for example a settings change from the Printer page)
+- **THEN** the cache SHALL be dropped, so the next `/api/printer_config` reads the printer again instead of showing the old values
 
 ### Requirement: Sending ZPL commands
 `printer_link_send_zpl()` SHALL take the link (or return `ESP_ERR_TIMEOUT`), return `ESP_ERR_INVALID_STATE` when
@@ -485,17 +486,6 @@ reinstalling the UART driver at the current baud, trying up to 3 times 50 ms apa
 - **WHEN** XOFF holds bytes in the driver ring while the FIFO is empty
 - **THEN** `printer_link_tx_idle()` SHALL return false
 
-### Requirement: Moving the pins at run time
-`printer_link_set_pins()` SHALL return `ESP_OK` at once for the current pins. Otherwise it SHALL wait up to 30 s
-for the link (`ESP_ERR_TIMEOUT` if busy), wait up to 2 s for output, release the old GPIOs, attach the UART to the
-new ones with the RX pull-up, flush input, and request a re-detect.
-
-**Source**: `firmware/main/printer_link.c` `printer_link_set_pins()`
-
-#### Scenario: Pins changed on the Bridge page
-- **WHEN** new pins are set while idle
-- **THEN** the UART SHALL move to them and detection SHALL run again
-
 ### Requirement: Status report
 `printer_link_get_status()` SHALL report the baud, detected, the last `~HS` and its age (-1 if none), handshake,
 model, language text, `zpl` (false only for a non-ZPL language), answering and sleeps (each false unless
@@ -506,3 +496,9 @@ detected), age of the last reply (-1 if none), byte counters, TX and RX GPIOs an
 #### Scenario: Unknown language
 - **WHEN** the language could not be read
 - **THEN** `zpl` SHALL be true and `language` SHALL be empty
+
+## Notes
+
+`printer_link_set_pins()` (`firmware/main/printer_link.c:942`) moves the UART to other pins at run time, but nothing
+calls it: a pin change on the Bridge page saves the setting and restarts the bridge (`firmware/main/web.c:1444`),
+and the pins are chosen again at boot. Treat it as an unused API, not specified behaviour.

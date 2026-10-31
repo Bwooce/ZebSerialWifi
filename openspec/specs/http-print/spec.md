@@ -8,9 +8,8 @@ way Zebra's own network printers take one, so a web page from any site can print
 ## Requirements
 
 ### Requirement: Route and method
-The bridge SHALL register `/pstprnt` on the port 80 HTTP server for the POST method only. No handler MUST exist for
-OPTIONS or any other method on that URI, so the HTTP server answers them with its own 405 Method Not Allowed reply,
-which carries no `Access-Control-Allow-Origin` header.
+The bridge SHALL register `/pstprnt` for POST. Other methods, including an OPTIONS preflight, currently get the
+server's 405 with no CORS headers, so only requests that need no preflight work from a browser.
 
 **Source**: `firmware/main/web.c` `web_start()` (`"/pstprnt"`, `HTTP_POST`, `pstprnt_post`)
 
@@ -20,7 +19,7 @@ which carries no `Access-Control-Allow-Origin` header.
 
 #### Scenario: CORS preflight
 - **WHEN** a browser sends `OPTIONS /pstprnt` as a preflight
-- **THEN** the reply SHALL be 405 without CORS headers, so the browser does not send the POST
+- **THEN** the reply is currently 405 without CORS headers, so the browser does not send the POST (see Known deviations)
 
 ### Requirement: Any-origin access without Host or CSRF checks
 The `/pstprnt` handler SHALL NOT call `host_allowed()` or `same_origin()`: it MUST accept a POST whatever its Host,
@@ -160,3 +159,9 @@ log the client address, bytes sent of the content length, elapsed time and resul
 | Method other than POST | 405 (server default) | server default text, no CORS header |
 
 All handler replies are `text/plain` with `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`.
+
+### Known deviations
+
+- No OPTIONS handler for `/pstprnt`, so a CORS preflight gets the HTTP server's 405 with no CORS headers and a
+  browser request that needs a preflight cannot print (`firmware/main/web.c:1950` registers POST only; ESP-IDF
+  `components/esp_http_server/src/httpd_uri.c:119` sends the 405).

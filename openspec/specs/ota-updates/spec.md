@@ -14,10 +14,14 @@ refusal) is not enabled.
 
 **Source**: `firmware/partitions.csv`; `firmware/sdkconfig.defaults` `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`; `firmware/sdkconfig` `# CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK is not set`
 
-#### Scenario: Partition layout
-- **WHEN** the firmware is built with `CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"`
-- **THEN** the partition table SHALL list `ota_0` and `ota_1` of size 0x1E0000 each
-- **AND** `nvs` SHALL stay at offset 0x9000, size 0x6000
+#### Scenario: Image too large for a slot
+- **WHEN** a build produces an app image larger than 0x1E0000 bytes
+- **THEN** `idf.py build` SHALL fail its partition size check, so no such image can be flashed or uploaded
+
+#### Scenario: Settings survive the first OTA-layout flash
+- **GIVEN** a bridge flashed with the earlier single-app layout
+- **WHEN** this partition table is flashed over USB
+- **THEN** the settings SHALL still load, because `nvs` stays at offset 0x9000 with size 0x6000
 
 ### Requirement: Update upload endpoint
 The bridge SHALL accept a firmware update as the raw body of `POST /update` (no multipart form). On success it SHALL
@@ -76,8 +80,8 @@ MUST leave the running image as the boot image.
 - **AND** the boot partition SHALL be unchanged
 
 ### Requirement: Upload failure replies
-The bridge SHALL reply 500 when the upload stops (a receive error, or more than 5 consecutive receive timeouts) with
-"The upload stopped.", or when out of memory, and 400 for every other refusal, including "Another update is already
+The bridge SHALL reply 500 when `ota_receive()` returns `ESP_FAIL` (the upload stopped: a receive error, or more than
+5 consecutive receive timeouts, "The upload stopped.") or `ESP_ERR_NO_MEM`, and 400 for every other error, including "Another update is already
 in progress." and a missing second slot. A failed write after `esp_ota_begin()` SHALL be aborted.
 
 **Source**: `firmware/main/ota.c` `ota_receive()`, `recv_some()`, `OTA_RECV_RETRIES`, `s_busy`, `esp_ota_abort()`; `firmware/main/web.c` `update_post()`
@@ -174,21 +178,6 @@ When the other slot holds a valid image, the Bridge page SHALL offer a "Go back 
 - **WHEN** a client reads `/api/status` from a new, unconfirmed image
 - **THEN** `ota.pending` SHALL be `true`
 
-### Requirement: Cross-site and setup-network refusal
-`POST /update` and `POST /boot_other` MUST be refused with 403 "cross-site request refused" when `same_origin()`
-fails (an untrusted Host, or an Origin or Referer that does not name the Host), and MUST redirect with 302 to the
-setup page when the request comes in over the setup access point.
-
-**Source**: `firmware/main/web.c` `update_post()`, `boot_other_post()`, `same_origin()`, `host_allowed()`, `cross_site()`, `on_ap()`, `to_setup_page()`
-
-#### Scenario: Upload from another web site
-- **WHEN** a browser posts to `/update` with an Origin that does not match the Host header
-- **THEN** the bridge SHALL reply 403 and SHALL not read the image
-
-#### Scenario: Upload without Origin or Referer
-- **WHEN** `curl` posts to `/update` with an allowed Host and neither header
-- **THEN** the bridge SHALL accept the request for the image checks
-
 ### Requirement: First flash over USB
 The OTA path SHALL NOT change the partition table or bootloader, so the first flash with this two-slot layout MUST
 be over USB; an image running from a table without a second slot refuses `/update` uploads.
@@ -203,3 +192,6 @@ be over USB; an image running from a table without a second slot refuses `/updat
 - The 180 s in the Bridge page note is a literal in `send_firmware_section()`, not `OTA_CONFIRM_DEADLINE_S`.
 - Both the 15 s and 180 s limits count from boot (`esp_timer_get_time()`), not from the moment Wi-Fi connects.
 - `ota_poll()` decides once per boot: after confirming, rolling back, or finding the image not pending, it does nothing more.
+
+The cross-site guard on `POST /update` and `POST /boot_other`, and their redirect from the setup network, are
+specified in web-ui (Cross-site POST guard, Setup access point routing).

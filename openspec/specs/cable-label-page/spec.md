@@ -112,14 +112,18 @@ The page SHALL render each label on a white canvas in black, then set a dot wher
 ### Requirement: ZPL with ASCII-compressed ^GFA
 Each row SHALL become one format
 `^XA^PO<N|I>^PW<width>^LH0,0^MNY^FO0,0^GFA,<bytes>,<bytes>,<row bytes>,<data>^FS^PQ<qty>,0,1,Y^XZ`, with `I` when
-rotate 180° is on. Rows of data SHALL use ZPL ASCII compression: repeat counts G..Y (1 to 19) and g..z (20 to 400),
-"," for trailing zeros and ":" for a repeat of the previous row.
+rotate 180° is on. Rows of data SHALL use ZPL ASCII compression: repeat counts G..Y (1 to 19) and g..z (20 to 400)
+and "," for trailing zeros. A row identical to the previous row SHALL be encoded as ":"; otherwise an all-zero row as ",".
 
-**Source**: `tools/cable-labels.html` `labelZpl()`, `gfa()`, `compressRow()`, `repeatCode()`
+**Source**: `tools/cable-labels.html` `labelZpl()`, `gfa()` (line 646, the repeat test comes first), `compressRow()`, `repeatCode()`
 
 #### Scenario: Blank row of the bitmap
-- **WHEN** a bitmap row is all zero
+- **WHEN** a bitmap row is all zero and the row before it is not
 - **THEN** it SHALL be encoded as ","
+
+#### Scenario: Second blank row
+- **WHEN** two all-zero rows follow each other
+- **THEN** the second SHALL be encoded as ":"
 
 #### Scenario: Row same as the one before
 - **WHEN** a bitmap row equals the previous row
@@ -127,19 +131,44 @@ rotate 180° is on. Rows of data SHALL use ZPL ASCII compression: repeat counts 
 
 ### Requirement: Rows, quantities and pasting
 The page SHALL hold rows of Line 1, Line 2 and a quantity of at least 1, kept in `localStorage` under `cable.rows`,
-and SHALL skip rows with both lines empty. Pasting two or more lines into a Line 1 field SHALL add one row per
-non-empty line, with text after a tab as Line 2.
+and SHALL skip rows with both lines empty. With no saved rows it SHALL start with one row, "NAS → SW1 port 12".
+Removing the last row SHALL leave one empty row.
 
 **Source**: `tools/cable-labels.html` `readRows()`, `jobs()`, `rows` paste handler, `addRow()`
+
+#### Scenario: Last row removed
+- **WHEN** the user removes the only row
+- **THEN** one empty row SHALL remain
+
+### Requirement: Pasting a list
+Pasting text with two or more non-empty lines into a Line 1 field SHALL add one row per non-empty line, quantity 1,
+with the text before the first tab as Line 1 and between the first and second tab as Line 2; text after a second
+tab SHALL be dropped. It SHALL replace the row pasted into if that row is empty, and otherwise insert the new rows
+before it. A paste of one line SHALL be an ordinary paste.
+
+**Source**: `tools/cable-labels.html` `rows` paste handler
 
 #### Scenario: Pasted list
 - **WHEN** the user pastes "A\tB" and "C" on two lines into an empty Line 1
 - **THEN** the page SHALL replace that row with rows (A, B) and (C, empty), each of quantity 1
 
+#### Scenario: Pasted before a row with text
+- **WHEN** the user pastes two lines into the Line 1 field of a row that holds "X"
+- **THEN** the two new rows SHALL come before the row "X", which SHALL be kept
+
+### Requirement: Keyboard entry
+Enter in a row field SHALL move the focus to the next field; Enter in the last field SHALL add a row and focus it.
+
+**Source**: `tools/cable-labels.html` `rows` keydown handler, `addRow()`
+
+#### Scenario: Enter on the last quantity
+- **WHEN** the user presses Enter in the last row's quantity field
+- **THEN** a new empty row SHALL be added and its Line 1 field focused
+
 ### Requirement: Fit warnings and print refusal
-The page SHALL warn when the wrap zone leaves less than a 5 x 3 mm text box, when text does not fit, or when capitals
-would be under 1.5 mm. Print MUST be refused, sending nothing, if any row does not fit, and SHALL ask for
-confirmation before printing more than 50 labels.
+For the previewed row only, the page SHALL show one warning, the first that applies in this order: the wrap zone
+leaves less than a 5 x 3 mm text box; the text does not fit; capitals would be under 1.5 mm. Print MUST be refused,
+sending nothing, if any row of the batch does not fit, and SHALL ask for confirmation before printing over 50 labels.
 
 **Source**: `tools/cable-labels.html` `geom()` (`ok`), `refreshPreview()` (`#fitWarn`), print button handler
 
@@ -147,13 +176,34 @@ confirmation before printing more than 50 labels.
 - **WHEN** the user prints a batch in which one row does not fit
 - **THEN** the page SHALL show "<n> row(s) won't fit the label (first: ...). Shorten the text or use two lines." and send nothing
 
+#### Scenario: Another row too long
+- **WHEN** the previewed row fits but another row does not
+- **THEN** no warning SHALL show until Print is pressed
+
 #### Scenario: Large batch
 - **WHEN** the batch totals 51 labels
 - **THEN** the page SHALL ask "Print 51 labels?" before sending
 
+### Requirement: Preview, captions and Print button
+The preview SHALL show the active row, or "Sample text" when that row is empty, with captions "wrap X.X" over the wrap
+zone and "letters X.X mm" for the capital height. The Print button SHALL read "Print N label(s)", or "Print" with 0
+labels, and SHALL be disabled with 0 labels and while a batch is being sent. A success message SHALL clear on the next
+edit to the rows.
+
+**Source**: `tools/cable-labels.html` `refreshPreview()` (`#flagCaps`, `#previewCap`), `refresh()` (`#printBtn`), print button handler, `clearOkStatus()`
+
+#### Scenario: Empty row selected
+- **WHEN** the active row has no text
+- **THEN** the preview SHALL show "Sample text" and the caption SHALL say "Sample"
+
+#### Scenario: Edit after a print
+- **WHEN** a batch was sent and the user then types in a row
+- **THEN** the "Sent ..." message SHALL disappear
+
 ### Requirement: Print through the bridge's /pstprnt
-The page SHALL send the whole batch as one `POST http://<address>/pstprnt` with `Content-Type: text/plain`, aborting
-after 120 s. A 2xx reply SHALL show "Sent <n> labels at <time>." with the bridge's reply text; any other status SHALL
+The page SHALL send the whole batch as one `POST http://<address>/pstprnt`, aborting after 120 s. The request SHALL
+be a CORS simple request: POST, a string body, and no header other than `Content-Type: text/plain`, because the bridge
+does not answer a preflight. A 2xx reply SHALL show "Sent <n> labels at <time>." with the bridge's reply text; any other status SHALL
 show "The bridge said: <reply>".
 
 **Source**: `tools/cable-labels.html` print button handler, `withTimeout()`, `showStatus()`; `firmware/main/web.c` `pstprnt_post()`, `pstprnt_reply()` (`Access-Control-Allow-Origin: *`)
@@ -161,6 +211,10 @@ show "The bridge said: <reply>".
 #### Scenario: Job accepted
 - **WHEN** the bridge replies 200 "Sent <bytes> bytes to the printer."
 - **THEN** the page SHALL show the sent message with that text
+
+#### Scenario: Long batch
+- **WHEN** a batch takes the bridge more than 120 s to pass to the printer (the bridge replies only after the job has drained)
+- **THEN** the page SHALL abort the request and show the "Couldn't reach" message, although the bridge may go on printing
 
 #### Scenario: Printer busy
 - **WHEN** the bridge replies 503
@@ -197,3 +251,9 @@ connection" button that fetches `http://<address>/` in no-cors mode with an 8 s 
 - The page notes that the end margin should stay at 2.5 mm or more on the GX430t, as the last 2 mm at one side does
   not print.
 - Left-right position is not set by the page; it is the printer's Left Position, set on the bridge's Printer page.
+
+### Known deviations
+
+- The Address field cannot be cleared and retyped: an empty value is replaced by `zebserial.local` at once
+  (`tools/cable-labels.html:753` stores the default, and `syncSettings()` at line 745 writes it back into the field).
+  The page will be fixed.

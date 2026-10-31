@@ -1,15 +1,15 @@
 # wifi-provisioning Specification
 
 ## Purpose
-How the bridge gets onto a Wi-Fi network and stays there: the open set-up access point with its captive DNS and
-set-up page, the station join with saved credentials, the fallback to set-up mode, the Wi-Fi Join trial from the
+How the bridge gets onto a Wi-Fi network and stays there: the open setup access point with its captive DNS and
+setup page, the station join with saved credentials, the fallback to setup mode, the Wi-Fi Join trial from the
 Bridge page, and the hostname and static IPv4 options. Code: `firmware/main/wifi_prov.c`, `dns_hijack.c`, `netcfg.c`
 and the Wi-Fi routes in `web.c`.
 
 ## Requirements
 
-### Requirement: Set-up access point identity
-The bridge SHALL run its set-up access point as an open network (no password) named `ZebSerial-XXXX`, where `XXXX` is
+### Requirement: Setup access point identity
+The bridge SHALL run its setup access point as an open network (no password) named `ZebSerial-XXXX`, where `XXXX` is
 the last two bytes of the SoftAP MAC address in upper-case hexadecimal. It MUST use channel 1, accept at most 4
 stations, and fix both the AP and station interfaces at 20 MHz bandwidth.
 
@@ -17,22 +17,22 @@ stations, and fix both the AP and station interfaces at 20 MHz bandwidth.
 
 #### Scenario: Name from the MAC address
 - **WHEN** the SoftAP MAC address ends in `a4:1f`
-- **THEN** the set-up network SHALL be named `ZebSerial-A41F`
+- **THEN** the setup network SHALL be named `ZebSerial-A41F`
 - **AND** it SHALL accept stations with no password
 
-### Requirement: Set-up mode when no network is saved
-The bridge MUST start the set-up access point at boot, in AP+station mode, when no Wi-Fi network is saved (no `ssid`
+### Requirement: Setup mode when no network is saved
+The bridge MUST start the setup access point at boot, in AP+station mode, when no Wi-Fi network is saved (no `ssid`
 key, or an empty one). With no saved network it SHALL NOT attempt a station connection.
 
 **Source**: `firmware/main/wifi_prov.c` `wifi_prov_start()` (`s_have_creds`), `on_event()` `WIFI_EVENT_STA_START`, `retry_cb()`
 
 #### Scenario: First boot
 - **WHEN** the bridge boots with no saved Wi-Fi credentials
-- **THEN** it SHALL start the open set-up access point straight away
+- **THEN** it SHALL start the open setup access point straight away
 - **AND** the state SHALL be `WIFI_ST_AP`
 
-### Requirement: Fallback to set-up mode after 60 seconds without an address
-With a saved network, the bridge SHALL start the set-up access point alongside the station if it has no IPv4 address
+### Requirement: Fallback to setup mode after 60 seconds without an address
+With a saved network, the bridge SHALL start the setup access point alongside the station if it has no IPv4 address
 60 s after boot, or 60 s after losing a connection it had. It MUST keep retrying the saved network while the access
 point runs, and MUST stop the access point and its DNS server as soon as the station gets an IPv4 address.
 
@@ -40,20 +40,20 @@ point runs, and MUST stop the access point and its DNS server as soon as the sta
 
 #### Scenario: Router down at boot
 - **WHEN** the saved network gives no IPv4 address within 60 s of boot
-- **THEN** the bridge SHALL start the set-up access point and keep trying the saved network
+- **THEN** the bridge SHALL start the setup access point and keep trying the saved network
 
 #### Scenario: Router comes back
-- **WHEN** the station gets an IPv4 address while the set-up access point runs
+- **WHEN** the station gets an IPv4 address while the setup access point runs
 - **THEN** the bridge SHALL stop the access point and the captive DNS server and run as a station only
 
 ### Requirement: Station retry interval
 After each station disconnect, when a network is saved, the bridge SHALL try to reconnect after 2 s, or after 30 s
-while the set-up access point is running (station scans disturb the AP channel).
+while the setup access point is running (station scans disturb the AP channel).
 
 **Source**: `firmware/main/wifi_prov.c` `STA_RETRY_MS`, `STA_RETRY_IN_AP_MS`, `on_event()` `WIFI_EVENT_STA_DISCONNECTED`, `retry_cb()`
 
-#### Scenario: Retry while in set-up mode
-- **WHEN** the station is disconnected and the set-up access point is running
+#### Scenario: Retry while in setup mode
+- **WHEN** the station is disconnected and the setup access point is running
 - **THEN** the next connection attempt SHALL start 30 s later
 
 ### Requirement: Strongest access point and a -85 dBm floor
@@ -103,76 +103,66 @@ Wi-Fi, so replies are not delayed by modem sleep.
 - **THEN** Wi-Fi power save SHALL be `WIFI_PS_NONE`
 
 ### Requirement: Captive DNS server
-While the set-up access point runs, the bridge SHALL answer DNS queries on UDP port 53 (bound to all interfaces). An A
+While the setup access point runs, the bridge SHALL answer DNS queries on UDP port 53 (bound to all interfaces). An A
 query MUST get one answer, 192.168.4.1 with a TTL of 60 s; any other query type SHALL get a reply with no answers.
-Responses, packets with other than one question, and malformed or compressed names MUST be ignored.
+Responses, packets with other than one question, and malformed or compressed names MUST be ignored. If the socket
+cannot be created or bound, it SHALL log "bind failed" and try again every 1 s while the server is meant to run.
 
 **Source**: `firmware/main/dns_hijack.c` `serve()`, `qname_len()`, `DNS_PORT`, `dns_hijack_start()`, `dns_hijack_stop()`
 
 #### Scenario: Phone probes a portal host
-- **WHEN** a station on the set-up network asks for the A record of any name
+- **WHEN** a station on the setup network asks for the A record of any name
 - **THEN** the reply SHALL give 192.168.4.1 with TTL 60
 
 #### Scenario: AAAA query
 - **WHEN** the query type is not A
 - **THEN** the reply SHALL have no error and zero answers
 
+#### Scenario: Port 53 not yet free
+- **WHEN** `bind()` on UDP port 53 fails
+- **THEN** the server SHALL wait 1 s and try again
+
 #### Scenario: Stopping
-- **WHEN** the set-up access point stops
+- **WHEN** the setup access point stops
 - **THEN** the DNS server SHALL close its socket within its 1 s receive timeout
 
-### Requirement: Set-up network sockets identified fail-closed
-The bridge MUST treat a connection as coming over the set-up network when the access point is running and the
+### Requirement: Setup network sockets identified fail-closed
+The bridge MUST treat a connection as coming over the setup network when the access point is running and the
 socket's local IPv4 address (or IPv4-mapped IPv6 address) is the access point's. If the local or AP address cannot be
-read while the access point runs, it SHALL treat the connection as on the set-up network.
+read while the access point runs, it SHALL treat the connection as on the setup network.
 
 **Source**: `firmware/main/wifi_prov.c` `wifi_prov_sock_on_ap()`; `firmware/main/web.c` `on_ap()`
 
 #### Scenario: Native IPv6 client
 - **WHEN** the access point is up and a client connects over a native IPv6 address
-- **THEN** the connection SHALL NOT count as on the set-up network
+- **THEN** the connection SHALL NOT count as on the setup network
 
-### Requirement: Set-up network gets only the set-up page
-For a request over the set-up network, the web server SHALL serve the set-up page at `GET /`, accept `POST /save` and
-serve the icon routes. Every other registered route and any unknown URL MUST answer `302 Found` with `Location:
-http://192.168.4.1/`, except `POST /pstprnt`, which SHALL answer `403 Forbidden`. Raw print connections on port 9100
-from the set-up network MUST be closed.
-
-**Source**: `firmware/main/web.c` `root_get()`, `to_setup_page()`, `AP_HOME`, `not_found()`, `pstprnt_post()`, `web_start()`; `firmware/main/bridge.c` `wifi_prov_sock_on_ap(sock)`
-
-#### Scenario: Captive portal probe
-- **WHEN** a phone on the set-up network requests `GET /generate_204`
-- **THEN** the bridge SHALL answer `302 Found` to `http://192.168.4.1/`
-
-#### Scenario: Status API from the set-up network
-- **WHEN** a client on the set-up network requests `GET /api/status`
-- **THEN** the bridge SHALL redirect it to the set-up page
-
-#### Scenario: Print over the set-up network
-- **WHEN** a client on the set-up network connects to TCP port 9100
-- **THEN** the bridge SHALL close the connection
-
-### Requirement: Set-up page content
-The set-up page SHALL offer a list of scanned network names (hidden and duplicate names left out, strongest first, each
+### Requirement: Setup page content
+The setup page SHALL offer a list of scanned network names (hidden and duplicate names left out, strongest first, each
 with its RSSI in dBm), a typed network name of up to 32 characters, a password of up to 64 characters, and a "Scan
 again" link to `/?rescan=1`. It MUST reuse a scan under 60 s old unless the query asks to rescan.
 
 **Source**: `firmware/main/web.c` `send_setup_page()`, `send_ssid_options()`, `wifi_scan_cached()`, `SCAN_MAX_AGE_US`, `MAX_SCAN`
 
 #### Scenario: Several captive probes
-- **WHEN** a phone loads the set-up page several times within 60 s
+- **WHEN** a phone loads the setup page several times within 60 s
 - **THEN** the bridge SHALL scan only for the first load
 
-### Requirement: Saving a network from the set-up page
+### Requirement: Saving a network from the setup page
 `POST /save` SHALL take the typed name over the listed one, refuse an empty name or a password of 1 to 7 characters with
 `400 Bad Request`, answer `500 Internal Server Error` if saving fails, and otherwise save the SSID and password and
-restart the bridge 1.5 s later. It MUST also pass the cross-site check.
+restart the bridge 1.5 s later. It MUST pass the cross-site check, and is accepted on any network: there is no
+setup-network gate, so a client on the station network can also save a network.
 
 **Source**: `firmware/main/web.c` `save_post()`, `restart_soon()`, `same_origin()`; `firmware/main/settings.c` `settings_set_wifi()`
 
 #### Scenario: Short password
 - **WHEN** the form has password `abc`
 - **THEN** the bridge SHALL answer `400 Bad Request` with "WPA passwords are at least 8 characters."
+
+#### Scenario: Saved from the station network
+- **WHEN** a client on the station network posts `/save` with no Origin or Referer and an allowed Host
+- **THEN** the bridge SHALL save the network and restart
 
 #### Scenario: Network saved
 - **WHEN** the form names a network and a valid password
@@ -182,7 +172,7 @@ restart the bridge 1.5 s later. It MUST also pass the cross-site check.
 `POST /wifi_join` SHALL start a join trial when the station is connected and no trial is running, then answer `303 See
 Other` to `/`. It MUST answer `400 Bad Request` for an empty network name, a 1 to 7 character password or a name or
 password `wifi_prov_join()` rejects as too long, and `409 Conflict` when a trial is running or the station is not
-connected. From the set-up network it SHALL redirect to the set-up page.
+connected. From the setup network it SHALL redirect to the setup page.
 
 **Source**: `firmware/main/web.c` `wifi_join_post()`, `redirect_to()`; `firmware/main/wifi_prov.c` `wifi_prov_join()`
 
@@ -193,7 +183,7 @@ connected. From the set-up network it SHALL redirect to the set-up page.
 ### Requirement: Join trial with fallback to the saved network
 About 1 s after a join is accepted, the station SHALL leave its network for the new one. If it gets an IPv4 address
 within 30 s, the bridge MUST save the new SSID and password and report joined. Otherwise it SHALL report failed,
-reconnect to the saved network and restart the 60 s set-up fallback window.
+reconnect to the saved network and restart the 60 s setup fallback window.
 
 **Source**: `firmware/main/wifi_prov.c` `JOIN_SWITCH_MS`, `JOIN_TRIAL_MS`, `join_switch_cb()`, `join_trial_cb()`, `join_got_ip()`
 
@@ -220,13 +210,13 @@ network".
 
 ### Requirement: Forget Wi-Fi
 `POST /forget` from the station network SHALL clear the saved SSID and password and restart the bridge 1.5 s later, so
-it comes up in set-up mode. It MUST pass the cross-site check, and SHALL NOT clear the hostname or static address.
+it comes up in setup mode. It MUST pass the cross-site check, and SHALL NOT clear the hostname or static address.
 
 **Source**: `firmware/main/web.c` `forget_post()`, `restart_soon()`; `firmware/main/settings.c` `settings_clear_wifi()`
 
 #### Scenario: Forget from the Bridge page
 - **WHEN** a client on the station network posts `/forget`
-- **THEN** the bridge SHALL erase the `ssid` and `pass` keys and restart into the set-up access point
+- **THEN** the bridge SHALL erase the `ssid` and `pass` keys and restart into the setup access point
 
 ### Requirement: Hostname
 The bridge SHALL use the saved hostname, default `zebserial`, as its DHCP hostname. A hostname MUST be 1 to 32
@@ -256,7 +246,7 @@ zeros, 4 parts).
 
 **Source**: `firmware/main/netcfg.c` `netcfg_static_valid()`, `netcfg_ipv4_parse()`
 
-#### Scenario: Clash with the set-up subnet
+#### Scenario: Clash with the setup subnet
 - **WHEN** the static address 192.168.4.20 is submitted
 - **THEN** it SHALL be rejected
 
@@ -273,3 +263,8 @@ from `CONFIG_LWIP_IPV6_AUTOCONFIG`. Up to 3 station IPv6 addresses SHALL be repo
 #### Scenario: Connected to a router with IPv6
 - **WHEN** the station is connected
 - **THEN** `/api/status` `wifi.ip6` SHALL list at most 3 addresses
+
+## Notes
+
+Routing of requests that arrive over the setup network is specified in web-ui (Setup access point routing); the
+refusal of port 9100 connections from it in print-bridge; the 403 for `/pstprnt` in http-print.

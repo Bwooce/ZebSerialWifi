@@ -381,6 +381,28 @@ These are built into the geometry, not parameters. A module that breaks one need
 - Joint-zone sizes in `wire_zones()` (0.9 mm in front of and 2.6 mm behind a pad edge, 3 mm above the XIAO top), the
   diode's anode joint offset (`dio_joint`: 0.6 in, 0.4 up), and the ghost wire routes in `ghost_wires()`.
 
+### Other literals that depend on the module
+
+Found by reading the SCAD on 2026-10-31. None is a parameter; each holds for the HW-044 and may not for another module.
+
+- `skin_y1 = max(y_cf, y_pcb0) + 1.2`: the tray front skin supports the first 1.2 mm of the PCB's solder side, so
+  nothing on the solder side may sit within 1.2 mm of the front edge.
+- The side ledges end 0.5 mm in front of the PCB rear edge (`y_pcb1 - 0.5` in `tray()`), and start 0.05 mm behind the
+  leg-tail keep-out plus the pin play (`ledge_y0`).
+- The DB9 lugs are drawn from the body side out to the full PCB width (`box(body_w / 2, board_w / 2, ...)` in
+  `ghost_db9()`): a module whose lugs stop short, or overhang the PCB, needs that ghost changed.
+- `leg_boss_top = -pcb_t - 0.2` (only with `leg_pocket_on`).
+- The coupon floor cut-out keeps `ledge_w + 1.5` at the sides, 3 mm behind `skin_y1` and 1.5 mm in front of the pin
+  bosses (`part == "coupon_tray"`): with other hole positions the cut can reach the bosses.
+- `check_lid_path` sweeps the parts 30 mm down; a part taller than that above the floor would not be swept fully.
+- Header pins in the ghost wire routes sit at `-hdr_hw + 1.27 + i * 2.54` (`ghost_wires()`), the same one-row,
+  2.54 mm-pitch assumption as the housing.
+
+XIAO- and case-side literals (they move only if the XIAO or the style changes): the front wall joint relief is 0.8 mm
+deep and runs to `zx1 + 3.3`; the shield stop block keeps 0.3 mm from the D3 joint zone and the corridor; the stop rib
+and web reach 0.6 mm below the XIAO; the pressers root 0.5 mm into the lid walls; the snap hook is 1.4 mm tall
+(`lc_hook_top`); the tongue width uses `clip_clr / 2`; the gusset keeps 1.2 mm square to the chamfer.
+
 ### RS-232 module parameters
 
 | Group (SCAD heading) | Parameters | Current value and provenance |
@@ -456,14 +478,24 @@ DB9 values were measured on the earlier YL-97 module and assumed for the HW-044;
 were estimated from photos. `enclosure/reference/` is gitignored and holds only
 datasheets and the Seeed CAD files, not measurements.
 
-1. PCB width, depth and thickness; whether its front edge is flush with the flange front face (`pcb_front_y`).
-2. Mounting holes: diameter, number and positions. The model supports two holes at the rear corners only.
+1. PCB width `board_w`, depth `board_d` and thickness `pcb_t`; whether its front edge is flush with the flange front
+   face (`pcb_front_y`).
+2. Mounting holes: diameter `mh_d`, centre-to-centre pitch along X `mh_pitch`, rear PCB edge to the hole centres
+   `mh_inset`. The model supports two holes at the rear corners only.
 3. DB9 flange: width, height, steel thickness, screw-hole pitch, flange bottom height relative to the PCB top.
-4. Depth from the flange front face to the back of the plate the lid front wall will bear on (`fl_plate_d`).
+4. Depth from the flange front face to the back of the plate the lid front wall will bear on (`fl_plate_d`). Measure
+   with the caliper depth rod from the flange front face, beside the D-shell, to the rear face of the plate at the
+   screw holes (the current 5.1 was taken that way on the YL-97: "the back of the flange plate screw holes").
 5. D-shell width, height and projection; rear body width, height and depth; any step behind the flange; side lugs.
-6. Board-lock leg tails under the PCB: position, shape and protrusion. Tallest solder-side pin or fillet (`below_clear`).
-7. Header: pin count, row position from the rear edge, X offset (the model assumes centred), pin height; Dupont
-   housing top above the PCB and the wire turning space the plug needs.
+6. Board-lock leg tails under the PCB: position (`leg_y` from the flange front face to the tail centre, `lug_hole_x`
+   from the PCB centre line), shape (`leg_w`, `leg_t`) and protrusion below the PCB (`leg_tail_l`). Measure on the
+   solder side: Y with the caliper depth rod from the flange front face, X as half the outside-to-outside distance
+   between the two tails less half a tail width. Tallest solder-side pin or fillet (`below_clear`).
+7. Header: pin count `hdr_pins`, row position from the rear edge `hdr_row_in`, X offset (the model assumes centred),
+   pin height `hdr_h`; Dupont housing top above the PCB `dupont_top`. For the wire turning space
+   (`dupont_ceiling_min`), plug the housing on with the real wires, bend them over towards the XIAO as they will lie,
+   and measure the highest point of the bend from the PCB underside; subtract `pcb_t` (the current 23.4 is the
+   user's 25 mm from the underside less 1.6).
 8. Pin 9 pad position on the solder side; the jack screw hardware actually fitted (tail and nut size, length).
 9. Anything on the component side near the rear corners (the pressers come 0.25 mm above the PCB there) and on
    the solder side within 2.2 mm of a hole centre (the pin bosses).
@@ -471,15 +503,54 @@ datasheets and the Seeed CAD files, not measurements.
 
 ### Regeneration procedure
 
+0. Decide whether parameters are enough. If the new module has mounting holes at the front or off the rear corners,
+   holes or a DB9 off the X centre line, a two-row or offset header, or a flange whose bottom is not level with the PCB
+   top, stop: the shape needs a SCAD edit first (see "Where the model leaves the module's shape to assumptions" and
+   "Other literals that depend on the module" above), and that edit is a design change, not a regeneration.
 1. Edit only the parameters in `enclosure/zebserial_case.scad` (and comments recording provenance). Mark every
    value that was not measured on the new part.
-2. Run `./enclosure/build.sh` (needs OpenSCAD with the manifold backend at `/opt/homebrew/bin/openscad`, or set
-   `OPENSCAD`; python3 with numpy for `wallprobe.py`). About 20 s on 2026-10-31. It must end "build: all gates passed".
+2. Run `./enclosure/build.sh` (needs OpenSCAD with the manifold backend at `/opt/homebrew/bin/openscad`, or set the
+   `OPENSCAD` environment variable, which both scripts read as `OSC=${OPENSCAD:-/opt/homebrew/bin/openscad}`; the
+   enclosure README does not mention it; python3 with numpy for `wallprobe.py`). About 20 s on 2026-10-31. It must end "build: all gates passed".
    Extra `-D` overrides apply to every call, for trying a value before committing it.
 3. Read the `ECHO: "ZEBCASE ..."` lines: any `ZEBCASE WARNING:` (except the "(check)" note on the joints) is a
    failure the script does not catch.
 4. Run `./enclosure/controls.sh` (about 50 s). It must end "controls: 0 failed". Recalibrate any control whose
-   clearance moved, and the hard-coded positions listed above.
+   clearance moved, and the hard-coded positions listed above, as in the next section.
 5. Look at the renders (`renders/*.png`) for ghost-to-ghost clashes, which no check sees.
 6. Commit the SCAD, `out/*.stl` and `renders/*.png` together, and update `enclosure/README.md`.
 7. Re-slice through `print/` (see the slicing-and-printing spec), print the coupons first, then the case.
+
+### Recalibrating a control
+
+Each control moves one ghost by an offset chosen to sit just inside (want none) or just outside (want hit) one
+clearance. When a module change moves that clearance, the control fails. For each failed line:
+
+1. Find the clearance it tests: the comment above the `ctl` line names it, and the table below gives the parameter or
+   `ZEBCASE` echo that holds its new value.
+2. For a "hit" control, set the offset to the new clearance plus 0.1 mm. For a "none" control, set it to the new
+   clearance less 0.05 mm (or half the clearance, if that is under 0.1 mm).
+3. Re-run the control alone (`openscad -D 'part="check_lid"' -D ...` as in `ctl()`) and run
+   `python3 enclosure/stlinfo.py --components` on the output to see where it hits; a hit must be on the feature the
+   comment names, not elsewhere.
+4. Update the control's comment with the new clearance, and the README's control table.
+
+| Controls | Clearance | Where its value comes from |
+|---|---|---|
+| board fwd / back, plate deeper, rev 2 lid | `lip_gap` in front; 0 to the lid front wall; `bs_clr` to the backstop | parameters; echo "ZEBCASE LIPS" |
+| holes X / Y | `mh_pin_clr` (X), `mh_pin_clr_y` (Y) | parameters; echo "ZEBCASE CORNER PINS" |
+| board +X / -X | `pcb_clr` to the side walls and `mh_pin_clr` | parameters |
+| leg keep-out X / Y | distance from the keep-out to the ledges (Y) and side wall (X) | echo "ZEBCASE leg-tail keep-out" (keep-out span and "ledges from Y") |
+| pcb up | `press_gap` | parameter; echo "ZEBCASE CORNER PINS" ("pressers ... above the PCB") |
+| xiao up / down / X / Y | `xpad_gap`, `usb_clr`, `tongue_gap`, `pcb_clr`, `shield_stop_clr` | parameters; echo "ZEBCASE SUPPORT XIAO" |
+| corridor zone wider | gap from the corridor to the USB pad and shield stop block (0.3 mm in `xiao_pads()`) | echo "ZEBCASE SUPPORT XIAO" (corridor and stop block spans) |
+| rear zones +X / -X | gap from the rear joint zones to the shield stop block (0.3 mm) and to the stop rib | echo "ZEBCASE PADS" (rear joints) against "ZEBCASE SUPPORT XIAO" (stop rib, shield stop) |
+| diode -Y / +Y | gap from the diode keep-out to the shield stop block and the rear wall | echo "ZEBCASE DIODE" against "ZEBCASE SUPPORT XIAO" and "ZEBCASE DUPONT" (interior rear face) |
+| dupont X / Y / up | gap from the housing and bend zone to the stop rib, block, rear wall and ceiling | echo "ZEBCASE DUPONT" |
+| pin 9 wire | floor gap under the joint; the notch is exactly `wire_pass` wide | echo "ZEBCASE PIN 9 WIRE" |
+| jack hardware | `jack_clr` above; the lid side wall beside it | parameters; echo "ZEBCASE JACK HARDWARE" |
+| lid up | `lc_win_up` | parameter |
+| logo | `logo_min` at `logo_w` | parameters |
+
+The volumes `check_*` report for a hit are a second guide: a hit of a few mm3 where the README's table lists tens means
+the control now only grazes the feature.

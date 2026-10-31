@@ -30,8 +30,8 @@ or `_ipp`.
 
 ### Requirement: Instance name
 Both services and the default mDNS instance SHALL be named `Zebra <model> (<hostname>)`, with the model cut to its
-first 22 characters, once a model is known (saved or reported). With no model known it MUST be `ZebSerial
-(<hostname>)`.
+first 22 characters, once a model is known (saved or reported); the whole name SHALL be cut to 63 bytes (a 64-byte
+buffer). With no model known it MUST be `ZebSerial (<hostname>)`.
 
 **Source**: `firmware/main/main.c` `mdns_setup()`, `mdns_set_model()` (`"Zebra %.22s (%s)"`, `"ZebSerial (%s)"`), `mdns_instance_name_set()`, `mdns_service_instance_name_set()`
 
@@ -46,9 +46,9 @@ first 22 characters, once a model is known (saved or reported). With no model kn
 ### Requirement: Printer TXT records
 The `_pdl-datastream._tcp` service SHALL carry TXT `txtvers=1`, `qtotal=1`, `ty=Zebra <model>` (or `Zebra ZPL Printer`
 with no model), `product=(ZPL Label Printer)`, `usb_MFG=Zebra`, `usb_MDL=<model>` (or `ZPL Printer` with no model)
-and `adminurl=http://<hostname>.local/`.
+and `adminurl=http://<hostname>.local/`. When the model is updated, `ty` SHALL be cut to 47 bytes (a 48-byte buffer).
 
-**Source**: `firmware/main/main.c` `mdns_setup()` `txt[]`, `ZPL_PPD_PRODUCT`
+**Source**: `firmware/main/main.c` `mdns_setup()` `txt[]`, `ZPL_PPD_PRODUCT`, `mdns_set_model()` (`char ty[48]`, `char instance[64]`)
 
 #### Scenario: macOS driver match
 - **WHEN** macOS reads the TXT records

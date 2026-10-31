@@ -57,10 +57,10 @@ address cannot be read. Such a connection SHALL NOT change the statistics.
 ### Requirement: Printer link lock shared with detection, polling and HTTP jobs
 The bridge SHALL hold the printer link mutex (`printer_link_acquire`) for the whole of each session. A port 9100
 client MUST wait up to 60 s (`ACQUIRE_WAIT_MS`) for it and is closed unserved if it stays busy. The same mutex is
-taken by detection and `~HS` polling, configuration reads, ZPL commands from the web pages, pin changes and HTTP jobs,
+taken by detection and `~HS` polling, configuration reads, ZPL commands from the web pages and HTTP jobs,
 so none of them runs during a session.
 
-**Source**: `firmware/main/bridge.c` `listen_task()`, `ACQUIRE_WAIT_MS`; `firmware/main/printer_link.c` `printer_link_acquire()`, `link_task()`, `printer_link_set_pins()`, `printer_link_refresh_config()`, `printer_link_send_zpl()`
+**Source**: `firmware/main/bridge.c` `listen_task()`, `ACQUIRE_WAIT_MS`; `firmware/main/printer_link.c` `printer_link_acquire()`, `link_task()`, `printer_link_refresh_config()`, `printer_link_send_zpl()`
 
 #### Scenario: Link busy for longer than 60 s
 - **GIVEN** another holder keeps the printer link for more than 60 s
@@ -232,7 +232,7 @@ discards stale input, counts the session, records the caller's client address an
 ### Requirement: bridge_send_job stall and sender loss
 `bridge_send_job()` SHALL return `ESP_ERR_TIMEOUT` when no byte could be queued for longer than the caller's
 `stall_ms`, measured from the last successful write and covering the final drain; it then counts `aborted` and
-discards queued output. If the read callback returns below 0 it MUST return `ESP_FAIL` after letting what arrived drain.
+discards queued output. If the read callback returns below 0 it MUST return `ESP_FAIL` after letting what arrived drain, unless the drain stalls, when it returns `ESP_ERR_TIMEOUT`.
 
 **Source**: `firmware/main/bridge.c` `bridge_send_job()`
 
