@@ -61,20 +61,19 @@ jobs:
         with:
           fetch-depth: 0 # the app version comes from git describe
       - run: git config --global --add safe.directory '*'
-      # component manager downloads and ccache, inside the workspace (the container sees it at $GITHUB_WORKSPACE)
+      # component manager downloads, inside the workspace (the container sees it at $GITHUB_WORKSPACE); ccache was
+      # tried and got no hits between runs, so each run builds in full (about 2 min)
       - uses: actions/cache@v6
         with:
           path: .cache
-          key: idf-v6.1-${{ hashFiles('firmware/dependencies.lock') }}-${{ github.sha }}
-          restore-keys: idf-v6.1-${{ hashFiles('firmware/dependencies.lock') }}-
+          key: idf-components-${{ hashFiles('firmware/dependencies.lock') }}
       - name: idf.py build
         shell: bash
         run: |
-          export IDF_COMPONENT_CACHE_PATH="$GITHUB_WORKSPACE/.cache/components" CCACHE_DIR="$GITHUB_WORKSPACE/.cache/ccache"
+          export IDF_COMPONENT_CACHE_PATH="$GITHUB_WORKSPACE/.cache/components"
           . "$IDF_PATH/export.sh" > /dev/null
           cd firmware
           idf.py build 2>&1 | tee build.log
-          ccache -s | grep -iE 'hits|misses' || true
           # -Werror already fails on a compiler warning; this also catches one ESP-IDF leaves as a warning
           if grep -E '(^|[^-])[Ww]arning:' build.log; then echo "::error::the build printed warnings"; exit 1; fi
       - name: App image size
