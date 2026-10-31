@@ -332,13 +332,24 @@ dot count shown live as the user types. Without a resolution they MUST fall back
 ### Requirement: True dots per millimetre
 The bridge SHALL convert mm and dots with the true head pitch: a reported 12 dots/mm is 300/25.4 and 24 dots/mm is
 600/25.4 dots per mm; any other positive figure is used as reported. mm to dots MUST round to the nearest dot either
-side of zero. The dpi for 8, 12 and 24 dots/mm is 203, 300 and 600. Three places do not yet follow this (see Known deviations).
+side of zero. The dpi for 8, 12 and 24 dots/mm is 203, 300 and 600. The Status page and the Printer form SHALL show
+the same mm for the same dot count.
 
-**Source**: `firmware/main/zpl_units.h` `zpl_true_dpmm()`, `zpl_mm_to_dots()`, `zpl_dots_to_mm()`, `zpl_dpi()`
+**Source**: `firmware/main/zpl_units.h` `zpl_true_dpmm()`, `zpl_mm_to_dots()`, `zpl_dots_to_mm()`, `zpl_dpi()`;
+`firmware/main/web.c` STATUS_SCRIPT `tdm()`, `val()`; `firmware/main/zpl_status.c` `decode_field()` MAXIMUM LENGTH
 
 #### Scenario: 4 inch label at 300 dpi
 - **WHEN** 101.6 mm is converted at a reported 12 dots/mm
 - **THEN** the result SHALL be 1200 dots
+
+#### Scenario: Same length on both pages
+- **WHEN** the label length is 237 dots at a reported 12 dots/mm
+- **THEN** the Status page and the Printer form SHALL both show 20.1 mm
+
+#### Scenario: Maximum length in true mm
+- **GIVEN** the printer converts its own mm figures (`^HH` MAXIMUM LENGTH, `^MUm`) with the rounded dots/mm
+- **WHEN** the printer reports MAXIMUM LENGTH "2.0IN   50MM" at 12 dots/mm
+- **THEN** the bridge SHALL decode it to 600 dots and show 50.8 mm, the physical length of `^ML600`
 
 ### Requirement: Applying the printer settings form
 `POST /printer_config` SHALL need a configuration reading, else reply 500 "The printer's current settings could not be
@@ -490,7 +501,7 @@ room allows, up to 300 mm.
 
 #### Scenario: Smallest label
 - **WHEN** `w=10` and `l=10` are posted for a 300 dpi printer
-- **THEN** the bridge SHALL print a 10 x 10 mm test label (it currently replies 500; see Known deviations)
+- **THEN** the bridge SHALL print a 10 x 10 mm test label
 
 ### Requirement: Test label edge scales
 In both top corners the test label SHALL draw ticks from each side edge at 0 to 4 mm in 0.5 mm steps (true mm), at
@@ -650,13 +661,4 @@ LENGTH, `tear_off` TEAR OFF, `label_top` LABEL TOP, `left_pos` LEFT POSITION, `p
 HEAD CLOSE, `backfeed` BACKFEED, `early_warning` EARLY WARNING.
 
 ### Known deviations
-
-- Lengths on the Status page: `val()` converts a dot count the printer form changes to mm with the rounded dots/mm
-  `D` (`len(c/D)`, `firmware/main/web.c:451`), not the true pitch, so at 300 dpi the Status page and the Printer form
-  show different mm for the same setting.
-- MAXIMUM LENGTH is decoded from the printer's mm figure with the rounded dots/mm (`zpl_status.c:662-681`,
-  `*out = t * cfg->dpmm`, which matches how the printer converts) but shown with the true pitch, so it reads about
-  1.6 % long at 300 dpi (975 mm shows as about 990.6 mm).
-- Smallest test label: `test_label_zpl()` refuses a width or length under `10 * m` dots (`test_label.c:67`), but
-  10 mm at 300 dpi is 118 dots, so a 10 mm label passes the form check and then gets 500 "Could not build the test
-  label." (See Printing the test label.)
+None. The last ones were fixed in the change archived as `2026-10-31-fix-known-deviations`.

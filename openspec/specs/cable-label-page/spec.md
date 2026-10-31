@@ -231,11 +231,13 @@ address is right." with the macOS Local Network access hint, mark the printer do
 - **THEN** the page SHALL show the "Couldn't reach" message with the System Settings, Privacy & Security, Local Network hint
 
 ### Requirement: Bridge address and connection test
-The Printer settings SHALL hold the bridge address (an empty value falls back to `zebserial.local`), a "Test
-connection" button that fetches `http://<address>/` in no-cors mode with an 8 s limit, and a link to
-`http://<address>/printer`.
+The Printer settings SHALL hold the bridge address, a "Test connection" button that fetches `http://<address>/` in
+no-cors mode with an 8 s limit, and a link to `http://<address>/printer`. The Address field SHALL stay as typed
+while it is edited, including empty; an empty address SHALL mean `zebserial.local` wherever the address is used,
+and the field SHALL show `zebserial.local` again when it is left empty.
 
-**Source**: `tools/cable-labels.html` `#ip`, settings input handler, `#testConn` handler, `#openBridge` handler
+**Source**: `tools/cable-labels.html` `#ip`, `addr()`, settings input and change handlers, `#testConn` handler,
+`#openBridge` handler
 
 #### Scenario: Bridge answers
 - **WHEN** the test fetch completes within 8 s
@@ -245,6 +247,14 @@ connection" button that fetches `http://<address>/` in no-cors mode with an 8 s 
 - **WHEN** the test fetch fails or takes longer than 8 s
 - **THEN** the page SHALL show "No answer from <address>."
 
+#### Scenario: Retyping the address
+- **WHEN** the user clears the Address field and types `192.168.1.139`
+- **THEN** the field SHALL show what was typed at each step, and prints SHALL go to `192.168.1.139`
+
+#### Scenario: Address left empty
+- **WHEN** the user clears the Address field and moves to another field
+- **THEN** the field SHALL show `zebserial.local` and prints SHALL go there
+
 ## Notes
 - The `min` attributes on the number inputs are not enforced: any finite number is accepted. The real limits are the
   5 x 3 mm text box check, the fit check and quantity at least 1.
@@ -253,7 +263,4 @@ connection" button that fetches `http://<address>/` in no-cors mode with an 8 s 
 - Left-right position is not set by the page; it is the printer's Left Position, set on the bridge's Printer page.
 
 ### Known deviations
-
-- The Address field cannot be cleared and retyped: an empty value is replaced by `zebserial.local` at once
-  (`tools/cable-labels.html:753` stores the default, and `syncSettings()` at line 745 writes it back into the field).
-  The page will be fixed.
+None. The last ones were fixed in the change archived as `2026-10-31-fix-known-deviations`.

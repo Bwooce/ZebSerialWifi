@@ -8,18 +8,24 @@ way Zebra's own network printers take one, so a web page from any site can print
 ## Requirements
 
 ### Requirement: Route and method
-The bridge SHALL register `/pstprnt` for POST. Other methods, including an OPTIONS preflight, currently get the
-server's 405 with no CORS headers, so only requests that need no preflight work from a browser.
+The bridge SHALL register `/pstprnt` for POST and OPTIONS. An OPTIONS request SHALL get 204 with no body and the
+headers `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: POST, OPTIONS`,
+`Access-Control-Allow-Headers: Content-Type`, `Access-Control-Allow-Private-Network: true` and
+`Access-Control-Max-Age: 600`, and SHALL NOT touch the printer link. Other methods get the server's 405.
 
-**Source**: `firmware/main/web.c` `web_start()` (`"/pstprnt"`, `HTTP_POST`, `pstprnt_post`)
+**Source**: `firmware/main/web.c` `web_start()` (`"/pstprnt"`, `HTTP_POST` and `HTTP_OPTIONS`), `pstprnt_options()`
 
 #### Scenario: GET request
 - **WHEN** a client sends `GET /pstprnt`
 - **THEN** the bridge SHALL reply 405 and send nothing to the printer
 
 #### Scenario: CORS preflight
-- **WHEN** a browser sends `OPTIONS /pstprnt` as a preflight
-- **THEN** the reply is currently 405 without CORS headers, so the browser does not send the POST (see Known deviations)
+- **WHEN** a browser sends `OPTIONS /pstprnt` as a preflight for a POST with `Content-Type: application/json`
+- **THEN** the bridge SHALL reply 204 with the CORS headers above, and the browser then sends the POST
+
+#### Scenario: Chrome private network preflight
+- **WHEN** the preflight carries `Access-Control-Request-Private-Network: true`
+- **THEN** the reply SHALL carry `Access-Control-Allow-Private-Network: true`
 
 ### Requirement: Any-origin access without Host or CSRF checks
 The `/pstprnt` handler SHALL NOT call `host_allowed()` or `same_origin()`: it MUST accept a POST whatever its Host,
@@ -161,7 +167,4 @@ log the client address, bytes sent of the content length, elapsed time and resul
 All handler replies are `text/plain` with `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`.
 
 ### Known deviations
-
-- No OPTIONS handler for `/pstprnt`, so a CORS preflight gets the HTTP server's 405 with no CORS headers and a
-  browser request that needs a preflight cannot print (`firmware/main/web.c:1950` registers POST only; ESP-IDF
-  `components/esp_http_server/src/httpd_uri.c:119` sends the 405).
+None. The last ones were fixed in the change archived as `2026-10-31-fix-known-deviations`.
