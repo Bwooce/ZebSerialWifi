@@ -18,6 +18,8 @@ static const char *TAG = "bridge";
 #define BACKLOG 4
 /* A full detect cycle (baud scan, ^HH dump, ^SC and rescan) can hold the link for 20 s or more */
 #define ACQUIRE_WAIT_MS 60000
+/* An HTTP job holds the web server while it waits, so it gives up sooner */
+#define HTTP_ACQUIRE_WAIT_MS 15000
 /*
  * A printer out of paper or ribbon, or with the head up, holds XOFF until
  * someone fixes it, so a stall alone is no reason to drop the job. The job is
@@ -29,7 +31,7 @@ static const char *TAG = "bridge";
 #define KEEPALIVE_INTVL_S 5
 #define KEEPALIVE_COUNT 3
 
-/* Written only by the bridge task; the web server copies it under s_stats_mux (64-bit fields tear otherwise) */
+/* Written by the bridge task and by bridge_send_job (web server), always under s_stats_mux (64-bit fields tear otherwise) */
 static bridge_stats_t s_stats;
 static portMUX_TYPE s_stats_mux = portMUX_INITIALIZER_UNLOCKED;
 #define STATS_UPDATE(stmt) do { taskENTER_CRITICAL(&s_stats_mux); stmt; taskEXIT_CRITICAL(&s_stats_mux); } while (0)
@@ -289,6 +291,75 @@ static void listen_task(void *arg)
 void bridge_start(void)
 {
     xTaskCreate(listen_task, "bridge", 6144, NULL, 6, NULL);
+}
+
+/* Drop what the printer says during a job nobody can read the replies of, so the RX ring cannot fill */
+static void drop_replies(TickType_t wait)
+{
+    uint8_t junk[64];
+    int n = printer_link_read(junk, sizeof(junk), wait);
+    if (n > 0) {
+        STATS_UPDATE(s_stats.bytes_from_printer += (uint64_t)n);
+    }
+}
+
+esp_err_t bridge_send_job(const char *client_ip, bridge_read_fn read, void *ctx, uint32_t stall_ms, size_t *sent)
+{
+    *sent = 0;
+    if (!printer_link_acquire(pdMS_TO_TICKS(HTTP_ACQUIRE_WAIT_MS))) {
+        return ESP_ERR_TIMEOUT;
+    }
+    printer_link_discard_input();
+    STATS_UPDATE(strlcpy(s_stats.client_ip, client_ip, sizeof(s_stats.client_ip)); s_stats.sessions++;
+                 s_stats.active = true);
+    esp_err_t err = ESP_OK;
+    uint8_t buf[CHUNK];
+    int64_t last_progress = now_ms();
+    for (;;) {
+        int n = read(ctx, buf, sizeof(buf));
+        if (n == 0) {
+            break;
+        }
+        if (n < 0) {
+            err = ESP_FAIL;  /* the sender went away: let what arrived drain, as for port 9100 */
+            break;
+        }
+        const uint8_t *p = buf;
+        size_t left = (size_t)n;
+        while (left > 0) {
+            int w = printer_link_write(p, left, pdMS_TO_TICKS(100));
+            if (w > 0) {
+                p += w;
+                left -= (size_t)w;
+                *sent += (size_t)w;
+                STATS_UPDATE(s_stats.bytes_to_printer += (uint64_t)w);
+                last_progress = now_ms();
+                board_led_activity();
+            } else if (now_ms() - last_progress > stall_ms) {
+                err = ESP_ERR_TIMEOUT;
+                goto stalled;
+            }
+            drop_replies(0);
+        }
+    }
+    while (!printer_link_tx_idle()) {
+        if (now_ms() - last_progress > stall_ms) {
+            err = ESP_ERR_TIMEOUT;
+            goto stalled;
+        }
+        drop_replies(pdMS_TO_TICKS(50));
+    }
+    goto done;
+stalled:
+    ESP_LOGW(TAG, "printer paused (XOFF) for %u s, discarding the rest of the job from %s", (unsigned)(stall_ms / 1000),
+             client_ip);
+    STATS_UPDATE(s_stats.aborted++);
+    printer_link_abort_tx();
+done:
+    STATS_UPDATE(s_stats.active = false);
+    printer_link_release();
+    printer_link_want_status();
+    return err;
 }
 
 void bridge_get_stats(bridge_stats_t *out)

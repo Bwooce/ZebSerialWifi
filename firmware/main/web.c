@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "lwip/sockets.h"
 #include "netcfg.h"
 #include "ota.h"
 #include "printer_link.h"
@@ -1680,6 +1681,92 @@ static esp_err_t printer_test_post(httpd_req_t *req)
 }
 
 /* POST /update: a new app image as the raw body (see ota_receive); restarts into it. */
+/*
+ * POST /pstprnt: the request body goes to the printer as a print job, the
+ * way Zebra's own network printers take one. It is open to pages from any
+ * site (no Host or Origin check, and Access-Control-Allow-Origin: *), so a
+ * label page saved on a computer can print; that is no more than port 9100
+ * already allows anyone on the network. Not on the setup AP.
+ */
+#define PSTPRNT_STALL_MS 30000   /* the web server waits for the job, so a paused printer drops it after this */
+
+typedef struct {
+    httpd_req_t *req;
+    size_t left;
+} pstprnt_body_t;
+
+static int pstprnt_read(void *ctx, uint8_t *buf, size_t n)
+{
+    pstprnt_body_t *b = ctx;
+    if (b->left == 0) {
+        return 0;
+    }
+    for (int tries = 0; tries < 3; tries++) {
+        int r = httpd_req_recv(b->req, (char *)buf, n < b->left ? n : b->left);
+        if (r > 0) {
+            b->left -= (size_t)r;
+            return r;
+        }
+        if (r != HTTPD_SOCK_ERR_TIMEOUT) {
+            break;
+        }
+    }
+    return -1;
+}
+
+static esp_err_t pstprnt_reply(httpd_req_t *req, const char *status, const char *text)
+{
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, text);
+}
+
+static esp_err_t pstprnt_post(httpd_req_t *req)
+{
+    if (on_ap(req)) {
+        return pstprnt_reply(req, "403 Forbidden", "Printing is not available on the setup network.\n");
+    }
+    if (req->content_len == 0) {
+        return pstprnt_reply(req, "400 Bad Request", "Send the print job (ZPL) as the request body.\n");
+    }
+    char ip[46] = "?";
+    struct sockaddr_in6 peer;
+    socklen_t plen = sizeof(peer);
+    if (getpeername(httpd_req_to_sockfd(req), (struct sockaddr *)&peer, &plen) == 0) {
+        if (peer.sin6_family == AF_INET6 && IN6_IS_ADDR_V4MAPPED(&peer.sin6_addr)) {
+            inet_ntop(AF_INET, &peer.sin6_addr.un.u32_addr[3], ip, sizeof(ip));
+        } else if (peer.sin6_family == AF_INET6) {
+            inet_ntop(AF_INET6, &peer.sin6_addr, ip, sizeof(ip));
+        } else {
+            inet_ntop(AF_INET, &((struct sockaddr_in *)&peer)->sin_addr, ip, sizeof(ip));
+        }
+    }
+    pstprnt_body_t body = {.req = req, .left = req->content_len};
+    size_t sent = 0;
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t err = bridge_send_job(ip, pstprnt_read, &body, PSTPRNT_STALL_MS, &sent);
+    ESP_LOGI(TAG, "pstprnt from %s: %u of %u bytes to printer, %lld ms, %s", ip, (unsigned)sent,
+             (unsigned)req->content_len, (long long)((esp_timer_get_time() - t0) / 1000), esp_err_to_name(err));
+    char msg[160];
+    if (err == ESP_OK) {
+        snprintf(msg, sizeof(msg), "Sent %u bytes to the printer.\n", (unsigned)sent);
+        return pstprnt_reply(req, "200 OK", msg);
+    }
+    if (err == ESP_ERR_TIMEOUT && sent == 0) {
+        return pstprnt_reply(req, "503 Service Unavailable", "The printer is busy with another job. Try again.\n");
+    }
+    if (err == ESP_ERR_TIMEOUT) {
+        snprintf(msg, sizeof(msg),
+                 "The printer stopped taking data (paper or ribbon out, or head open?) after %u bytes; "
+                 "the rest of the job was dropped.\n", (unsigned)sent);
+        return pstprnt_reply(req, "504 Gateway Timeout", msg);
+    }
+    /* the sender went away mid-body: nobody is left to read a reply */
+    return ESP_FAIL;
+}
+
 static esp_err_t update_post(httpd_req_t *req)
 {
     if (on_ap(req)) {
@@ -1860,6 +1947,7 @@ void web_start(void)
         {.uri = "/printer_action", .method = HTTP_POST, .handler = printer_action_post},
         {.uri = "/printer_test", .method = HTTP_POST, .handler = printer_test_post},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},
+        {.uri = "/pstprnt", .method = HTTP_POST, .handler = pstprnt_post},
         {.uri = "/boot_other", .method = HTTP_POST, .handler = boot_other_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
