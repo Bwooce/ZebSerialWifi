@@ -1,7 +1,9 @@
 #include "test_label.h"
+#include "zpl_units.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 /* Rulers stop here, so a long label stays inside TEST_LABEL_ZPL_MAX */
 #define RULER_MAX_MM 300
@@ -40,6 +42,15 @@ static void put_text(buf_t *b, const char *s)
     }
 }
 
+/* mm to one decimal place, "101.6" or "100" */
+static void fmt_mm(char *out, size_t len, double mm)
+{
+    int n = snprintf(out, len, "%.1f", mm);
+    if (n >= 2 && (size_t)n < len && strcmp(out + n - 2, ".0") == 0) {
+        out[n - 2] = '\0';
+    }
+}
+
 /* Text at x,y with the scalable font, h dots high */
 static void put_line(buf_t *b, int x, int y, int h, const char *text)
 {
@@ -72,8 +83,9 @@ size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
     /* Rulers: marks every 5 mm measured from the label's own edge, numbered every 10 mm */
     const int tick = m / 6 > 2 ? m / 6 : 2;
     const int num_h = (5 * m) / 2;           /* 2.5 mm digits */
-    for (int mm = 5; mm * m < in_r && mm <= RULER_MAX_MM; mm += 5) {
-        int x = mm * m;
+    /* the marks are at true mm (zpl_units.h); sizes elsewhere only need to be roughly right */
+    for (int mm = 5; zpl_mm_to_dots(mm, m) < in_r && mm <= RULER_MAX_MM; mm += 5) {
+        int x = zpl_mm_to_dots(mm, m);
         if (x - tick / 2 <= in_l) {
             continue;
         }
@@ -85,8 +97,8 @@ size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
             put_line(&b, x + m / 3, in_l + len - num_h, num_h, n);
         }
     }
-    for (int mm = 5; mm * m < in_b && mm <= RULER_MAX_MM; mm += 5) {
-        int y = mm * m;
+    for (int mm = 5; zpl_mm_to_dots(mm, m) < in_b && mm <= RULER_MAX_MM; mm += 5) {
+        int y = zpl_mm_to_dots(mm, m);
         if (y - tick / 2 <= in_l) {
             continue;
         }
@@ -109,14 +121,18 @@ size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
     /* Text: title, then the size and resolution */
     const int title_h = 4 * m;
     const int text_h = 3 * m;
-    const int dpi = m == 8 ? 203 : m == 12 ? 300 : m == 24 ? 600 : m * 254 / 10;
+    const int dpi = zpl_dpi(m);
     char line[96];
+    char wmm[12];
+    char lmm[12];
+    fmt_mm(wmm, sizeof(wmm), zpl_dots_to_mm(w, m));
+    fmt_mm(lmm, sizeof(lmm), zpl_dots_to_mm(l, m));
     if (y + title_h <= bottom) {
         put_line(&b, x0, y, title_h, "ZebSerialWifi test label");
         y += title_h + gap;
     }
-    snprintf(line, sizeof(line), "%s%s%d x %d mm", t->model != NULL && t->model[0] != '\0' ? t->model : "",
-             t->model != NULL && t->model[0] != '\0' ? ", " : "", w / m, l / m);
+    snprintf(line, sizeof(line), "%s%s%s x %s mm", t->model != NULL && t->model[0] != '\0' ? t->model : "",
+             t->model != NULL && t->model[0] != '\0' ? ", " : "", wmm, lmm);
     if (y + text_h <= bottom) {
         put_line(&b, x0, y, text_h, line);
         y += text_h + gap / 2;
@@ -158,7 +174,7 @@ size_t test_label_zpl(const test_label_t *t, char *out, size_t out_len)
     }
 
     /* A 20 mm circle (round if the dpi is right) and a QR code to the bridge */
-    const int circle = 20 * m;
+    const int circle = zpl_mm_to_dots(20, m);
     const int mag = m / 2 > 2 ? m / 2 : 2;
     if (y + circle <= bottom && x0 + circle <= right) {
         put(&b, "^FO%d,%d^GC%d,%d,B^FS", x0, y, circle, tick);

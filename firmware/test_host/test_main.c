@@ -17,6 +17,7 @@
 #include "netcfg.h"
 #include "log_line.h"
 #include "test_label.h"
+#include "zpl_units.h"
 #include "temp_alarm.h"
 #include <stdlib.h>
 
@@ -928,6 +929,21 @@ static int label_fields_inside(const char *zpl, int w, int l)
     return bad;
 }
 
+/* Expected values from the definition of the inch (25.4 mm) and each head's dpi, not from the code */
+static void test_units(void)
+{
+    CHECK(zpl_mm_to_dots(101.6, 12) == 1200);   /* 4 inches at 300 dpi */
+    CHECK(zpl_mm_to_dots(152.4, 12) == 1800);   /* 6 inches */
+    CHECK(zpl_mm_to_dots(101.6, 8) == 813);     /* 812.8 dots at 8 dots/mm (203.2 dpi) */
+    CHECK(zpl_mm_to_dots(25.4, 24) == 600);
+    CHECK(zpl_mm_to_dots(-1.0, 12) == -12);     /* -11.81 rounds away from zero */
+    CHECK(fabs(zpl_dots_to_mm(1280, 12) - 108.373) < 0.001);   /* GX430t head: 1280 / 300 inches */
+    CHECK(fabs(zpl_dots_to_mm(1932, 12) - 163.576) < 0.001);
+    CHECK(fabs(zpl_dots_to_mm(800, 8) - 100.0) < 1e-9);
+    CHECK(zpl_dpi(8) == 203 && zpl_dpi(12) == 300 && zpl_dpi(24) == 600 && zpl_dpi(6) == 152);
+    CHECK(zpl_true_dpmm(0) == 0.0);
+}
+
 static void test_label(void)
 {
     char *out = malloc(TEST_LABEL_ZPL_MAX);
@@ -943,9 +959,10 @@ static void test_label(void)
     CHECK(strstr(out, "^PW1200^LL1800") != NULL);
     CHECK(strstr(out, "^JUS") == NULL);                 /* nothing saved in the printer */
     CHECK(strstr(out, "^FO12,12^GB1176,1776,3^FS") != NULL); /* border 1 mm in */
-    CHECK(strstr(out, "GX430t, 100 x 150 mm") != NULL);
+    CHECK(strstr(out, "GX430t, 101.6 x 152.4 mm") != NULL);
     CHECK(strstr(out, "300 dpi, 1200 x 1800 dots") != NULL);
-    CHECK(strstr(out, "^GC240,") != NULL);              /* 20 mm circle */
+    CHECK(strstr(out, "^GC236,") != NULL);              /* 20 mm circle: 236.2 dots at 300 dpi */
+    CHECK(strstr(out, "^FO1180,15^GB2,36,2^FS") != NULL); /* 100 mm mark at 1181 dots, not 1200 */
     CHECK(strstr(out, "^BQN,2,6^FDQA,http://zebserial.local/^FS") != NULL);
     CHECK(strstr(out, "^BCN,") != NULL);
     CHECK(label_fields_inside(out, 1200, 1800) == 0);
@@ -1035,6 +1052,7 @@ static void test_temp_alarm(void)
 
 int main(void)
 {
+    test_units();
     test_label();
     test_log_line();
     test_hs_ok();

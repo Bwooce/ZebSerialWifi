@@ -659,7 +659,8 @@ static bool decode_field(const zpl_printer_cfg_t *cfg, zpl_cfg_field_t f, const 
          * "39.0IN   975MM": ^ML takes dot rows. The mm figure is exact (a
          * GX430t shows ^ML6000 at 12 dots/mm as 500MM); the inch figure is
          * the mm divided by 25 (that same setting shows as 20.0IN), so it
-         * is not used.
+         * is not used. The printer converts mm with its rounded dots/mm
+         * (12 for 300 dpi), so this stays dpmm, not zpl_units.h.
          */
         if (cfg->dpmm <= 0 || !parse_tenths_prefix(text, &t, &end) || strncmp(end, "IN", 2) != 0) {
             return false;

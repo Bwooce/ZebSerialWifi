@@ -20,6 +20,7 @@
 #include "test_label.h"
 #include "urlcodec.h"
 #include "wifi_prov.h"
+#include "zpl_units.h"
 
 static const char *TAG = "web";
 
@@ -399,12 +400,14 @@ static const char STATUS_SCRIPT[] =
     "function len(mm){var a=Math.abs(mm),s=mm<0?'-':'';return s+(a<1000?Math.round(a*10)/10+' mm':"
     "a<1e6?Math.round(a/100)/10+' m':Math.round(a/1e4)/100+' km')}"
     "function dpi(d){return d==8?203:d==12?300:d==24?600:Math.round(d*25.4)}"
+    /* the true dots per mm: Zebra rounds 300 and 600 dpi to 12 and 24 (zpl_units.h) */
+    "function tdm(d){return d==12||d==24?dpi(d)/25.4:d}"
     "function si(n,v){var x;"
     "if(x=/^(\\d+) IPS$/.exec(v))return Math.round(x[1]*25.4)+' mm/s';"
-    "if(x=/^(\\d+) (\\d+)\\/MM/.exec(v))return x[2]+' dots/mm ('+dpi(+x[2])+' dpi), head '+x[1]+' dots = '+len(x[1]/x[2]);"
+    "if(x=/^(\\d+) (\\d+)\\/MM/.exec(v))return dpi(+x[2])+' dpi ('+Math.round(tdm(+x[2])*100)/100+' dots/mm), head '+x[1]+' dots = '+len(x[1]/tdm(+x[2]));"
     "if(x=/(\\d+)MM$/.exec(v))return x[1]+' mm';"
     "if(x=/^([\\d,]+(\\.\\d+)?) ?IN$/.exec(v))return len(parseFloat(x[1].replace(/,/g,''))*25.4);"
-    "if(D&&DOTS[n]&&/^[+-]?\\d+$/.test(v))return (+v)+' dots = '+len(v/D);"
+    "if(D&&DOTS[n]&&/^[+-]?\\d+$/.test(v))return (+v)+' dots = '+len(v/tdm(D));"
     "return null}"
     /* names for lines the printer form does not change; UI (from the firmware) names the ones it does */
     "var FN={'SENSOR TYPE':'Media sensing',"
@@ -889,7 +892,7 @@ static void send_ui_script(httpd_req_t *req)
  */
 static void fmt_mm_exact(int dots, int dpmm, char *out, size_t out_len)
 {
-    int h = (abs(dots) * 100 + dpmm / 2) / dpmm;
+    int h = (int)lround(zpl_dots_to_mm(abs(dots), dpmm) * 100.0);
     const char *sign = dots < 0 && h > 0 ? "-" : "";
     if (h % 100 == 0) {
         snprintf(out, out_len, "%s%d", sign, h / 100);
@@ -922,9 +925,9 @@ static void send_printer_field(httpd_req_t *req, const zpl_printer_cfg_t *cur, c
             snprintf(buf, sizeof(buf),
                      "<label for=f_%s>%s <small>(mm, %s to %s; <span id=dt_%s>%s %s</span>)</small>"
                      "</label><input id=f_%s name=%s_mm type=number min=%s max=%s step=any value=%s "
-                     "oninput=\"document.getElementById('dt_%s').textContent=Math.round(this.value*%d)+' %s'\">",
+                     "oninput=\"document.getElementById('dt_%s').textContent=Math.round(this.value*%.6f)+' %s'\">",
                      d->key, ui->label, lo, hi, d->key, cur_text, ui->unit, d->key, d->key, lo, hi, now, d->key,
-                     cur->dpmm, ui->unit);
+                     zpl_true_dpmm(cur->dpmm), ui->unit);
             httpd_resp_sendstr_chunk(req, buf);
             return;
         }
@@ -1090,10 +1093,10 @@ static void send_test_label_form(httpd_req_t *req)
     char w[12] = "";
     char l[12] = "";
     if (cfg.dpmm > 0 && (cfg.known & (1u << ZPL_CFG_WIDTH))) {
-        snprintf(w, sizeof(w), "%.1f", (double)cfg.v[ZPL_CFG_WIDTH] / cfg.dpmm);
+        snprintf(w, sizeof(w), "%.1f", zpl_dots_to_mm(cfg.v[ZPL_CFG_WIDTH], cfg.dpmm));
     }
     if (cfg.dpmm > 0 && (cfg.known & (1u << ZPL_CFG_LENGTH))) {
-        snprintf(l, sizeof(l), "%.1f", (double)cfg.v[ZPL_CFG_LENGTH] / cfg.dpmm);
+        snprintf(l, sizeof(l), "%.1f", zpl_dots_to_mm(cfg.v[ZPL_CFG_LENGTH], cfg.dpmm));
     }
     char buf[900];
     snprintf(buf, sizeof(buf),
@@ -1480,7 +1483,7 @@ static bool parse_mm(const char *text, int dpmm, double lo, double hi, int *dots
     if (end == text || *end != '\0' || !(mm >= lo && mm <= hi)) {
         return false;
     }
-    *dots = (int)lround(mm * dpmm);  /* to the nearest dot either side of zero */
+    *dots = zpl_mm_to_dots(mm, dpmm);
     return true;
 }
 
@@ -1634,7 +1637,7 @@ static esp_err_t printer_test_post(httpd_req_t *req)
         return fail(req, "503 Service Unavailable",
                     "The printer's resolution is not known yet: it has not answered the settings read.", "/printer");
     }
-    double head_mm = cfg.head_dots > 0 ? (double)cfg.head_dots / cfg.dpmm : 108.0;
+    double head_mm = cfg.head_dots > 0 ? zpl_dots_to_mm(cfg.head_dots, cfg.dpmm) : 108.0;
     char v[16];
     int w = 0;
     int l = 0;

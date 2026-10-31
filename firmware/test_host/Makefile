@@ -12,7 +12,7 @@ SRCS = test_main.c ../main/zpl_status.c ../main/urlcodec.c ../main/netcfg.c ../m
 all: build/test_main
 	./build/test_main
 
-build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h ../main/netcfg.h ../main/log_line.h ../main/test_label.h ../main/temp_alarm.h fixtures/gx430t_hh.bin
+build/test_main: $(SRCS) ../main/zpl_status.h ../main/urlcodec.h ../main/netcfg.h ../main/log_line.h ../main/test_label.h ../main/temp_alarm.h ../main/zpl_units.h fixtures/gx430t_hh.bin
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(SRCS)
 
