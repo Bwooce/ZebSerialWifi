@@ -2,7 +2,7 @@
 
 ## Purpose
 The two-part PETG case (tray and lid, snap clips, no screws) that holds the HW-044 MAX3232 RS-232 module and the
-Seeed XIAO ESP32-C6 and plugs straight into the printer's DB9. It is one parametric OpenSCAD model,
+Seeed XIAO ESP32-C6 and plugs into the printer's DB9 through a male-to-male gender changer. It is one parametric OpenSCAD model,
 `enclosure/zebserial_case.scad` (revision 5), with mechanical gates in `enclosure/build.sh` and
 `enclosure/controls.sh`. The likely next change is a different RS-232 module, so this spec says which parameters
 describe which part, what was measured and what was borrowed, and how to regenerate and check the STLs. The Notes
@@ -12,8 +12,9 @@ section at the end holds the parameter tables and the regeneration procedure.
 
 ### Requirement: One parametric model, two printed parts
 The case SHALL be generated from `enclosure/zebserial_case.scad` alone, as a tray and a lid that join by four
-cantilever snap clips with no screws. Every dimension SHALL be a top-level parameter or derived from one; the STLs
-SHALL never be edited by hand.
+cantilever snap clips with no screws. Every dimension that depends on the module, the XIAO or the print process SHALL
+be a top-level parameter or derived from one, except the fixed values listed under Notes; the STLs SHALL never be
+edited by hand.
 
 **Source**: `enclosure/zebserial_case.scad` header comment, `module tray()`, `module lid()`, `part` selector at the end of the file
 
@@ -33,6 +34,10 @@ and w (across its width, +w towards the 5V/GND column, along -Y).
 - **WHEN** a new module's PCB front edge is not flush with its flange front face
 - **THEN** the offset SHALL be entered as `pcb_front_y` (flange front face to PCB front edge) and Y 0 SHALL stay at the flange front face
 
+#### Scenario: Negative pcb_front_y
+- **WHEN** `pcb_front_y` is negative
+- **THEN** the model SHALL put the PCB front edge at `fl_t`, just behind the steel flange (`y_pcb0`), whatever the value: a PCB edge in front of the flange face cannot be entered
+
 ### Requirement: Height envelope
 The outside top of the case SHALL be at most `max_above` (25.0 mm) above the RS-232 PCB top. The model SHALL
 fail with an assertion when the derived top `z_top` exceeds it.
@@ -41,7 +46,8 @@ fail with an assertion when the derived top `z_top` exceeds it.
 
 #### Scenario: A taller Dupont housing
 - **WHEN** `dupont_top` or `dupont_ceiling_min` grows so that `z_top` exceeds 25.0
-- **THEN** OpenSCAD SHALL abort with "case taller than the 25 mm envelope above the board" and `build.sh` SHALL report a gate failure
+- **THEN** OpenSCAD SHALL exit 1 with "case taller than the 25 mm envelope above the board"
+- **AND** `build.sh` (`set -eu`) SHALL stop at the first STL export with a non-zero exit and no FAIL line, having already deleted `out/*.stl` and `renders/*.png`
 
 ### Requirement: DB9 mating face
 The DB9 D-shell SHALL project `ds_proj` (6.0 mm) forward of the flush case front face so that it mates with the
@@ -53,7 +59,7 @@ SHALL span only |X| <= `lip_x` (8.0) so the printer's jackposts at X +-`fl_hole_
 #### Scenario: Lips widened into the jackpost area
 - **WHEN** `lip_x` exceeds `fl_hole_pitch / 2 - 3.5` (9.0)
 - **THEN** the model SHALL echo "ZEBCASE WARNING: the lips reach the jackpost area at the flange holes"
-- **AND** the person making the change SHALL treat that echo as a failure, because `build.sh` only fails on lines starting `WARNING:` or `ERROR:`, not on `ECHO: "ZEBCASE WARNING ..."`
+- **AND** `build.sh` SHALL still pass, because it fails only on lines starting `WARNING:` or `ERROR:`, not on `ECHO: "ZEBCASE WARNING ..."`; the echo is the only signal (see the regeneration procedure, step 3)
 
 ### Requirement: Flange fore-aft location
 The flange SHALL be held fore-aft between the lips, `lip_gap` (0.1 mm) in front of the flange front face, and the
@@ -72,7 +78,8 @@ stay at least `lip_ds_clr` (1.0) clear of the D-shell outline.
 
 #### Scenario: Lip near the D-shell
 - **WHEN** a parameter change brings the top lip bottom (`lip_t_bot`) below `ds_top + lip_ds_clr` or the bottom lip top above `ds_bot - lip_ds_clr`
-- **THEN** the model SHALL echo "ZEBCASE WARNING: a flange lip comes within lip_ds_clr of the D-shell", which SHALL be treated as a failure
+- **THEN** the model SHALL echo "ZEBCASE WARNING: a flange lip comes within lip_ds_clr of the D-shell"
+- **AND** `build.sh` SHALL still pass, so the echo is the only signal
 
 ### Requirement: RS-232 board location and hold-down
 The board SHALL be located by two tray corner pins through its rear mounting holes (`mh_pin_clr` 0.2 per side in X,
@@ -128,12 +135,13 @@ The XIAO SHALL lie on the DB9 rear body top (underside at Z `body_h`), its lengt
 
 #### Scenario: Too little of the XIAO on the DB9 body
 - **WHEN** the XIAO lies less than `front_rest_min` (2.0 mm) deep on the body
-- **THEN** the model SHALL echo "ZEBCASE WARNING: the XIAO lies only ... mm on the DB9 body", which SHALL be treated as a failure
+- **THEN** the model SHALL echo "ZEBCASE WARNING: the XIAO lies only ... mm on the DB9 body"
+- **AND** `build.sh` SHALL still pass, so the echo is the only signal
 
 ### Requirement: XIAO capture is rigid
 The XIAO SHALL be held with no flexing parts: below by the DB9 body and a tray tongue cradle `tongue_gap` (0.05)
 under the USB-C shell; above by lid pads `xpad_gap` (0.25) over the RF shield, the USB-C shell and the rear edge
-strip; in X by the +X wall and a -X end stop rib, both `pcb_clr` off; in Y by the lid front wall and a shield stop block.
+strip; in X by the +X wall and a -X end stop rib, both `pcb_clr` off; in Y by the lid front wall and the USB slot sides at the front, and the shield stop block and the USB slot sides at the rear.
 
 **Source**: `enclosure/zebserial_case.scad` `module xiao_pads()`, `module end_stop()`, `module usb_tongue()`, `xpad_gap`, `tongue_gap`, `stop_*`, `shield_stop_clr`; `enclosure/controls.sh` "xiao" lines
 
@@ -189,9 +197,9 @@ plus `pullup_pad = 3` (3V3). A pin change in the firmware or wiring MUST be mirr
 
 **Source**: `enclosure/zebserial_case.scad` `used_pads_front`, `pullup_pad`, `used_pads_rear`, `function pad_x()`; `README.md` Wiring
 
-#### Scenario: Firmware moves RX to another pad
-- **WHEN** the RX pin moves from D3 to another XIAO pad
-- **THEN** `used_pads_rear` and the diode position SHALL be updated and `build.sh` and `controls.sh` re-run before printing
+#### Scenario: Pad positions
+- **WHEN** the model is rendered with the current parameters
+- **THEN** the echo "ZEBCASE PADS" SHALL put D3 at X 5.459 and D5 at X 0.379 on the rear edge (Y 25.08), and 5V at X 13.079 and GND at X 10.539 on the front edge (Y 7.3)
 
 ### Requirement: RX diode keep-out
 The case SHALL keep clear a keep-out for the RX Schottky diode at the D3 pad: by default a DO-41 body (`diode_d`
@@ -220,8 +228,8 @@ behind the PCB to the ceiling. `wire_pass` MUST leave at least 0.4 mm round `wir
 - **THEN** `check_tray` SHALL hit the backstop
 
 ### Requirement: Joints over the jack screw hardware are top-side only
-Where XIAO pads lie over the DB9 body or within the jack screw keep-out height, the model SHALL echo the X span and
-the gap under the XIAO, and the assembly SHALL solder those joints on the top side only.
+The model SHALL echo the X span of the front-edge joints and the gap between the jack screw keep-out top and the XIAO
+underside; those joints SHALL be soldered on the top side only.
 
 **Source**: `enclosure/zebserial_case.scad` echo "ZEBCASE WARNING (check): the front-edge 5V/GND/3V3 joints ..."; `enclosure/README.md` Fit-check list
 
@@ -248,14 +256,16 @@ aborted", or a non-zero exit other than "Current top level object is empty." as 
 
 #### Scenario: An inverted box
 - **WHEN** a parameter change makes a `box()` call with bounds out of order
-- **THEN** the `box()` assertion SHALL fire and the gate SHALL fail instead of the box silently rendering as nothing
+- **THEN** the `box()` assertion SHALL fire instead of the box silently rendering as nothing
+- **AND** if the box is in a ghost, the check run SHALL report "openscad error" and the gate SHALL fail; if it is in the tray or lid, `build.sh` SHALL stop at the first STL export with a non-zero exit and no FAIL line, after deleting `out/*.stl` and `renders/*.png`
 
 ### Requirement: Wall thickness gate
 `build.sh` SHALL export both parts in assembly position (`tray_inplace`, `lid_inplace`) and run `wallprobe.py`, and
-SHALL fail on any sample thinner than 1.2 mm (`min_wall`) outside the whitelisted boxes: the tongue edges, the floor
+SHALL fail on any sample thinner than 1.2 mm (wallprobe.py's `--min` default, not read from the SCAD; a change to `min_wall`
+SHALL also pass `--min` in `build.sh`) outside the whitelisted boxes: the tongue edges, the floor
 gusset and the floor under the logo (tray), and the snap hooks (lid).
 
-**Source**: `enclosure/build.sh` `ALLOW_tray`, `ALLOW_lid`, wallprobe loop; `enclosure/wallprobe.py` `--allow`, `--min` default 1.2
+**Source**: `enclosure/build.sh` `ALLOW_tray`, `ALLOW_lid`, wallprobe loop (no `--min`); `enclosure/wallprobe.py` `--allow`, `--min` default 1.2 (line 63)
 
 #### Scenario: A new sliver
 - **WHEN** a change leaves a wall under 1.2 mm outside a whitelist box
@@ -296,18 +306,23 @@ are tracked in git and SHALL be committed with the SCAD change that produced the
 
 #### Scenario: Unchanged parameters
 - **WHEN** `build.sh` runs on the committed SCAD with OpenSCAD 2026.06.12 and the manifold backend
-- **THEN** the five STLs SHALL be byte-identical to the committed ones (checked 2026-10-31)
+- **THEN** the five STLs SHALL be byte-identical to the committed ones
 
 ### Requirement: Fit coupons
 The model SHALL provide two single-colour fit coupons in print orientation: `coupon_tray` (the whole tray with the
 middle of the floor cut out, `coupon_floor`) and `coupon_lid` (the lid below `coupon_z` 18.0, without the ceiling
-and XIAO pads). A new module's first print SHALL be the coupons.
+and XIAO pads). For any change to a fit-setting parameter (module, DB9, XIAO position, clearances) the coupons SHALL be
+printed and the board, DB9 and XIAO test-fitted before the full case.
 
-**Source**: `enclosure/zebserial_case.scad` `part == "coupon_tray"`, `part == "coupon_lid"`, `coupon_floor`, `coupon_z`; `print/zebserial_coupon.3mf`
+**Source**: `enclosure/zebserial_case.scad` `part == "coupon_tray"`, `part == "coupon_lid"`, `coupon_floor`, `coupon_z`; `print/zebserial_coupon.3mf`; `enclosure/README.md` "Concerns to check before printing"
 
 #### Scenario: First print for a new module
 - **WHEN** the STLs are regenerated for a different RS-232 module
-- **THEN** the coupons SHALL be sliced and printed and the board and DB9 test-fitted before the full case is printed
+- **THEN** the coupons SHALL be sliced and printed first
+
+#### Scenario: Coupon fits
+- **WHEN** the board drops onto the coupon tray's corner pins with the flange behind the bottom lip and the PCB rear edge in front of the backstop ledge, the XIAO lies in place, and the coupon lid closes and its snaps engage
+- **THEN** the full case SHALL be printed from `print/zebserial_case.3mf`
 
 ### Requirement: Exterior style
 The exterior SHALL be the faceted pincushion style: side and rear faces bowed in by `sag_frac` (0.02) of their
@@ -316,9 +331,9 @@ length in three facets (`facet_flat` 0.3), a flat front face (`front_sag` 0), `c
 
 **Source**: `enclosure/zebserial_case.scad` "Exterior style" parameters, `module outer_solid()`, `function outline()`, `module reveal_cut()`
 
-#### Scenario: Seam alignment
-- **WHEN** the tray and lid are rendered together (`part="assembly"`)
-- **THEN** their outer faces SHALL meet at `split_z` (4.0) with no step, since both are intersections with the same `outer_solid()`
+#### Scenario: Seam contact
+- **WHEN** `check_traylid` runs on the current parameters
+- **THEN** it SHALL find no overlap, and its zero-thickness contact SHALL lie in the plane z = `split_z` (4.0), where the rims meet
 
 ### Requirement: Snap clips
 The lid SHALL carry two snap fingers per side wall (`lc_w` 6.0 wide, `lc_t` 1.4 thick, at Y `lc_front_y` and
@@ -338,9 +353,9 @@ be listed in the enclosure README's fit-check list until measured.
 
 **Source**: `enclosure/zebserial_case.scad` parameter comments ("measured", "assumed as for the YL-97", "ESTIMATE"); `enclosure/README.md` "Fit-check list (measure before printing)"
 
-#### Scenario: Replacing an estimate
-- **WHEN** a value marked ESTIMATE (for example `leg_y`, `hdr_row_in`, `p9_y`) is measured
-- **THEN** its comment SHALL change to say it was measured, and the fit-check list entry SHALL be removed
+#### Scenario: Estimates listed
+- **WHEN** the SCAD marks `leg_y`, `hdr_row_in` or `p9_y` as ESTIMATE
+- **THEN** the README's fit-check list SHALL list each of them
 
 ### Requirement: Ghosts are checked against the case only
 The checks SHALL be understood to prove clearance between the case and each ghost or keep-out, not between ghosts.
@@ -350,8 +365,70 @@ inspecting renders (for example `renders/diode_iso.png`, `xiao_lid_off.png`, `se
 **Source**: `enclosure/zebserial_case.scad` `part == "check_tray"` and `part == "check_lid"` (each intersects one part with `ghosts()`); `enclosure/README.md` "The RX diode", Other placements
 
 #### Scenario: Diode laid along X
-- **WHEN** `diode_dir = [1, 0, 0]` and `diode_c` is given
-- **THEN** the checks SHALL report clearance to the case only, and the diode's clearance to the housing, header and XIAO SHALL be confirmed in the renders
+- **WHEN** `check_lid` runs with `diode_dir = [1, 0, 0]` and `diode_c = [9, 26.73, 13.3]`
+- **THEN** it SHALL find no overlap, although nothing checks that diode position against the housing, the header or the XIAO
+
+### Requirement: Printable without supports
+Both parts SHALL print in their exported orientation with supports off: every down-facing face SHALL be at most
+45 degrees from vertical or a short bridge. This is checked by inspection of the slices only; no script in the
+repository checks overhangs.
+
+**Source**: `enclosure/README.md` "Print settings" (Overhangs list; the probe it mentions is not in the repository); `print/process_overrides.json` `enable_support` "0"
+
+#### Scenario: A new feature with an overhang
+- **WHEN** a change adds a down-facing face flatter than 45 degrees in print orientation
+- **THEN** no gate SHALL catch it, and the slicer preview SHALL be inspected before printing
+
+### Requirement: Lead-ins steer parts as the lid closes
+The case SHALL carry 45 degree lead-ins that push misplaced parts into place as the lid goes on: `fw_lead` (0.5) and
+`jack_lead` (0.3) on the lid front wall, `xlead` (0.4) on the front wall and shield stop block at XIAO height,
+`stop_lead` (0.4) on the stop rib, `lip_lead` (0.3) on the lips and `mh_pin_lead` (0.4) on the corner pins.
+
+**Source**: `enclosure/zebserial_case.scad` `fw_lead`, `jack_lead`, `xlead`, `stop_lead`, `lip_lead`, `mh_pin_lead`, `lid()`, `end_stop()`, `xiao_pads()`, `corner_pin()`
+
+#### Scenario: XIAO slightly too far forward
+- **WHEN** the lid is rendered with the current parameters
+- **THEN** the front wall's rear face below the XIAO underside SHALL be set back `xlead` (0.4 mm), rising at 45 degrees to z 10.8, so a XIAO up to 0.4 mm too far forward is pushed back as the lid closes
+
+### Requirement: Logo modes and orientation
+`logo_mode` SHALL be "inlay" (default), "deboss" or "none", any other value failing an assertion. The mark SHALL be
+mirrored in X so it reads correctly seen from outside the floor (-Z), with the D-shell end towards Y 0.
+
+**Source**: `enclosure/zebserial_case.scad` `logo_mode`, `assert(logo_mode == "none" || ...)`, `module logo_2d()` (`mirror([1, 0])`)
+
+#### Scenario: Unknown mode
+- **WHEN** `logo_mode = "emboss"`
+- **THEN** OpenSCAD SHALL fail with "logo_mode must be inlay, deboss or none"
+
+### Requirement: Thin skin over the antenna
+The only material over the XIAO's ceramic antenna SHALL be the lid top skin, `ceil_t` (1.6 mm), with no pad, rib or
+wall above it.
+
+**Source**: `enclosure/zebserial_case.scad` `ceil_t`, `ant_w`, `ant_d`, `st_y0` (`stop_ant_clr` behind the antenna), `xiao_pads()`
+
+#### Scenario: Stop rib beside the antenna
+- **WHEN** the model is rendered
+- **THEN** the stop rib SHALL start at Y 15.94, 0.27 mm behind the antenna's end at Y 15.67 (echo "ZEBCASE SUPPORT XIAO")
+
+### Requirement: Pressers clear of the tray walls
+Below the split the corner pressers SHALL stand `press_wall_clr` (0.2 mm) off the tray side and rear walls.
+
+**Source**: `enclosure/zebserial_case.scad` `press_wall_clr`, `module corner_presser()`; `enclosure/controls.sh` "presser into the tray wall"
+
+#### Scenario: Presser into the wall
+- **WHEN** controls.sh sets `press_wall_clr=-0.1`
+- **THEN** `check_traylid` SHALL hit both corner pressers
+
+### Requirement: What sets the case height
+`z_top` SHALL be the largest of: the XIAO top plus `xiao_top_clear` and `ceil_t`; the USB relief top plus `wall`; the
+relief top plus `edge_chamfer` plus `min_wall` times the square root of 2 (1.2 mm square to the top chamfer); and,
+with `dupont_on`, the larger of `dupont_top + dupont_bend_h` and `dupont_ceiling_min`, plus `ceil_t`.
+
+**Source**: `enclosure/zebserial_case.scad` `z_top`
+
+#### Scenario: Current case
+- **WHEN** the model is rendered with the current parameters
+- **THEN** the Dupont term SHALL set `z_top` to 25.0 (23.4 + 1.6); the USB relief alone would give 19.95
 
 ## Notes
 
@@ -366,11 +443,26 @@ These are built into the geometry, not parameters. A module that breaks one need
 - The board is held at its two rear corner holes; there is no support for front holes or holes elsewhere.
 - The XIAO underside sits on the DB9 rear body top (`zx0 = body_h`); there is no separate XIAO height parameter.
 - The flange bottom is level with the PCB top (`fl_bot` 0) and the D-shell is centred on the flange (`hole_z`).
+  `fl_bot` values other than 0 are untested: they move the flange, D-shell, lips and jack keep-out, but the rear
+  body, the lugs and the lid's body cut stay at z 0.
+- No component-side parts of the RS-232 board (the MAX3232, capacitors, LED) are modelled, so the checks cannot see
+  them. Any part taller than 9.8 mm (`body_h - 0.6`, the stop rib and web bottom behind the DB9 body, web at X
+  -16.2..-5.155), any part under the XIAO footprint (X -4.955..16, Y 7.3..25.08) taller than `body_h` (10.4), anything
+  under the corner pressers (0.25 mm above the PCB) and anything under the lid front wall (lowest edge z 10.05 beside
+  the body, 10.6 over it) collides unseen.
+- Sentinels: `pcb_front_y` < 0 means `fl_t`; `lug_hole_x` < 0 means `fl_hole_pitch / 2`; `xiao_x0`, `xiao_front_y`,
+  `wch_c`, `jack_y0`, `ghost_plate_d` and `ghost_wch_hw` = -1 and `diode_c` = [-1, -1, -1] mean derived.
 - The D-shell ghost is a trapezoid with 1.5 mm side insets at the bottom (`ghost_db9()`), a fixed shape.
 - The through-hole pin zone ghost is 1.25 mm in from the PCB edges and 2.5 mm deep, fixed in `ghost_rs232()`.
 
 ### Hard-coded positions that a module change must revisit
 
+- Absolute values typed as numbers: `lc_front_y` 6.3 (set by the USB slot position), `coupon_z` 18.0, `p9_run_x` -8.0
+  (set by the header joints and the corner-pin boss and presser X), `p9_x` -4.155 (worked out by hand from the DE-9
+  pitch), `logo_w` 25 (sized to the floor flat; the margins are echoed, not asserted).
+- The stop rib and web bottom `zx0 - 0.6` and their 1.2 mm minimum length (`end_stop()`), the snap hook height
+  `lc_tip + 1.4`, the pin-zone ghost depth 2.5 (it does not follow `below_clear`), and the ghost wire diameter 1.6 in
+  `wire()` (not `wire_d`).
 - `ctl_undercut` box at X -4.5..-2.5 (under the unused D6 pad) and `ctl_diode_undercut` box at X 7.6..8.0, Y
   26.9..27.9, z 10.4..11.0, in `lid()`: absolute coordinates for two positive controls.
 - `build.sh` render cameras and section positions (for example Y 16.2 through the USB axis, Y 27 through the pins,
@@ -378,7 +470,9 @@ These are built into the geometry, not parameters. A module that breaks one need
 - `build.sh` wall-probe whitelist boxes `ALLOW_tray` and `ALLOW_lid`, in absolute assembly coordinates.
 - `controls.sh` distances, each calibrated to a current clearance (for example "rear zones -X 3.6/3.9", "diode +Y
   2.8", "corridor zone 0.2/0.4 wider").
-- Joint-zone sizes in `wire_zones()` (0.9 mm in front of and 2.6 mm behind a pad edge, 3 mm above the XIAO top), the
+- Joint-zone sizes in `wire_zones()`: front-edge zones run from 0.9 mm in front of the XIAO front edge back to the
+  shield edge; rear-edge zones from 2.6 mm inside to 0.9 mm outside the rear edge, from z 0.3 to 3 mm above the XIAO
+  top. Also the
   diode's anode joint offset (`dio_joint`: 0.6 in, 0.4 up), and the ghost wire routes in `ghost_wires()`.
 
 ### Other literals that depend on the module
@@ -497,8 +591,10 @@ datasheets and the Seeed CAD files, not measurements.
    and measure the highest point of the bend from the PCB underside; subtract `pcb_t` (the current 23.4 is the
    user's 25 mm from the underside less 1.6).
 8. Pin 9 pad position on the solder side; the jack screw hardware actually fitted (tail and nut size, length).
-9. Anything on the component side near the rear corners (the pressers come 0.25 mm above the PCB there) and on
-   the solder side within 2.2 mm of a hole centre (the pin bosses).
+9. Every component-side part: its height and position. Any part taller than 9.8 mm (`body_h - 0.6`), any part
+   under the XIAO footprint taller than `body_h`, and anything near the rear corners (pressers 0.25 above the PCB)
+   collides, and the checks cannot see it, because component-side parts are not modelled. Solder side: nothing
+   within 2.2 mm of a hole centre (pin bosses).
 10. The diode actually fitted and how its anode lead is bent.
 
 ### Regeneration procedure
@@ -512,6 +608,8 @@ datasheets and the Seeed CAD files, not measurements.
 2. Run `./enclosure/build.sh` (needs OpenSCAD with the manifold backend at `/opt/homebrew/bin/openscad`, or set the
    `OPENSCAD` environment variable, which both scripts read as `OSC=${OPENSCAD:-/opt/homebrew/bin/openscad}`; the
    enclosure README does not mention it; python3 with numpy for `wallprobe.py`). About 20 s on 2026-10-31. It must end "build: all gates passed".
+   `build.sh` deletes `out/*.stl` and `renders/*.png` first; if a gate fails, restore them with
+   `git checkout enclosure/out enclosure/renders` before committing anything.
    Extra `-D` overrides apply to every call, for trying a value before committing it.
 3. Read the `ECHO: "ZEBCASE ..."` lines: any `ZEBCASE WARNING:` (except the "(check)" note on the joints) is a
    failure the script does not catch.
@@ -520,6 +618,12 @@ datasheets and the Seeed CAD files, not measurements.
 5. Look at the renders (`renders/*.png`) for ghost-to-ghost clashes, which no check sees.
 6. Commit the SCAD, `out/*.stl` and `renders/*.png` together, and update `enclosure/README.md`.
 7. Re-slice through `print/` (see the slicing-and-printing spec), print the coupons first, then the case.
+
+### Evidence
+
+On 2026-10-31 `build.sh` on the committed SCAD (OpenSCAD 2026.06.12, manifold backend) produced five STLs
+byte-identical to the committed ones, and `controls.sh` passed 97 of 97. `check_lid` with the diode laid along X
+(`diode_dir = [1, 0, 0]`, `diode_c = [9, 26.73, 13.3]`) found no overlap.
 
 ### Recalibrating a control
 

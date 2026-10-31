@@ -25,9 +25,9 @@ gyroid infill, supports off, seam at the back, no brim, first layer 40 mm/s (inf
 
 **Source**: `print/process_overrides.json`; `print/README.md` "Settings and why"
 
-#### Scenario: Four perimeters
-- **WHEN** the case is sliced
-- **THEN** walls SHALL be four loops (1.6 mm with the 0.4 mm nozzle), matching the SCAD's `wall` = 1.6 and `min_wall` = 1.2 design
+#### Scenario: Resolved process profile
+- **WHEN** `run_slice.sh` has run
+- **THEN** `process.json` SHALL hold `wall_loops` "4", `top_shell_layers` "6", `bottom_shell_layers` "5" and `enable_support` "0", and the name "ZebSerial PETG 0.16mm @BBL H2D"
 
 ### Requirement: Fully resolved profiles for the CLI
 `resolve_profile.py` SHALL flatten a system profile's `inherits` chain, apply an overrides JSON (a one-element list
@@ -53,8 +53,8 @@ logo is a second part of the tray object on filament 2 (`filament_overrides_logo
 - **THEN** the logo SHALL sit flush in the tray floor's first four layers (0.68 mm), because `logo.stl` is exported in the tray's coordinates and loaded at the same position
 
 #### Scenario: Two identical filament presets
-- **WHEN** the second filament has the same preset name as the first
-- **THEN** the CLI crashes, so the logo filament SHALL keep its own name ("ZebSerial Bambu PETG Basic logo @BBL H2D 0.4 nozzle")
+- **WHEN** both filament presets share a name
+- **THEN** the CLI crashes; `filament_overrides_logo.json` SHALL therefore give the logo filament a distinct name ("ZebSerial Bambu PETG Basic logo @BBL H2D 0.4 nozzle")
 
 ### Requirement: Coupon project
 `run_slice.sh <workdir> coupon` SHALL slice `coupon_tray.stl` and `coupon_lid.stl`, single colour, as
@@ -95,7 +95,7 @@ the enclosure commit they were sliced from and the slicer's time and filament es
 
 #### Scenario: STLs regenerated for a new module
 - **WHEN** `build.sh` produces different STLs
-- **THEN** the 3MFs in `print/` SHALL be treated as stale until re-sliced, and the README SHALL say so in the meantime
+- **THEN** the 3MFs in `print/` SHALL be treated as stale until re-sliced
 
 ### Requirement: Print orientation comes from the model
 The slicer SHALL not re-orient the case: the tray prints floor down with the logo on the bed and the lid prints top
@@ -107,12 +107,6 @@ down, as exported, and both print without supports.
 - **WHEN** `zebserial_case.3mf` is opened in Bambu Studio
 - **THEN** the tray SHALL lie floor down and the lid top down, with supports off
 
-### Requirement: Coupons print before the case
-For any change to a fit-setting parameter (module, DB9, XIAO position, clearances), the coupon project SHALL be
-printed and the board, DB9 and XIAO test-fitted before the full case.
+## Notes
 
-**Source**: `enclosure/README.md` "Concerns to check before printing" ("Print the coupons first"); `print/README.md` coupon entry
-
-#### Scenario: Coupon fits
-- **WHEN** the coupon tray takes the board on its pins with the flange between the lip and the backstop, and the coupon lid closes and snaps
-- **THEN** the full case SHALL be printed from `zebserial_case.3mf`
+When to print the coupons, and what a good coupon fit is, are specified in the enclosure spec (Fit coupons).
