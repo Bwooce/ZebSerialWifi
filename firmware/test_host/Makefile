@@ -1,5 +1,6 @@
 # Host unit tests for the pure parsers in main/. No ESP-IDF needed.
 # Apple clang 21 with the MacOSX27 SDK fails to link these tests (libSystem.tbd), so prefer Homebrew LLVM when present.
+# Elsewhere set the compiler on the command line, for example make CC=clang (CI on Linux). It needs ASan and UBSan.
 ifeq ($(origin CC),default)
 LLVM_CLANG := $(wildcard /opt/homebrew/opt/llvm/bin/clang)
 ifneq ($(LLVM_CLANG),)

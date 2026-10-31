@@ -1,0 +1,149 @@
+# The same checks as AGENTS.md lists for a commit. The enclosure gates run only when enclosure/ (or this file) changes.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENSPEC_VERSION: 1.16.0
+  # the snapshot the enclosure was last built with on the Mac; nightlies are kept for about ten months
+  OPENSCAD_SNAPSHOT: 2026.06.12
+  OPENSCAD_SHA256: 4e1739b3ec6314506ff6c5d34158143a2fc3ef857c9367b53d5e49ea2957e2bd
+
+jobs:
+  openspec:
+    name: OpenSpec validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: npm-openspec-${{ env.OPENSPEC_VERSION }}
+      - run: npx -y @fission-ai/openspec@${OPENSPEC_VERSION} validate --all --strict
+
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # ASan's shadow memory does not fit the runner kernel's default 32-bit mmap randomisation
+      - run: sudo sysctl vm.mmap_rnd_bits=28
+      - run: make -C firmware/test_host CC=clang
+
+  page-js:
+    name: Page JavaScript
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: python3 tools/check_page_js.py
+
+  firmware:
+    name: Firmware build
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v6.1
+    env:
+      IDF_COMPONENT_CACHE_PATH: ${{ github.workspace }}/.cache/components
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the app version comes from git describe
+      - run: git config --global --add safe.directory '*'
+      - uses: actions/cache@v6
+        with:
+          path: .cache
+          key: idf-v6.1-${{ hashFiles('firmware/dependencies.lock') }}-${{ github.sha }}
+          restore-keys: idf-v6.1-${{ hashFiles('firmware/dependencies.lock') }}-
+      - name: idf.py build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh" > /dev/null
+          cd firmware
+          idf.py build 2>&1 | tee build.log
+          if grep -E '(^|[^-])[Ww]arning:' build.log; then echo "::error::the build printed warnings"; exit 1; fi
+      - name: App image size
+        shell: bash
+        run: |
+          size=$(stat -c %s firmware/build/zebserial.bin)
+          echo "zebserial.bin: $size bytes of 1966080 (ota_0 0x1E0000)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    outputs:
+      enclosure: ${{ steps.filter.outputs.enclosure }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            enclosure:
+              - 'enclosure/**'
+              - '.github/workflows/ci.yml'
+
+  enclosure:
+    name: Enclosure ${{ matrix.script }}
+    needs: changes
+    if: needs.changes.outputs.enclosure == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [build.sh, controls.sh]
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 python3-numpy
+      - uses: actions/cache@v6
+        id: openscad
+        with:
+          path: ~/openscad
+          key: openscad-${{ env.OPENSCAD_SNAPSHOT }}
+      - name: Fetch OpenSCAD ${{ env.OPENSCAD_SNAPSHOT }}
+        if: steps.openscad.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/openscad && cd ~/openscad
+          f=OpenSCAD-${OPENSCAD_SNAPSHOT}-x86_64.AppImage
+          curl -fsSLO "https://files.openscad.org/snapshots/$f"
+          echo "$OPENSCAD_SHA256  $f" | sha256sum -c
+          chmod +x "$f" && ./"$f" --appimage-extract > /dev/null && rm "$f"
+      - run: ~/openscad/squashfs-root/AppRun --version
+      # build.sh rewrites the tracked out/*.stl and renders/*.png; CI judges only its gates (the exit status), since
+      # STL bytes differ between OpenSCAD versions
+      - run: xvfb-run -a -s "-screen 0 1600x1200x24" enclosure/${{ matrix.script }}
+        env:
+          OPENSCAD: /home/runner/openscad/squashfs-root/AppRun
+
+  spec-drift:
+    name: Spec drift
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Behaviour changed without a spec change?
+        run: |
+          files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
+          echo "$files"
+          code=$(echo "$files" | grep -E '^(firmware/main|enclosure|tools)/' || true)
+          specs=$(echo "$files" | grep -E '^openspec/' || true)
+          if [ -n "$code" ] && [ -z "$specs" ]; then
+            echo "::warning title=Spec drift::This pull request changes firmware/main, enclosure or tools but nothing under openspec/. If behaviour changed, update the matching spec (AGENTS.md, OpenSpec)."
+          fi
