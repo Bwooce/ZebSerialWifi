@@ -22,27 +22,77 @@ context: |
 
   ## Repository layout
   - firmware/: ESP-IDF 6.1 project, target esp32c6. firmware/main/*.c, Kconfig.projbuild, partitions.csv,
-    sdkconfig.defaults. Components: espressif/mdns ^1.8, bwooce/esp_iot_log (pinned commit). Host tests in
-    firmware/test_host/ cover the pure parsers (zpl_status, urlcodec, netcfg, log_line, test_label, temp_alarm).
+    sdkconfig.defaults. Components: espressif/mdns (manifest "^1.8") and bwooce/esp_iot_log (manifest pins a git
+    commit). Host tests in firmware/test_host/ cover the pure parsers (zpl_status, urlcodec, netcfg, log_line,
+    test_label, temp_alarm).
   - tools/cable-labels.html: a stand-alone browser page that prints cable flag labels through /pstprnt.
   - enclosure/: zebserial_case.scad, build.sh, controls.sh, wallprobe.py, stlinfo.py, out/*.stl, renders/*.png.
     enclosure/reference/ is gitignored (datasheets, Seeed KiCad/STEP), so it is not in the repository.
   - print/: Bambu Studio CLI slicing (run_slice.sh, resolve_profile.py, *overrides*.json) and the sliced 3MFs.
-  - assets/logo/: the striped mark (SVG) used by the web UI icons and the case logo inlay.
+  - assets/logo/: the striped mark (SVG sources and their generators); the web UI and the case logo inlay derive
+    from it, as the Reference artefacts list below says.
   - docs/superpowers/: the 2026-10-07 design and plan, older than the code; docs/papercuts/: friction log.
 
   ## Reference artefacts
-  The specs rely on these files as normative inputs and do not restate them. A rebuild uses these files plus the
-  specs:
-  - enclosure/zebserial_case.scad, for the case geometry; its parameters are specified in the enclosure spec.
-  - assets/logo/*.svg, for the mark (the case inlay uses zebserial-mark-deboss.svg; make_logo.py and make_icons.py
-    generate the SVGs and icons).
-  - firmware/test_host/fixtures/gx430t_hh.bin (a GX430t ^HH reply) and firmware/test_host/test_main.c, for the
-    expected parser output.
+  The specs rely on these files and do not restate them. Normative artefacts are inputs a rebuild copies as they are;
+  the specs plus these files are enough to rebuild the bridge. Informative artefacts explain and record; where one
+  disagrees with the code or a spec, the code wins and the document is fixed.
+
+  Normative:
+  - enclosure/zebserial_case.scad: the case geometry. Its parameters are specified in the enclosure spec.
+  - enclosure/build.sh (STL export, renders, parameter warnings, interference checks, logo check, wall probe, with
+    the wall-probe whitelists ALLOW_tray and ALLOW_lid), enclosure/controls.sh (the positive and negative controls,
+    one `ctl` line each), enclosure/wallprobe.py and enclosure/stlinfo.py: the case gates. The enclosure spec states
+    what they must catch; the scripts hold the exact checks, offsets and whitelist boxes.
+  - assets/logo/zebserial-mark.svg: the mark. firmware/main/web.c LOGO_D is its path, copied by hand; the inline page
+    logo (LOGO_SVG, currentColor) and /favicon.svg (s_favicon, a self-coloured SVG built in web.c, #222, #ddd in dark
+    mode) are both built from LOGO_D, so no SVG file is served. The case inlay imports zebserial-mark-deboss.svg.
+    make_logo.py generates the SVGs (zebserial-mark-lid.svg and zebserial-full.svg are generated too, and nothing in
+    the build uses them); make_icons.py renders firmware/main/icons/favicon.ico and apple-touch-icon.png from
+    zebserial-mark.svg. The two icon files are served as they are (EMBED_FILES in firmware/main/CMakeLists.txt).
+  - firmware/main/test_label.c test_label_zpl(): the source of truth for the test label layout (positions, sizes,
+    fonts, what is left out on a small label). The web-ui spec states what the label must show; the code holds the
+    dot-level layout.
+  - firmware/test_host/test_main.c, firmware/test_host/Makefile and firmware/test_host/fixtures/gx430t_hh.bin (a
+    GX430t ^HH reply): the host test suite and its expected parser output. It compiles test_main.c with
+    firmware/main/zpl_status.c, urlcodec.c, netcfg.c, log_line.c, test_label.c and temp_alarm.c and their headers
+    zpl_status.h, urlcodec.h, netcfg.h, log_line.h, test_label.h, temp_alarm.h and zpl_units.h, so a rebuild with
+    the same parser interfaces can run it unchanged.
+  - firmware/sdkconfig.defaults and firmware/partitions.csv: the build configuration and flash layout. The symbols
+    in sdkconfig.defaults, and the spec that relies on each: CONFIG_IDF_TARGET="esp32c6" and
+    CONFIG_ESPTOOLPY_FLASHSIZE_4MB (Hardware, this file); CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG (device-settings,
+    Console); CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024 and CONFIG_LWIP_MAX_SOCKETS=16 (Constraints, this file);
+    CONFIG_PARTITION_TABLE_CUSTOM with CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv" and
+    CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE (ota-updates); CONFIG_COMPILER_OPTIMIZATION_SIZE (size optimisation,
+    which keeps the app well inside its 0x1E0000 slot); CONFIG_LWIP_IPV6 and CONFIG_LWIP_IPV6_AUTOCONFIG
+    (print-bridge dual-stack listener, wifi-provisioning IPv6 addresses); CONFIG_UART_ISR_IN_IRAM (the printer
+    link's UART interrupt keeps running while flash is busy, for example during an OTA write or an NVS commit).
+    Every other symbol keeps the ESP-IDF default: log level info, CPU 160 MHz, FreeRTOS tick 100 Hz, one core,
+    and the default Wi-Fi buffers and mDNS options.
+  - The components named in firmware/main/idf_component.yml: bwooce/esp_iot_log from
+    github.com/Bwooce/esp-iot-log (path esp-idf) at the commit the manifest pins, and espressif/mdns.
   - firmware/main/icons/favicon.ico and apple-touch-icon.png, served as they are.
-  - The pinned components in firmware/main/idf_component.yml and firmware/dependencies.lock: bwooce/esp_iot_log at
-    git commit e6a5a22aa21f7f4be1f956563619fbe1f11b0544 (github.com/Bwooce/esp-iot-log, path esp-idf), and
-    espressif/mdns 1.14.0 (manifest "^1.8"), with ESP-IDF 6.1.0.
+
+  Informative:
+  - README.md: the user's guide. Parts and Wiring (pins, the diode, the optional pull-up resistors, power from pin
+    9), the printer serial settings, setup, troubleshooting, and fit notes for the case.
+  - enclosure/README.md: the case design record. Coordinates, revision history, measurements and what was assumed,
+    the interference checks and controls table, the fit-check list (measure before printing) and the concerns to
+    check before printing.
+  - print/README.md: the slicing settings and why each was chosen, print times and weights, and how to rebuild the
+    3MFs.
+  - .github/workflows/ci.yml: what CI runs on each push and pull request (OpenSpec validate, host tests, firmware
+    build, page JavaScript check, the enclosure gates when enclosure/ or the workflow changes, and the spec drift
+    warning).
+  - tools/check_page_js.py: extracts each page script from web.c and tools/cable-labels.html and runs node --check
+    on it (Quality gates below).
+  - docs/superpowers/ and docs/papercuts/: the original design and plan, and the friction log.
+
+  Versions. These are observed outcomes, not requirements. The firmware was built and tested with ESP-IDF 6.1.0,
+  espressif/mdns 1.14.0 (firmware/dependencies.lock) and bwooce/esp_iot_log at commit
+  e6a5a22aa21f7f4be1f956563619fbe1f11b0544. The case STLs were made with the OpenSCAD 2026.06.12 nightly and the
+  manifold backend. The 3MFs in print/ were sliced with Bambu Studio 02.08.03.66 (the Application entry in their
+  3D/3dmodel.model). The specs were validated with OpenSpec 1.16.0, the version CI pins.
 
   ## Constraints
   - Flash 4 MB. partitions.csv: nvs 0x9000 size 0x6000, otadata 0xf000 0x2000, phy_init 0x11000 0x1000,
@@ -61,8 +111,8 @@ context: |
   - The case outside top must stay within max_above = 25.0 mm above the RS-232 PCB top.
 
   ## Quality gates (run the ones a change touches; report results, never claim an unrun gate)
-  - Host tests: make -C firmware/test_host (clang, -Wall -Wextra -Werror, ASan and UBSan). 541 checks, 0 failures
-    on 2026-10-31. Add checks with every parser change; expected values trace to printer output or Zebra manuals,
+  - Host tests: make -C firmware/test_host (clang, -Wall -Wextra -Werror, ASan and UBSan). It must end
+    "N checks, 0 failures". Add checks with every parser change; expected values trace to printer output or Zebra manuals,
     not to values this code computed.
   - Firmware build: cd firmware && idf.py build. ESP-IDF's default flags make warnings errors (-Werror, with
     ESP-IDF's own -Wno-error exceptions); the project sets no CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS.
@@ -71,7 +121,7 @@ context: |
     does this for web.c and tools/cable-labels.html, and CI runs it (.github/workflows/ci.yml).
   - Before testing or reporting on a device, match the running firmware's version string to the commit built.
   - Enclosure: enclosure/build.sh (STL export, renders, interference checks, logo check, wall probe) and
-    enclosure/controls.sh (97 positive and negative controls) must both print zero failures. build.sh overwrites
+    enclosure/controls.sh (the positive and negative controls, one `ctl` line each) must both print zero failures. build.sh overwrites
     out/ and renders/, which are tracked: run it only when the STLs are meant to change, and commit them together.
   - Slicing runs only on a Mac with Bambu Studio (not every checkout has it); see the slicing-and-printing spec.
 
